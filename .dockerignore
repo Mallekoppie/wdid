@@ -1,0 +1,25 @@
+# Git
+.git
+.gitignore
+
+# Go build output
+bin/
+
+# Local data, backups and logs
+data/
+backups/
+*.db
+*.db.lock
+log.txt
+
+# Flutter/Dart build output
+web/.dart_tool
+web/build
+
+# Embedded web output - rebuilt inside the image from web/
+cmd/wdid/dist
+
+# IDE
+.idea
+.vscode
+*.iml

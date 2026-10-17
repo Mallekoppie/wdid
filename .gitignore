@@ -31,3 +31,23 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# wdid runtime data, backups and logs
+data/
+backups/
+*.db
+*.db.lock
+log.txt
+
+# Embedded web app output - rebuilt from web/
+cmd/wdid/dist/
+!cmd/wdid/dist/.gitkeep
+
+# Flutter web app
+web/build/
+web/.dart_tool/
+web/pubspec.lock
+web/lib/src/generated/*.pb.dart
+web/lib/src/generated/*.pbgrpc.dart
+web/lib/src/generated/*.pbenum.dart
+web/lib/src/generated/*.pbjson.dart

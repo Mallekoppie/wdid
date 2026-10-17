@@ -1,0 +1,89 @@
+{
+    // wdid development container.
+    //
+    // Provides the full toolchain needed to edit, build, test and run this
+    // repository: Go, protoc + Go/Dart plugins, the Dart/Flutter SDK for the
+    // web UI and the usual shell tooling (make, curl, jq...).
+    //
+    // Engine: Podman on the host (rootless). The host's podman socket is
+    // mounted in so `podman`/`docker` commands inside the container drive the
+    // host engine. The wdid server itself runs inside the container; only
+    // image builds are delegated to the host engine.
+    "name": "wdid Dev",
+
+    // Build from our own Dockerfile so the toolchain is pinned and reproducible.
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "..",
+        "args": {
+            "GO_VERSION": "1.26",
+            "FLUTTER_CHANNEL": "stable"
+        }
+    },
+
+    // The remote user created by the base image. Keep the workspace owned by it.
+    "remoteUser": "vscode",
+    "containerUser": "vscode",
+
+    // --userns=keep-id makes the container's uid 1000 match the host uid 1000.
+    // The host owns the bind-mounted workspace and the podman socket (both uid
+    // 1000, socket mode 0660), so this is what lets the container read/write the
+    // repo with the right ownership AND open the mounted podman socket.
+    "runArgs": [
+        "--userns=keep-id",
+        "--security-opt=label=disable"
+    ],
+
+    // Mount the host podman socket so the container can talk to the host engine.
+    // On Bazzite the rootless socket lives at /run/user/1000/podman/podman.sock.
+    "mounts": [
+        "source=/run/user/1000/podman/podman.sock,target=/run/host-podman.sock,type=bind"
+    ],
+
+    // Make the mounted socket discoverable by podman/docker clients in the
+    // container. DOCKER_HOST is what the VS Code container tooling and any
+    // `docker`-invoking script read.
+    "containerEnv": {
+        "DOCKER_HOST": "unix:///run/host-podman.sock",
+        "CONTAINER_HOST": "unix:///run/host-podman.sock",
+        "PODMAN_HOST": "unix:///run/host-podman.sock",
+        "GOFLAGS": "-mod=mod",
+        "PUB_CACHE": "/home/vscode/.pub-cache",
+        "PATH": "/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    },
+
+    // The server serves the Flutter web app and the gRPC-Web endpoints on the
+    // same port. Keep this in step with the Makefile / platform config default.
+    "forwardPorts": [8080],
+    "portsAttributes": {
+        "8080": { "label": "wdid web UI and gRPC-Web" }
+    },
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go",
+                "ms-vscode.makefile-tools",
+                "Dart-Code.dart-code",
+                "Dart-Code.flutter",
+                "redhat.vscode-yaml",
+                "zxh404.vscode-proto3",
+                "timonwong.shellcheck"
+            ],
+            "settings": {
+                "go.toolsManagement.autoUpdate": true,
+                "go.useLanguageServer": true,
+                "dart.flutterSdkPath": "/opt/flutter",
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "files.trimTrailingWhitespace": true
+            }
+        }
+    },
+
+    "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+    "remoteEnv": {
+        "PUB_CACHE": "/home/vscode/.pub-cache",
+        "PATH": "/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${containerEnv:PATH}"
+    }
+}
