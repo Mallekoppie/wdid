@@ -4,6 +4,11 @@
 
 This repository is a local-first personal work journal and review assistant for tracking time, outcomes, strategic initiative progress, support work, and AI-assisted check-in summaries.
 
+Reference implementation:
+
+- Use the project at `/var/home/Mallekoppie/code/source/ChaosGenerator` as the implementation reference for the Go service architecture and conventions.
+- Where practical, follow the `goslow` framework patterns and helper functions used in that sample project rather than inventing a different service structure.
+
 The product split is intentionally layered:
 
 - Service layer owns the source of truth, persistence, validation, auth, backup logic, exports, and AI prompt generation.
@@ -19,6 +24,18 @@ The product split is intentionally layered:
 5. Prefer contract-first implementation over “just make it work in one place.”
 6. Never introduce UI assumptions into storage, auth, or data models.
 7. Never introduce storage assumptions into the UI layer.
+
+## Deployment and auth model
+
+For the initial local deployment:
+
+- use a local Zitadel instance for OIDC authentication
+- configure the app to integrate with Zitadel as the identity provider
+- allow initial login using a local user account
+- require a registration secret for sign-up flows during the initial rollout
+- keep the architecture compatible with a hosted deployment model as the product grows, without compromising the local-first developer setup
+
+This should be treated as the baseline deployment and auth pattern unless a task explicitly changes the identity architecture.
 
 ## Ownership boundaries
 
@@ -54,6 +71,7 @@ Use the following rule when deciding which agent should own a task:
 - Backend, persistence, auth, RBAC, export, timer engine, AI synthesis, backup logic, or API contract changes belong to the service agent.
 - Screen design, forms, layout, navigation, visual hierarchy, and frontend interactions belong to the UI agent.
 - Tasks spanning both layers require a handoff: define the contract first, then implement each side against it.
+- Reviewing completed work, checking contract alignment, and producing a merge verdict belong to the review agent. The review agent reports findings with evidence and does not edit code.
 
 ## Validation expectations
 

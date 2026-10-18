@@ -11,7 +11,7 @@
 
 ## 1. Product summary
 
-A **single-user, local-first** app for tracking work between check-ins.
+A **local-first** app for tracking work between check-ins, designed for **multi-user operation from day one** with a hosted deployment model as a first-class option.
 
 **Core jobs**
 
@@ -23,18 +23,24 @@ A **single-user, local-first** app for tracking work between check-ins.
 
 **Non-goals for v1**
 
-- Team timesheets, approvals, payroll or invoicing.
-- Multi-user accounts, sharing or cloud sync.
+- Payroll, approvals, and invoicing workflows.
+- Team-level billing or manager approval chains.
 - Automatic activity capture (IDE/calendar/browser telemetry).
 - Replacing a task tracker; initiatives are summarised, not decomposed into tickets.
-- Any accountancy or operational workflow beyond a single-person work journal.
+- Any accountancy or operational workflow beyond a personal work journal.
 
-**Personal-use scope**
+**Deployment and scope**
 
-This product is intentionally for one person only. The output is designed to be
-portable, review-friendly and easy to feed into a UI builder such as
-`stitch.withgoogle.com` for quick dashboard prototyping. It is not a team system,
-not a payroll tool, and not a workflow approval system.
+The product is designed to be **local-first** for privacy and portability, while also
+supporting a **hosted deployment** model for users who want centralized access,
+backups, and shared infrastructure. It is built for **multi-user operation from the
+start**, even if an individual developer uses it alone initially. That single-user
+usage should not constrain the design, storage model, or access architecture.
+
+The output is designed to be portable, review-friendly and easy to feed into a UI
+builder such as `stitch.withgoogle.com` for quick dashboard prototyping. It is not
+restricted to one person in the product design, even if the first live use case is a
+single developer working on their own system.
 
 **Success looks like**
 
@@ -71,8 +77,10 @@ tags provide secondary grouping.
    "what happened?"; Check-ins answer "what did I achieve?".
 3. **Outcome over duration.** Every entry can carry a one-line result and links
    (PR, ticket, doc). That is what reviews need.
-4. **Local-first and portable.** BoltDB is the source of truth; exports are
-   plain Markdown/JSON/CSV.
+4. **Local-first, hosted-ready, and portable.** BoltDB is the source of truth for
+   local deployments, while the architecture is designed to support hosted
+   multi-user deployments without changing the core workflows. Exports remain plain
+   Markdown/JSON/CSV.
 5. **Quiet density.** A developer-tool aesthetic: compact rows, clear hierarchy,
    colour reserved for status and the running timer.
 6. **Review-ready by default.** Every screen can answer "what would I tell my

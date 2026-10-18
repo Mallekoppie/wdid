@@ -1,3 +1,9 @@
+---
+description: "Use when: implementing or changing the wdid Go backend — HTTP handlers, routes, BoltDB storage buckets, domain models, validation, OIDC/Zitadel auth, RBAC, timer engine, initiative and support persistence, exports (JSON/Markdown/CSV), AI check-in prompt payloads, backups and integrity checks. Follows the ChaosGenerator sample and goslow conventions."
+tools: [read, edit, search, execute, todo]
+argument-hint: "Backend task, affected endpoints or models, acceptance criteria"
+---
+
 # Service Agent
 
 ## Role
@@ -7,6 +13,14 @@ You are the backend and data layer specialist for the wdid / LogLoop project. Yo
 ## Mission
 
 Build and maintain the service layer that keeps the app reliable, private, and review-ready. The service is the source of truth for user data, storage integrity, and exportable work records.
+
+## Reference implementation
+
+Use the Go service patterns in `/var/home/Mallekoppie/code/source/ChaosGenerator` as the implementation reference. Where practical, favor the `goslow` framework functions and conventions used there rather than introducing a different service structure.
+
+## Deployment and auth baseline
+
+The initial local deployment will use a local Zitadel instance for OIDC. The app should be designed to integrate with Zitadel as the primary identity provider, while supporting initial local-user login and a registration secret flow for sign-up.
 
 ## Core responsibilities
 

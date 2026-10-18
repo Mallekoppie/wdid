@@ -1,0 +1,88 @@
+package config_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/Mallekoppie/wdid/internal/config"
+)
+
+func setRequiredEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("WDID_REGISTRATION_SECRET", "test-registration-secret")
+	t.Setenv("WDID_JWT_SECRET", strings.Repeat("k", 32))
+}
+
+func TestValidateRejectsMissingSecrets(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected validation error for missing secrets")
+	}
+}
+
+func TestValidateAcceptsCompleteConfig(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		RegistrationSecret:   "test-registration-secret",
+		JWTSecret:            strings.Repeat("k", 32),
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromEnvironment(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("WDID_HTTP_ADDR", "127.0.0.1:9999")
+	t.Setenv("WDID_DB_PATH", "/tmp/wdid-config-test.db")
+	t.Setenv("WDID_ZITADEL_ENABLED", "true")
+	t.Setenv("WDID_ZITADEL_ISSUER_URL", "http://zitadel.local:8080/")
+	t.Setenv("WDID_ZITADEL_CLIENT_ID", "wdid-client")
+	t.Setenv("WDID_ZITADEL_ALLOWED_ALGORITHMS", "RS256, ES256")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if cfg.HTTPAddr != "127.0.0.1:9999" {
+		t.Fatalf("http addr = %q", cfg.HTTPAddr)
+	}
+	if cfg.Zitadel.IssuerURL != "http://zitadel.local:8080" {
+		t.Fatalf("issuer url = %q, want trailing slash trimmed", cfg.Zitadel.IssuerURL)
+	}
+	if len(cfg.Zitadel.AllowedAlgorithms) != 2 || cfg.Zitadel.AllowedAlgorithms[1] != "ES256" {
+		t.Fatalf("algorithms = %v", cfg.Zitadel.AllowedAlgorithms)
+	}
+
+	platformConfig := cfg.PlatformConfig()
+	if !platformConfig.Database.BoltDB.Enabled {
+		t.Fatal("boltdb should be enabled")
+	}
+	if platformConfig.Database.BoltDB.FileName != cfg.DBPath {
+		t.Fatalf("db file = %q, want %q", platformConfig.Database.BoltDB.FileName, cfg.DBPath)
+	}
+	if !platformConfig.Auth.Server.LocalJwt.Enabled {
+		t.Fatal("local JWT should be enabled")
+	}
+	if platformConfig.Auth.Server.LocalJwt.JwtSigningKey != cfg.JWTSecret {
+		t.Fatal("local JWT signing key not mapped")
+	}
+	// goslow applies configured auth middlewares exclusively; enabling OAuth
+	// there would reject locally issued tokens. OIDC is verified in auth.Service.
+	if platformConfig.Auth.Server.OAuth.Enabled {
+		t.Fatal("goslow OAuth middleware must stay disabled")
+	}
+}

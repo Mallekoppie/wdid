@@ -1,6 +1,6 @@
-# Product Requirements Document (PRD): LogLoop
+# Product Requirements Document (PRD): wdid
 
-**Project Title:** LogLoop — Personal & Self-Hosted Work Journal, Rapid Time Attribution & AI Check-in Vault
+**Project Title:** wdid — what did I do? — Personal & Self-Hosted Work Journal, Rapid Time Attribution & AI Check-in Vault
 **Document Version:** 1.0.0
 **Status:** Approved for Implementation / Architecture Baseline
 **Target Environment:** Dockerized Go/BoltDB Service with OIDC Federation (Zitadel Primary)
@@ -12,26 +12,29 @@
 ### 1.1 Problem Statement
 Engineers, engineering leaders, and specialized knowledge workers spend substantial non-coding hours in support, cross-team unblocking, architectural design reviews, and strategic execution. Traditional time-tracking software treats work as punch-cards for payroll or client billing, optimizing for managerial surveillance and invoicing rather than individual agency, review preparation, and verifiable impact demonstration.
 
-Conversely, manual developer journals and markdown notes often fall out of sync or take too long to update mid-flow, resulting in end-of-quarter "review amnesia."
+Conversely, manual developer journals and markdown notes often fall out of sync or take too long to update mid-flow, resulting in end-of-quarter "review amnesia." The product must work for a single developer using it locally today, while supporting multi-user and hosted deployment models without redesigning the core experience later.
 
 ### 1.2 Vision & Value Proposition
-**LogLoop** is a high-velocity, keyboard-first, self-hosted work telemetry vault. It enables knowledge workers to capture work blocks, attribute time against strategic initiatives or operational categories, and record concrete outcome evidence in under five seconds.
+**wdid** is a high-velocity, keyboard-first, work telemetry vault designed for both local-first and hosted deployment. It enables knowledge workers to capture work blocks, attribute time against strategic initiatives or operational categories, and record concrete outcome evidence in under five seconds.
 
-At check-in or review cycles, LogLoop synthesizes granular telemetry into verified, review-ready accomplishments tailored for 1:1 manager updates, performance evaluations, or external LLM ingestions (e.g., Claude, local Ollama), without sacrificing data privacy or incurring costly multi-tenant SaaS overhead.
+At check-in or review cycles, wdid synthesizes granular telemetry into verified, review-ready accomplishments tailored for 1:1 manager updates, performance evaluations, or external LLM ingestions (e.g., Claude, local Ollama), without sacrificing data privacy or incurring costly multi-tenant SaaS overhead.
 
 ---
 
 ## 2. Core User Personas & Permissions
 
 ### 2.1 Personas
-1. **Primary Operator / Sole Contributor (Alex - "User"):**
+1. **Primary Operator / Contributor (Alex - "User"):**
    - Wants zero friction (<5 seconds) to track rapid timers or manual entries.
    - Needs automated aggregation of achievements with concrete evidence proofs.
    - Requires zero-data crossover: their journal, timers, and AI prompts are private to their account.
-2. **Self-Hosting Administrator (Alex / Server Admin - "Admin"):**
-   - Owns the physical container host and storage volume.
+2. **Self-Hosting Administrator / Hosted Operator (Alex / Server Admin - "Admin"):**
+   - Owns the physical container host or hosted deployment environment.
    - Needs automated zero-downtime hot backups, external offsite replication (S3/R2/SFTP), and invite-gated access control to keep compute/storage budgets low.
    - Manages identity bridges (Zitadel OIDC, Google SSO) and role assignments.
+3. **Multi-User Team Member (future / not initial usage, but planned):**
+   - Works inside a shared deployment with clear ownership boundaries and personal journal data.
+   - Expects the same fast capture flow without being coupled to a single-user design.
 
 ### 2.2 RBAC Matrix
 | Capability Area | Admin Role | User Role | Access & Scope Level |
@@ -59,6 +62,10 @@ At check-in or review cycles, LogLoop synthesizes granular telemetry into verifi
   - Dynamic generation of bulleted achievements formatted for Manager 1:1s, Sprint Retros, and Annual Reviews.
   - LLM Prompt Buffer compatible with local Ollama runtimes and Claude/GPT web interfaces.
   - Review Readiness Score calculation (density of evidence vs. raw hours).
+- **Deployment Modes:**
+  - Local-first, self-hosted single-user deployment for privacy and portability.
+  - Hosted deployment path for multi-user access, backup, identity, and centralized operation.
+  - Shared architecture and UX that support both modes without forcing a single-user design decision.
 - **Self-Hosted Storage Engine:**
   - BoltDB (`bbolt v1.3.8`) single-file embedded B+ tree database running in Docker with persistent host volume mounts (`/var/lib/logloop/data`).
   - Zero-lock atomic hot snapshot backup via read-only transaction copy (`db.View(tx.WriteTo)`).
@@ -73,7 +80,8 @@ At check-in or review cycles, LogLoop synthesizes granular telemetry into verifi
   - Raw normalized CSV dump for DuckDB, pandas, or spreadsheet modeling.
 
 ### 3.2 Explicit Non-Goals (Out of Scope for v1)
-- Multi-user timesheet approval workflows, team roll-ups, or payroll integration.
+- Payroll, invoicing, and approval-chain workflow tooling.
+- Team timesheet enforcement or manager sign-off processes beyond basic review generation.
 - Continuous invasive background telemetry (no keystroke logging, active window spying, or browser history tracking).
 - Replacing full ticketing systems (e.g., Jira, Linear); initiatives are high-level umbrellas, not decomposed task boards.
 - Public SaaS subscription billing, payment gateways, or public self-registration.
@@ -86,7 +94,7 @@ At check-in or review cycles, LogLoop synthesizes granular telemetry into verifi
                      +-------------------------------------------------+
                      |                 Docker Container                |
                      |                                                 |
-  Browser Client <-> |  LogLoop Web App (Go Engine + Embedded UI)       |
+  Browser Client <-> |  wdid Web App (Go Engine + Embedded UI)           |
   (Keyboard-First    |   - OIDC Auth Handler & Invite Gate             |
    Obsidian Slate)   |   - RBAC Middleware (Admin vs User)             |
                      |   - Timer & Rapid Journaling Engine             |
@@ -111,6 +119,7 @@ At check-in or review cycles, LogLoop synthesizes granular telemetry into verifi
 ### 4.1 Storage & Data Isolation Model
 - **Engine:** BoltDB (`go.etcd.io/bbolt`).
 - **Data Isolation:** User records are isolated via prefixed bucket structures (e.g., `user_<uuid>:work_items`, `user_<uuid>:initiatives`, `user_<uuid>:summaries`). Administrative tables (`sys:users`, `sys:oidc_config`, `sys:snapshots`, `sys:invites`) reside in protected system buckets inaccessible to user session scopes.
+- **Multi-User Design:** The storage model is created for multiple user accounts from day one, even if the initial live deployment is a single developer instance. This avoids a later migration from a single-user schema to a multi-user architecture.
 - **Backup Architecture:** Backups execute via BoltDB's built-in transaction streaming:
   ```go
   err := db.View(func(tx *bbolt.Tx) error {
@@ -128,7 +137,7 @@ At check-in or review cycles, LogLoop synthesizes granular telemetry into verifi
 
 ## 5. UI Architecture & Screen Manifest
 
-The LogLoop suite comprises six core desktop views styled in the `Obsidian Slate Utility` design system:
+The wdid suite comprises six core desktop views styled in the `Obsidian Slate Utility` design system:
 
 | Screen # | Screen Title | Primary User Job & Key Interactions |
 | :--- | :--- | :--- |

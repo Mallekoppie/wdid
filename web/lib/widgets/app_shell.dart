@@ -1,0 +1,216 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
+
+import '../state/app_state_scope.dart';
+import '../utils/time_utils.dart';
+import 'app_header.dart';
+import 'forms/entry_dialog.dart';
+import 'forms/shortcuts_dialog.dart';
+import 'forms/support_dialog.dart';
+import 'nav_rail.dart';
+
+class AppShell extends StatefulWidget {
+  const AppShell({super.key, required this.currentPath, required this.child});
+
+  final String currentPath;
+  final Widget child;
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  bool _awaitingG = false;
+  Timer? _gTimer;
+
+  @override
+  void dispose() {
+    _gTimer?.cancel();
+    super.dispose();
+  }
+
+  bool get _isEditing {
+    final widget = FocusManager.instance.primaryFocus?.context?.widget;
+    if (widget == null) return false;
+    return widget is EditableText ||
+        widget.runtimeType.toString().contains('EditableText');
+  }
+
+  void _beginGoSequence() {
+    _awaitingG = true;
+    _gTimer?.cancel();
+    _gTimer = Timer(const Duration(milliseconds: 1200), () {
+      _awaitingG = false;
+    });
+  }
+
+  Future<void> _toggleTimer() async {
+    final state = AppStateScope.read(context);
+    try {
+      if (state.activeTimer == null) {
+        state.startTimer();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Timer started · ${state.activeTimer?.attribution.label}'),
+          ),
+        );
+      } else {
+        final item = await state.stopTimer();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              item == null
+                  ? 'Timer stopped'
+                  : 'Saved ${formatDuration(item.minutes)} · ${item.summary}',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
+  Future<void> _newEntry() async {
+    final state = AppStateScope.read(context);
+    final item = await showEntryDialog(context, state: state);
+    if (item != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Entry saved')),
+      );
+    }
+  }
+
+  Future<void> _logSupport() async {
+    final state = AppStateScope.read(context);
+    final item = await showSupportDialog(context, state: state);
+    if (item != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Support entry saved')),
+      );
+    }
+  }
+
+  KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (_isEditing) return KeyEventResult.ignored;
+
+    if (event.character == '?') {
+      showShortcutsDialog(context);
+      return KeyEventResult.handled;
+    }
+
+    if (_awaitingG) {
+      _awaitingG = false;
+      _gTimer?.cancel();
+      if (key == LogicalKeyboardKey.keyT) {
+        context.go('/today');
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyL) {
+        context.go('/log');
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyI) {
+        context.go('/initiatives');
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyC) {
+        context.go('/checkins');
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyS) {
+        context.go('/support');
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (key == LogicalKeyboardKey.keyG) {
+      _beginGoSequence();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyT) {
+      unawaited(_toggleTimer());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyN) {
+      unawaited(_newEntry());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyS) {
+      unawaited(_logSupport());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.slash) {
+      final state = AppStateScope.read(context);
+      context.go('/log');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        state.requestSearchFocus();
+      });
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleKey,
+      child: Scaffold(
+        body: Column(
+          children: [
+            const AppHeader(),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 820;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      NavRail(
+                        currentPath: widget.currentPath,
+                        compact: compact,
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: scheme.outlineVariant,
+                      ),
+                      Expanded(child: widget.child),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

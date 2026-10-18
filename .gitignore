@@ -32,6 +32,9 @@ go.work.sum
 # .idea/
 # .vscode/
 
+# Local build output
+bin/
+
 # wdid runtime data, backups and logs
 data/
 backups/
