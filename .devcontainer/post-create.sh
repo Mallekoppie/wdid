@@ -15,7 +15,7 @@ printf '  go      : %s\n' "$(go version 2>/dev/null | awk '{print $3}')"
 printf '  protoc  : %s\n' "$(protoc --version 2>/dev/null)"
 printf '  dart    : %s\n' "$(dart --version 2>&1 | head -1)"
 printf '  flutter : %s\n' "$(flutter --version 2>/dev/null | head -1)"
-for p in protoc-gen-go protoc-gen-go-grpc protoc-gen-dart; do
+for p in protoc-gen-go protoc-gen-connect-go protoc-gen-dart; do
     if command -v "$p" >/dev/null 2>&1; then
         printf '  %-8s: %s\n' "${p#protoc-gen-}" "$(command -v "$p")"
     else

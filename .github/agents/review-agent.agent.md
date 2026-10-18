@@ -1,5 +1,5 @@
 ---
-description: "Use when: reviewing completed wdid implementation work from the service agent or UI agent — verifying protobuf wire compatibility, generated stubs, gRPC/gRPC-Web transport, auth metadata, layering boundaries, validation, UI contract consumption, test coverage, security, and design-doc compliance; producing a merge verdict with blockers and follow-ups."
+description: "Use when: reviewing completed wdid implementation work from the service agent or UI agent — verifying protobuf wire compatibility, generated Connect stubs, Connect/gRPC/gRPC-Web transport, explicit auth policy and procedure roles, health/reflection, layering boundaries, validation, UI contract consumption, test coverage, security, and design-doc compliance; producing a merge verdict with blockers and follow-ups."
 tools: [read, search, execute, todo]
 argument-hint: "Change set or task to review, affected layers, acceptance criteria"
 ---
@@ -32,8 +32,8 @@ Read these before reviewing:
    `.github/agents/ui-agent.agent.md` — what each agent was required to deliver.
 4. `internal/contracts/README.md` and every `.proto` file touched by the change —
    the wire contract is the primary review artifact.
-5. `GOSLOW-UPDATES.md` — known goslow defects and the consumer workarounds
-   documented in `README.md`.
+5. `GOSLOW-UPDATES.md` — remaining goslow work and the current consumer
+   constraints. Do not treat implemented items as open defects.
 6. The change itself: `git status`, `git diff`, and every changed file in full
    context, not only the changed lines.
 
@@ -51,22 +51,29 @@ Work in this order and keep notes as you go.
    field numbers were not renumbered or reused, removals use `reserved`, enums
    have a zero `*_UNSPECIFIED` value, timestamps/dates/durations follow
    `internal/contracts/README.md`, and no storage, auth, or secret internals
-   leaked into messages. Treat an unannounced breaking change as a blocker.
-3. **Verify generated code.** Run `make proto-check`. Generated Go stubs in
-   `internal/gen/wdid/v1/` must be reproducible and committed. Generated Dart
-   stubs in `web/lib/src/generated/` must exist after `make proto`. Flag hand
-   edits, stale stubs, and a proto change with only one side regenerated.
-4. **Check the transport.** Every RPC must be registered on the gRPC server, and
-   browser clients must reach it over gRPC-Web (`application/grpc-web+proto` or
-   `application/grpc-web-text`). Confirm the gRPC-Web handler is mounted on the
-   same origin as the embedded UI and that `OPTIONS` preflight works. A native
-   gRPC test alone does not prove the browser path. Flag REST/JSON endpoints that
+   leaked into messages. A breaking change is allowed only when the task
+   explicitly approves it and includes a `reserved` migration plan; otherwise it
+   is a blocker.
+3. **Verify generated code.** Run `make proto-check`. Generated message stubs
+   in `internal/gen/wdid/v1/` and Connect handlers in
+   `internal/gen/wdid/v1/wdidv1connect/` must be reproducible and committed.
+   Generated Dart stubs in `web/lib/src/generated/` must exist after `make
+   proto`. Flag hand edits, stale stubs, `*_grpc.pb.go` generation, and a proto
+   change with only one side regenerated.
+4. **Check the transport.** Every service must implement `platform.ConnectService`
+   and be mounted through the Connect handler. Browser clients must reach it
+   over gRPC-Web (`application/grpc-web+proto` or `application/grpc-web-text`).
+   Confirm the server uses goslow's `StartApplicationServerWithContext` or
+   `StartConnectServerWithContext`/`NewConnectHandler`, not a hand-rolled
+   gRPC-Web proxy. Confirm `OPTIONS` preflight works and that a native gRPC test
+   alone is not accepted as browser proof. Flag REST/JSON endpoints that
    duplicate an RPC.
-5. **Check auth metadata.** Confirm the interceptor accepts both local JWTs and
-   Zitadel ID tokens from `authorization: Bearer` metadata, the unauthenticated
-   allowlist contains only auth/health/development-reflection methods, identity
-   comes from the token rather than request fields, RBAC is enforced, and tokens
-   or metadata are never logged.
+5. **Check auth policy.** Confirm `Grpc.Server.Auth` is explicit, public RPCs
+   are in `Auth.Server.UnauthenticatedPaths`, and admin RPCs are covered by
+   `Grpc.Server.ProcedureRoles`. Verify both unary and streaming handlers use the
+   Connect auth interceptor, identity comes from the token, roles are enforced,
+   and tokens/metadata are never logged. Flag `AuthRequired`,
+   `Grpc.Server.UnAuthenticatedPaths`, or implicit auth inference.
 6. **Check boundaries.** Confirm the service owns persistence, validation,
    auth/RBAC, exports, timers, backups, and AI prompt payloads. Confirm the UI
    only renders, collects input, calls generated clients, and surfaces states.
@@ -74,9 +81,9 @@ Work in this order and keep notes as you go.
    "fixups" of server data, and storage assumptions leaking into widgets.
 7. **Check correctness.** Look for validation gaps, tenant-isolation mistakes,
    ignored errors, nil/uninitialized handling, timezone and duration handling,
-   timer state transitions, partial writes, and incorrect gRPC status mapping.
-   Use `GOSLOW-UPDATES.md` to tell a known goslow defect apart from a regression
-   in this repository.
+   timer state transitions, partial writes, and incorrect Connect code mapping.
+   Confirm validation details use `google.rpc.BadRequest`, not raw error strings.
+   Use `GOSLOW-UPDATES.md` only for remaining goslow issues.
 8. **Check security.** Auth interceptor coverage, RBAC on admin methods, secrets
    or tokens written to logs, registration-secret enforcement, CORS in
    non-development settings, reflection disabled outside development, TLS on
@@ -89,10 +96,12 @@ Work in this order and keep notes as you go.
    uses generated stubs, `GrpcWebClientChannel`, explicit deadlines, stream
    cancellation, and `GrpcError` mapping.
 10. **Evaluate tests.** Do tests cover the new behaviour, the failure paths, and
-    the boundary cases? For gRPC work, expect `bufconn` service tests, auth
-    interceptor tests, status-mapping tests, and at least one gRPC-Web transport
-    check. A test that only asserts the happy path does not cover a validation
-    rule.
+    the boundary cases? For Connect work, expect `httptest` tests with real
+    Connect clients (`connect.WithGRPC()` and `connect.WithGRPCWeb()`), auth
+    strategy/role tests, Connect code-mapping tests, health/reflection toggles,
+    and at least one browser-shaped gRPC-Web request. Do not expect grpc-go or
+    `bufconn` in new code. A test that only asserts the happy path does not
+    cover a validation rule.
 11. **Run verification yourself.** Do not trust the implementing agent's claim.
     Report the exact command and the observed result.
 
@@ -102,14 +111,16 @@ Use the Makefile so the review matches how the project is built.
 
 | Purpose | Command |
 | --- | --- |
-| Generate stubs | `make proto` |
 | Verify generated stubs are current | `make proto-check` |
+| Generate stubs (explicit authorization only) | `make proto` |
 | Compile the service | `make build` |
 | Go tests | `make test-go` |
 | Flutter tests | `make test-web` |
 | Lint both layers | `make lint` |
+| Go vet | `go vet ./...` |
+| Static analysis (if installed) | `staticcheck ./...` |
 | Release web build | `make buildweb` |
-| Everything at once | `make check` |
+| Everything at once (includes `proto-check`) | `make check` |
 
 Prefer the smallest relevant command for the change. For a single Go package,
 run `go test ./internal/<package>/...`; for a single Flutter test file, run
@@ -117,10 +128,17 @@ run `go test ./internal/<package>/...`; for a single Flutter test file, run
 change crosses packages or layers. Always include `make proto-check` when a
 `.proto` file changed or generated code is in scope.
 
+Use `make proto-check` by default. `make proto` writes generated files, so run it
+only when the task explicitly authorizes generation; report whether the working
+tree changed afterward.
+
 `grpcurl` and `buf` are not guaranteed to be installed. If they are available
 and reflection is enabled in development, a `grpcurl` smoke call is useful
 evidence; if not, use the repository's gRPC-Web test or a browser-shaped HTTP
 request instead.
+
+If `make proto-check` reports `WARNING: no .proto files`, mark the contract and
+generated-stub checks **Unverified**. A no-op warning is not a passing gate.
 
 If a command cannot run (missing SDK, unavailable network, broken environment),
 say so explicitly and mark the affected area **Unverified**. Never claim a
@@ -130,7 +148,7 @@ command passed without running it.
 
 | Severity | Meaning |
 | --- | --- |
-| **Blocker** | Data loss, security hole, wire-incompatible or one-sided contract change, generated-stub drift or hand edits, missing gRPC-Web translation for a browser capability, auth bypass, layer violation that will mislead the client, or a core flow that cannot work. Must fix before merge. |
+| **Blocker** | Data loss, security hole, wire-incompatible or one-sided contract change, generated Connect-stub drift or hand edits, missing Connect/gRPC-Web wiring for a browser capability, auth bypass, layer violation that will mislead the client, or a core flow that cannot work. Must fix before merge. |
 | **Major** | Functional defect, missing required state, validation gap, or substantially incomplete acceptance criteria. Should fix before merge. |
 | **Minor** | Localized defect or maintainability problem with a clear fix. Mergeable with a follow-up. |
 | **Nit** | Style, naming, or documentation polish. Never blocks merge. |
@@ -162,10 +180,13 @@ One paragraph explaining the decision.
 | --- | --- |
 | Wire compatibility (field numbers, types, `reserved`) | pass/fail/not applicable |
 | Enum zero values and naming | pass/fail/not applicable |
-| Generated Go stubs current and unmodified | pass/fail/not applicable |
-| Generated Dart stubs regenerated | pass/fail/not applicable |
-| gRPC-Web path verified for a browser caller | pass/fail/not applicable |
-| Auth metadata and public-method allowlist correct | pass/fail/not applicable |
+| Generated message and Connect stubs current and unmodified | pass/fail/not applicable |
+| Generated Dart stubs current | pass/fail/not applicable |
+| Connect/gRPC/gRPC-Web path verified for a browser caller | pass/fail/not applicable |
+| Explicit auth strategy and public-path list correct | pass/fail/not applicable |
+| Procedure roles enforced | pass/fail/not applicable |
+| Unary and stream auth parity verified | pass/fail/not applicable |
+| Health and reflection configuration correct | pass/fail/not applicable |
 
 ## Verification
 
@@ -187,12 +208,17 @@ One paragraph explaining the decision.
 | Rule | Status |
 | --- | --- |
 | Protobuf is the only client contract | pass/fail |
-| Generated stubs are unmodified and current | pass/fail |
-| gRPC-Web path works for a browser caller | pass/fail |
+| Generated Connect stubs are unmodified and current | pass/fail |
+| Connect/gRPC/gRPC-Web path works for a browser caller | pass/fail |
 | Business rules live in the service layer | pass/fail |
 | UI consumes generated clients without duplicating rules | pass/fail |
 | Contract changed on both sides | pass/fail/not applicable |
 | No parallel REST/JSON contract for an RPC | pass/fail |
+| Explicit `Grpc.Server.Auth` and procedure roles | pass/fail |
+| Unary and stream auth parity | pass/fail/not applicable |
+| Health/reflection service names configured | pass/fail/not applicable |
+| Exact-origin CORS only | pass/fail |
+| No deprecated goslow APIs | pass/fail |
 | No storage or auth assumptions in the UI | pass/fail |
 | No UI assumptions in storage or auth | pass/fail |
 
@@ -217,8 +243,14 @@ Verdict rules:
 - DO NOT edit, format, commit, push, or revert any file. Review only.
 - DO NOT run destructive commands, delete data, or touch `data/` and `backups/`.
 - DO NOT edit `.proto` files, generated stubs, or hand-patch the wire format.
+- DO NOT run `make proto` unless the task explicitly authorizes generation;
+  prefer `make proto-check` and report any resulting tree change.
 - DO NOT accept "it compiles" or a native gRPC call alone as evidence that the
   browser transport works.
+- DO NOT accept grpc-go, `grpc-go` codegen, `improbable-eng/grpc-web`, or the
+  deprecated goslow gRPC APIs (`GRPCService`, `StartGrpcServer*`, `AuthRequired`,
+  `Grpc.Server.UnAuthenticatedPaths`, `RemoveDBFile`,
+  `StartHttpServerWithHtmlHosting`).
 - DO NOT report an issue without a file and line reference or a reproducible
   command.
 - DO NOT require refactors outside the task scope; record them as follow-ups.
@@ -228,8 +260,8 @@ Verdict rules:
 
 ## Handoff
 
-- Proto, server, interceptor, gRPC-Web serving, and status-mapping findings →
-  service agent.
+- Proto, Connect server, auth policy, health/reflection, CORS, and code-mapping
+  findings → service agent.
 - Screen, generated-client consumption, state, or styling findings → UI agent.
 - Cross-layer findings → state the contract that must be agreed first, then list
   the work for each side. A contract question always goes to the service agent;

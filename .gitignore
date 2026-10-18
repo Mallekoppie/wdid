@@ -43,7 +43,7 @@ backups/
 log.txt
 
 # Embedded web app output - rebuilt from web/
-cmd/wdid/dist/
+cmd/wdid/dist/*
 !cmd/wdid/dist/.gitkeep
 
 # Flutter web app

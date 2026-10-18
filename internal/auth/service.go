@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -207,6 +206,23 @@ func (s *Service) VerifyToken(ctx context.Context, raw string) (Identity, error)
 	return s.verifyOIDCToken(ctx, raw)
 }
 
+// IdentityFromRequestContext resolves the wdid identity after goslow's auth
+// interceptor has accepted the request. Local JWTs expose their claims through
+// the platform context; OIDC tokens carry the raw token, which wdid resolves to
+// a local account (provisioning it on first login).
+func (s *Service) IdentityFromRequestContext(ctx context.Context) (Identity, error) {
+	if claims := platform.ClaimsFromContext(ctx); len(claims) > 0 {
+		return s.identityFromLocalClaims(claims)
+	}
+
+	raw := platform.ClientTokenFromContext(ctx)
+	if raw == "" {
+		return Identity{}, ErrUnauthenticated
+	}
+
+	return s.VerifyToken(ctx, raw)
+}
+
 func (s *Service) identityFromLocalClaims(claims map[string]interface{}) (Identity, error) {
 	userID, _ := claims["sub"].(string)
 	if strings.TrimSpace(userID) == "" {
@@ -344,60 +360,4 @@ func (s *Service) oidcVerifier(ctx context.Context) (*oidc.IDTokenVerifier, erro
 	s.verifier = provider.Verifier(oidcConfig)
 
 	return s.verifier, nil
-}
-
-// Middleware authenticates the bearer token and attaches the identity.
-func (s *Service) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		if !strings.HasPrefix(header, "Bearer ") {
-			writeUnauthorized(w)
-			return
-		}
-
-		raw := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-		if raw == "" {
-			writeUnauthorized(w)
-			return
-		}
-
-		identity, err := s.VerifyToken(r.Context(), raw)
-		if err != nil {
-			platform.Log.Warn("Authentication failed", zap.Error(err))
-			writeUnauthorized(w)
-			return
-		}
-
-		next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), identity)))
-	})
-}
-
-// RequireRole guards handlers that need a specific role.
-func RequireRole(role string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		identity, ok := IdentityFromContext(r.Context())
-		if !ok {
-			writeUnauthorized(w)
-			return
-		}
-		if !identity.HasRole(role) {
-			platform.JsonMarshaller.WriteJsonResponse(w, http.StatusForbidden, map[string]interface{}{
-				"error": map[string]string{
-					"code":    "forbidden",
-					"message": "insufficient role",
-				},
-			})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeUnauthorized(w http.ResponseWriter) {
-	platform.JsonMarshaller.WriteJsonResponse(w, http.StatusUnauthorized, map[string]interface{}{
-		"error": map[string]string{
-			"code":    "unauthenticated",
-			"message": "a valid bearer token is required",
-		},
-	})
 }

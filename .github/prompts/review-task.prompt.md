@@ -27,15 +27,17 @@ the chat input after this prompt.
 ## Method
 
 1. Confirm the contract: changed `.proto` files, field numbers, enum zero values,
-   wire compatibility, generated stubs, and whether both layers were updated
-   together.
-2. Verify the transport: every RPC is registered, the browser path works over
-   gRPC-Web, auth metadata is validated, and no parallel REST/JSON endpoint was
-   added.
+   wire compatibility, generated message + Connect stubs, and whether both
+   layers were updated together.
+2. Verify the transport: every service implements `platform.ConnectService`, the
+   browser path works over gRPC-Web, `Grpc.Server.Auth` and `ProcedureRoles` are
+   explicit, health/reflection are configured, and no parallel REST/JSON endpoint
+   or deprecated goslow API was added.
 3. Verify the layering boundaries: no business logic in the UI, no UI
    assumptions in the service, no duplicated validation, and no local
    recomputation of server totals.
-4. Check correctness, security, gRPC status mapping, and the required UI states.
+4. Check correctness, security, Connect code mapping, exact-origin CORS, and the
+   required UI states.
 5. Run `make proto-check` plus the relevant Makefile verification commands
    yourself and record the exact results.
 6. Produce findings with file and line references and a clear verdict.

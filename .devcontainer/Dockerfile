@@ -11,7 +11,7 @@
 # The host's Podman socket is mounted at runtime (see devcontainer.json); this
 # image only ships the clients, it does not run a nested container engine.
 
-ARG GO_VERSION=1.26
+ARG GO_VERSION=1.27
 FROM mcr.microsoft.com/devcontainers/go:dev-${GO_VERSION}
 
 ARG FLUTTER_CHANNEL=stable
@@ -73,14 +73,14 @@ RUN git clone --depth 1 -b "${FLUTTER_CHANNEL}" https://github.com/flutter/flutt
     && chown -R vscode:vscode /opt/flutter \
     && git config --global --add safe.directory /opt/flutter
 
-# --- Go protobuf / gRPC plugins ----------------------------------------------
+# --- Go protobuf / Connect plugins -------------------------------------------
 # The base image sets GOPATH=/go, so `go install` places these in /go/bin,
 # which is already on PATH for both interactive and login shells.
 USER vscode
 ENV PUB_CACHE="/home/vscode/.pub-cache"
 ENV PATH="/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${PATH}"
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 \
-    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 \
+    && go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.1
 
 # --- Dart protoc plugin + Flutter bootstrap ----------------------------------
 # `flutter --version` triggers first-run downloads; give it a warm cache so the

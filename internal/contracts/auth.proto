@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// UserRole is the coarse access level of a wdid account.
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_ADMIN = 1;
+  USER_ROLE_USER = 2;
+}
+
+// User is the public account profile. Credentials and password hashes are
+// never returned by the API.
+message User {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  UserRole role = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message RegisterAccountRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+  string registration_secret = 4;
+}
+
+message RegisterAccountResponse {
+  User user = 1;
+  string token = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  User user = 1;
+  string token = 2;
+}
+
+message GetAuthConfigRequest {}
+
+message OIDCConfig {
+  bool enabled = 1;
+  string issuer_url = 2;
+  string client_id = 3;
+}
+
+message GetAuthConfigResponse {
+  bool local_login = 1;
+  bool registration_enabled = 2;
+  OIDCConfig oidc = 3;
+}
+
+message GetCurrentUserRequest {}
+
+message GetCurrentUserResponse {
+  User user = 1;
+}
+
+// AuthService owns local registration, login, auth configuration, and the
+// current-user lookup. RegisterAccount, Login, and GetAuthConfig are public;
+// GetCurrentUser requires a bearer token.
+service AuthService {
+  rpc RegisterAccount(RegisterAccountRequest) returns (RegisterAccountResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc GetAuthConfig(GetAuthConfigRequest) returns (GetAuthConfigResponse);
+  rpc GetCurrentUser(GetCurrentUserRequest) returns (GetCurrentUserResponse);
+}

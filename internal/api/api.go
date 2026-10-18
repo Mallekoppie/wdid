@@ -32,45 +32,63 @@ func New(database *store.Store, authService *auth.Service, cfg config.Config) *A
 
 // Routes returns the goslow route table.
 //
-// Protected handlers wrap themselves with the auth middleware instead of using
-// goslow's AuthRequired flag: the service accepts either a local token or a
-// Zitadel ID token, and goslow's router applies its configured auth middlewares
-// exclusively rather than as alternatives.
+// Public routes declare AuthNone explicitly. Protected routes use the same
+// goslow auth strategy as the Connect surface; the handler wrapper only maps
+// the verified identity into wdid's request context.
 func (a *API) Routes() platform.Routes {
+	protected := a.protectedAuth()
+
 	return platform.Routes{
-		{Path: "/healthz", Method: http.MethodGet, HandlerFunc: a.health, SlaMs: 50},
+		{Path: "/healthz", Method: http.MethodGet, Auth: platform.AuthNone, HandlerFunc: a.health, SlaMs: 50},
 
-		{Path: "/api/v1/auth/register", Method: http.MethodPost, HandlerFunc: a.register, SlaMs: 500},
-		{Path: "/api/v1/auth/login", Method: http.MethodPost, HandlerFunc: a.login, SlaMs: 500},
-		{Path: "/api/v1/auth/config", Method: http.MethodGet, HandlerFunc: a.authConfig, SlaMs: 50},
-		{Path: "/api/v1/auth/me", Method: http.MethodGet, HandlerFunc: a.protected(a.me), SlaMs: 100},
+		{Path: "/api/v1/auth/register", Method: http.MethodPost, Auth: platform.AuthNone, HandlerFunc: a.register, SlaMs: 500},
+		{Path: "/api/v1/auth/login", Method: http.MethodPost, Auth: platform.AuthNone, HandlerFunc: a.login, SlaMs: 500},
+		{Path: "/api/v1/auth/config", Method: http.MethodGet, Auth: platform.AuthNone, HandlerFunc: a.authConfig, SlaMs: 50},
+		{Path: "/api/v1/auth/me", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.me), SlaMs: 100},
 
-		{Path: "/api/v1/initiatives", Method: http.MethodGet, HandlerFunc: a.protected(a.listInitiatives)},
-		{Path: "/api/v1/initiatives", Method: http.MethodPost, HandlerFunc: a.protected(a.createInitiative)},
-		{Path: "/api/v1/initiatives/{id}", Method: http.MethodGet, HandlerFunc: a.protected(a.getInitiative)},
-		{Path: "/api/v1/initiatives/{id}", Method: http.MethodPatch, HandlerFunc: a.protected(a.patchInitiative)},
-		{Path: "/api/v1/initiatives/{id}", Method: http.MethodDelete, HandlerFunc: a.protected(a.deleteInitiative)},
+		{Path: "/api/v1/initiatives", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.listInitiatives)},
+		{Path: "/api/v1/initiatives", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.createInitiative)},
+		{Path: "/api/v1/initiatives/{id}", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.getInitiative)},
+		{Path: "/api/v1/initiatives/{id}", Method: http.MethodPatch, Auth: protected, HandlerFunc: a.protected(a.patchInitiative)},
+		{Path: "/api/v1/initiatives/{id}", Method: http.MethodDelete, Auth: protected, HandlerFunc: a.protected(a.deleteInitiative)},
 
-		{Path: "/api/v1/entries", Method: http.MethodGet, HandlerFunc: a.protected(a.listEntries)},
-		{Path: "/api/v1/entries", Method: http.MethodPost, HandlerFunc: a.protected(a.createEntry)},
-		{Path: "/api/v1/entries/{id}", Method: http.MethodGet, HandlerFunc: a.protected(a.getEntry)},
-		{Path: "/api/v1/entries/{id}", Method: http.MethodPatch, HandlerFunc: a.protected(a.patchEntry)},
-		{Path: "/api/v1/entries/{id}", Method: http.MethodDelete, HandlerFunc: a.protected(a.deleteEntry)},
+		{Path: "/api/v1/entries", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.listEntries)},
+		{Path: "/api/v1/entries", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.createEntry)},
+		{Path: "/api/v1/entries/{id}", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.getEntry)},
+		{Path: "/api/v1/entries/{id}", Method: http.MethodPatch, Auth: protected, HandlerFunc: a.protected(a.patchEntry)},
+		{Path: "/api/v1/entries/{id}", Method: http.MethodDelete, Auth: protected, HandlerFunc: a.protected(a.deleteEntry)},
 
-		{Path: "/api/v1/timer", Method: http.MethodGet, HandlerFunc: a.protected(a.getTimer)},
-		{Path: "/api/v1/timer/start", Method: http.MethodPost, HandlerFunc: a.protected(a.startTimer)},
-		{Path: "/api/v1/timer/pause", Method: http.MethodPost, HandlerFunc: a.protected(a.pauseTimer)},
-		{Path: "/api/v1/timer/resume", Method: http.MethodPost, HandlerFunc: a.protected(a.resumeTimer)},
-		{Path: "/api/v1/timer/stop", Method: http.MethodPost, HandlerFunc: a.protected(a.stopTimer)},
+		{Path: "/api/v1/timer", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.getTimer)},
+		{Path: "/api/v1/timer/start", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.startTimer)},
+		{Path: "/api/v1/timer/pause", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.pauseTimer)},
+		{Path: "/api/v1/timer/resume", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.resumeTimer)},
+		{Path: "/api/v1/timer/stop", Method: http.MethodPost, Auth: protected, HandlerFunc: a.protected(a.stopTimer)},
 
-		{Path: "/api/v1/summary", Method: http.MethodGet, HandlerFunc: a.protected(a.periodSummary), SlaMs: 500},
-		{Path: "/api/v1/export", Method: http.MethodGet, HandlerFunc: a.protected(a.exportPeriod), SlaMs: 1000},
+		{Path: "/api/v1/summary", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.periodSummary), SlaMs: 500},
+		{Path: "/api/v1/export", Method: http.MethodGet, Auth: protected, HandlerFunc: a.protected(a.exportPeriod), SlaMs: 1000},
 	}
 }
 
+// protectedAuth selects the goslow strategy that matches the enabled identity
+// providers. AuthLocalOrOIDC requires both local JWT and OAuth to be enabled.
+func (a *API) protectedAuth() platform.AuthStrategy {
+	if a.cfg.Zitadel.Enabled {
+		return platform.AuthLocalOrOIDC
+	}
+	return platform.AuthLocalJWT
+}
+
+// protected maps the identity verified by goslow into wdid's context. It does
+// not re-authenticate; the route table already applied the goslow strategy.
 func (a *API) protected(handler http.HandlerFunc) http.HandlerFunc {
-	wrapped := a.auth.Middleware(handler)
-	return wrapped.ServeHTTP
+	return func(w http.ResponseWriter, r *http.Request) {
+		identity, err := a.auth.IdentityFromRequestContext(r.Context())
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "a valid bearer token is required")
+			return
+		}
+		handler(w, r.WithContext(auth.WithIdentity(r.Context(), identity)))
+	}
 }
 
 // --- responses -----------------------------------------------------------

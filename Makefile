@@ -16,6 +16,11 @@ FLUTTER   ?= flutter
 DOCKER    ?= docker
 GO_MODULE := github.com/Mallekoppie/wdid
 
+# go.mod requires Go 1.27.2. Auto lets an older local toolchain fetch the
+# matching toolchain until the dev container is rebuilt.
+GOTOOLCHAIN := auto
+export GOTOOLCHAIN
+
 BINARY  ?= wdid
 BIN_DIR ?= bin
 CMD     := ./cmd/wdid
@@ -32,10 +37,11 @@ WDID_HTTP_ADDR            ?= 127.0.0.1:8080
 WDID_DB_PATH              ?= ./data/wdid.db
 WDID_REGISTRATION_SECRET  ?= local-dev-registration-secret
 WDID_JWT_SECRET           ?= local-dev-jwt-secret-change-me-32chars
-WDID_ALLOW_LOCAL_DEV_CORS ?= true
+WDID_ALLOWED_ORIGINS      ?= http://127.0.0.1:5173,http://localhost:5173
+WDID_DEV_MODE             ?= true
 
 export WDID_HTTP_ADDR WDID_DB_PATH WDID_REGISTRATION_SECRET WDID_JWT_SECRET
-export WDID_ALLOW_LOCAL_DEV_CORS
+export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
         lint fmt tidy proto proto-check docker-build clean check
@@ -87,11 +93,15 @@ fmt: ## Format Go and Dart sources
 tidy: ## Tidy go.mod and go.sum
 	$(GO) mod tidy
 
-check: lint test ## Run lint and both test suites
+check: lint proto-check test ## Run proto-check, lint and both test suites
 
-proto: ## Generate Go and Dart stubs from internal/contracts/*.proto
+proto: ## Generate message, Connect, and Dart stubs from internal/contracts/*.proto
 	@command -v protoc >/dev/null 2>&1 || { \
 		echo "protoc not found on PATH - use the dev container or install protoc" >&2; \
+		exit 1; \
+	}
+	@command -v protoc-gen-connect-go >/dev/null 2>&1 || { \
+		echo "protoc-gen-connect-go not found on PATH - go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest" >&2; \
 		exit 1; \
 	}
 	@shopt -s nullglob; protos=(internal/contracts/*.proto); \
@@ -103,7 +113,7 @@ proto: ## Generate Go and Dart stubs from internal/contracts/*.proto
 	mkdir -p internal/gen $(WEB_DIR)/lib/src/generated; \
 	protoc -I internal/contracts \
 		--go_out=. --go_opt=module=$(GO_MODULE) \
-		--go-grpc_out=. --go-grpc_opt=module=$(GO_MODULE) \
+		--connect-go_out=. --connect-go_opt=module=$(GO_MODULE) \
 		$${protos[@]}; \
 	protoc -I internal/contracts \
 		--dart_out=grpc:$(WEB_DIR)/lib/src/generated \
@@ -114,9 +124,13 @@ proto-check: ## Regenerate in a temp dir and fail if internal/gen is stale
 		echo "protoc not found on PATH - use the dev container or install protoc" >&2; \
 		exit 1; \
 	}
+	@command -v protoc-gen-connect-go >/dev/null 2>&1 || { \
+		echo "protoc-gen-connect-go not found on PATH - go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest" >&2; \
+		exit 1; \
+	}
 	@shopt -s nullglob; protos=(internal/contracts/*.proto); \
 	if [ $${#protos[@]} -eq 0 ]; then \
-		echo "No .proto files in internal/contracts - nothing to check."; \
+		echo "WARNING: no .proto files in internal/contracts - the contract gate is not exercised."; \
 		exit 0; \
 	fi; \
 	tmp="$$(mktemp -d)"; \
@@ -124,7 +138,7 @@ proto-check: ## Regenerate in a temp dir and fail if internal/gen is stale
 	mkdir -p "$$tmp" "$$tmp/dart"; \
 	protoc -I internal/contracts \
 		--go_out="$$tmp" --go_opt=module=$(GO_MODULE) \
-		--go-grpc_out="$$tmp" --go-grpc_opt=module=$(GO_MODULE) \
+		--connect-go_out="$$tmp" --connect-go_opt=module=$(GO_MODULE) \
 		$${protos[@]} || exit 1; \
 	protoc -I internal/contracts \
 		--dart_out=grpc:"$$tmp/dart" \
@@ -136,6 +150,12 @@ proto-check: ## Regenerate in a temp dir and fail if internal/gen is stale
 	if ! diff -ru internal/gen "$$tmp/internal/gen"; then \
 		echo "Generated Go stubs are stale or edited - run 'make proto' and commit internal/gen" >&2; \
 		exit 1; \
+	fi; \
+	if [ -d $(WEB_DIR)/lib/src/generated ]; then \
+		if ! diff -ru $(WEB_DIR)/lib/src/generated "$$tmp/dart"; then \
+			echo "Generated Dart stubs are stale or edited - run 'make proto'" >&2; \
+			exit 1; \
+		fi; \
 	fi; \
 	find "$$tmp/dart" -name '*.dart' -print -quit | grep -q . || { \
 		echo "Dart stubs were not generated - check protoc-gen-dart" >&2; \

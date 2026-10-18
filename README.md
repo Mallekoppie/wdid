@@ -5,20 +5,22 @@ initiative-based time attribution, support tracking, and review-ready period
 exports.
 
 This service is the source of truth for persistence, validation, identity,
-exports and AI-ready summaries. The web client consumes the gRPC contract over
+exports and AI-ready summaries. The web client consumes the Connect contract over
 gRPC-Web and must not reimplement these rules.
 
-> **Transport status:** gRPC is the target service transport and
+> **Transport status:** Connect is the target service transport. Connect serves
+> Connect, native gRPC, and gRPC-Web from one handler, and
 > `internal/contracts/*.proto` is the source of truth. The REST surface
 > documented below is legacy and is retired as RPC replacements land. Do not add
 > new REST endpoints for capabilities that have RPCs.
 
 ## Stack
 
-- Go 1.26
-- `github.com/Mallekoppie/goslow` platform: gRPC/HTTP serving, logging, BoltDB
-  helpers, local JWT issuance
-- `github.com/coreos/go-oidc` for Zitadel ID token verification
+- Go 1.27.2
+- `github.com/Mallekoppie/goslow` platform: Connect/HTTP serving, goslow auth
+  interceptors, logging, BoltDB helpers, local JWT issuance
+- `github.com/coreos/go-oidc` for Zitadel ID token verification in the wdid
+  identity resolver
 - BoltDB persistence with per-user bucket isolation
 
 ## Run
@@ -59,7 +61,8 @@ the Makefile are for local development only.
 | `WDID_JWT_SIGNING_METHOD` | `HS256` | `HS256`, `HS384` or `HS512` |
 | `WDID_JWT_EXPIRATION_MINUTES` | `720` | Local token lifetime |
 | `WDID_MAX_BLOCK_MINUTES` | `240` | Timer block limit before keep/trim/discard |
-| `WDID_ALLOW_LOCAL_DEV_CORS` | `true` | goslow CORS middleware |
+| `WDID_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Exact CORS origins for the Flutter dev server |
+| `WDID_DEV_MODE` | `false` | Enables Connect reflection (development only) |
 | `WDID_ZITADEL_ENABLED` | `false` | Accept Zitadel ID tokens |
 | `WDID_ZITADEL_ISSUER_URL` | empty | Issuer base URL, e.g. `http://zitadel.local:8080` |
 | `WDID_ZITADEL_CLIENT_ID` | empty | OIDC client identifier |
@@ -70,23 +73,40 @@ the Makefile are for local development only.
 
 Initial local deployment baseline:
 
-1. A local user registers through the auth RPC (currently the legacy
-   `POST /api/v1/auth/register` route) and the shared registration secret.
+1. A local user registers through `wdid.v1.AuthService/RegisterAccount` (or the
+   legacy `POST /api/v1/auth/register` route during migration) with the shared
+   registration secret.
 2. The **first** account becomes `admin`; later accounts are `user`.
 3. Login returns a local HS256 JWT. Protected RPCs and routes accept
    `Authorization: Bearer <token>`.
-4. When Zitadel is enabled, the same RPCs and routes also accept a Zitadel ID
+4. When Zitadel is enabled, goslow's Connect auth interceptor uses
+   `AuthLocalOrOIDC`, so the same RPCs and routes also accept a Zitadel ID
    token. The first OIDC login provisions a local account by email, and a
    configured role claim maps to `admin`.
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
 the user profile, so hashes are never serialized into API responses.
 
+## Connect API
+
+`internal/contracts/auth.proto` is the first live contract. `AuthService` serves
+Connect, native gRPC, and gRPC-Web on the same origin as the HTTP routes and the
+embedded app.
+
+| RPC | Auth | Purpose |
+| --- | --- | --- |
+| `wdid.v1.AuthService/RegisterAccount` | public | Create an account with the registration secret |
+| `wdid.v1.AuthService/Login` | public | Exchange email + password for a local JWT |
+| `wdid.v1.AuthService/GetAuthConfig` | public | Report local/OIDC login capabilities |
+| `wdid.v1.AuthService/GetCurrentUser` | bearer token | Resolve the current account |
+
 ## API (legacy REST)
 
 The table below documents the current legacy surface. The target contract is
-protobuf plus gRPC-Web in `internal/contracts/`. All protected routes require
-`Authorization: Bearer <token>`.
+protobuf plus Connect/gRPC/gRPC-Web in `internal/contracts/`. All protected
+routes require `Authorization: Bearer <token>`. Legacy routes are retired as
+their RPC replacements land; do not add new REST endpoints for capabilities
+that have RPCs.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -156,10 +176,11 @@ not found by construction.
 ## Verification
 
 ```bash
-make build   # compile the service
-make test    # go test ./... + flutter test
-make lint    # go vet ./... + flutter analyze
-make check   # lint and both test suites
+make build       # compile the service
+make test        # go test ./... + flutter test
+make lint        # go vet ./... + flutter analyze
+make proto-check # fail if generated Go/Dart stubs are stale
+make check       # lint, proto-check, and both test suites
 ```
 
 `make buildweb` builds the Flutter app into `cmd/wdid/dist`; `make serveweb`
@@ -168,14 +189,20 @@ runs it with hot reload on `127.0.0.1:5173`.
 ## goslow integration notes
 
 - Persistence goes through `platform.Database.BoltDb` helpers.
-- The target transport is gRPC with gRPC-Web. The legacy HTTP surface uses
-  `platform.StartHttpServer` and `platform.Routes` and is retired as RPCs land.
+- `platform.StartApplicationServerWithContext` serves Connect, native gRPC,
+  gRPC-Web, the legacy HTTP routes, and the embedded Flutter app on one origin.
+- `Grpc.Server.Auth` is explicit: `AuthLocalJWT` for local-only deployments and
+  `AuthLocalOrOIDC` when Zitadel is enabled.
+- Public RPCs live in `Auth.Server.UnauthenticatedPaths`; admin RPCs will use
+  `Grpc.Server.ProcedureRoles` as they land.
+- `HTTP.Server.AllowedOrigins` and `Grpc.Server.AllowedOrigins` carry exact
+  origins only; there is no wildcard or local-development CORS switch.
 - The database file is pre-created with `0600` permissions because goslow opens
   BoltDB with `os.ModeExclusive` as the file mode, which would create new files
   as `0000`.
-- Protected handlers wrap themselves with `auth.Service.Middleware` rather than
-  using goslow's `AuthRequired`: goslow applies configured auth middlewares
-  exclusively, so enabling both local JWT and OAuth would reject local tokens.
+- `auth.Service.IdentityFromRequestContext` resolves the wdid account after
+  goslow has already validated the bearer token; it does not re-authenticate
+  local JWTs.
 - Object reads go through `ReadAllObjects` because goslow's `ReadObject` panics
   on a missing bucket.
 

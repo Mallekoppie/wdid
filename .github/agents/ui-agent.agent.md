@@ -23,8 +23,8 @@ and a registration secret for account creation.
 
 ## Transport and contract
 
-The service exposes gRPC. The browser consumes it through gRPC-Web. There is no
-REST/JSON client path.
+The service exposes Connect, which serves Connect, native gRPC, and gRPC-Web.
+The browser consumes it through gRPC-Web. There is no REST/JSON client path.
 
 - Import generated Dart clients from
   `package:wdid_web/src/generated/...`. Never hand-write request or response
@@ -55,6 +55,10 @@ REST/JSON client path.
 - Treat the server as authoritative for timer state, totals, validation, and
   exports. Format values in the UI, but never recompute authoritative totals or
   guess server state.
+- `WdidRepository` must expose the timer RPCs (`StartTimer`, `PauseTimer`,
+  `ResumeTimer`, `StopTimer`, `GetActiveTimer`) before the timer is wired to the
+  service. A local ticker may render elapsed time for display, but it must not
+  own the timer state; start, pause, resume, stop, and refresh go through RPCs.
 - `WdidRepository` remains the screen-facing seam. Its production adapter wraps
   generated gRPC clients. The demo adapter exists only for tests and previews and
   must not become the source of business rules.
@@ -143,6 +147,10 @@ introducing redundant local behavior. Document which RPCs and generated types th
 screen uses, the call options applied, and any contract gap. If a contract is
 missing or unclear, ask the service agent for a contract clarification rather
 than guessing or patching the wire format locally.
+
+The service agent's canonical first slice is `AuthService` plus health. Do not
+build a UI adapter for a later capability ahead of the published proto; wait for
+that contract or ask the service agent to change the slice explicitly.
 
 ## Success criteria
 

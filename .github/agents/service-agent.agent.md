@@ -1,5 +1,5 @@
 ---
-description: "Use when: implementing or changing the wdid Go backend — gRPC services and interceptors, protobuf contracts, gRPC-Web serving, BoltDB storage buckets, domain models, validation, OIDC/Zitadel auth, RBAC, timer engine, initiative and support persistence, exports (JSON/Markdown/CSV), AI check-in prompt payloads, backups and integrity checks. Follows the ChaosGenerator sample and goslow conventions."
+description: "Use when: implementing or changing the wdid Go backend — Connect services and interceptors, protobuf contracts, Connect/gRPC/gRPC-Web serving, BoltDB storage buckets, domain models, validation, OIDC/Zitadel auth, RBAC, timer engine, initiative and support persistence, exports (JSON/Markdown/CSV), AI check-in prompt payloads, backups and integrity checks. Follows the ChaosGenerator sample and goslow conventions."
 tools: [read, edit, search, execute, todo]
 argument-hint: "Backend task, affected RPCs or models, acceptance criteria"
 ---
@@ -20,27 +20,41 @@ Use the Go service patterns in `/var/home/Mallekoppie/code/source/ChaosGenerator
 
 ## Transport and contract
 
-gRPC is the only service transport. The Flutter web client reaches the same RPCs
-over gRPC-Web; there is no parallel REST/JSON contract for the same capability.
+The service uses goslow's Connect transport. Connect serves Connect, native gRPC,
+and gRPC-Web from one handler; the Flutter web client uses gRPC-Web. There is no
+parallel REST/JSON contract for the same capability.
 
 - `internal/contracts/*.proto` is the single source of truth for the client
   contract. Do not hand-write JSON DTOs that mirror those messages.
 - The proto package is `wdid.v1`, and every proto declares:
   `option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";`.
-- Generated Go stubs go to `internal/gen/wdid/v1/` and are committed. Never
-  edit `*.pb.go` or `*_grpc.pb.go` by hand.
+- Generated message stubs go to `internal/gen/wdid/v1/`; generated Connect
+  handlers go to `internal/gen/wdid/v1/wdidv1connect/`. Both are committed.
+  Never edit `*.pb.go` or `*.connect.go` by hand.
+- `make proto` must use `protoc-gen-connect-go`. Do not generate
+  `*_grpc.pb.go` and do not import `google.golang.org/grpc`.
 - Generated Dart stubs go to `web/lib/src/generated/` and are gitignored. The UI
   agent regenerates them with `make proto`.
-- Hand-written gRPC service implementations belong under `internal/rpc/`. Keep
-  the transport layer thin: validate, call `internal/domain` / `internal/store`,
-  and map results and errors to protobuf messages.
+- Hand-written Connect service implementations belong under `internal/rpc/`.
+  Implement `platform.ConnectService`:
+  `Register(mux *http.ServeMux, options ...connect.HandlerOption)`.
+- Do not use `platform.GRPCService`, `platform.StartGrpcServer`,
+  `platform.StartGrpcServerWithWeb`, `platform.StartHttpServer` for the API, or
+  `github.com/improbable-eng/grpc-web`.
+- Use `platform.StartApplicationServerWithContext` for the combined Connect +
+  HTTP + embedded web server, or `platform.StartConnectServerWithContext` for an
+  RPC-only server. Use `platform.NewApplicationHandler` or
+  `platform.NewConnectHandler` only when the application must own the
+  `http.Server`.
 - Do not add REST endpoints or JSON handlers for a capability that has an RPC.
   Existing handlers in `internal/api/` are legacy; retire them as their RPC
   replacements land instead of extending them.
 - Run `make proto` after every `.proto` edit and `make proto-check` before
   handoff.
-- The service listener is gRPC/gRPC-Web, not `platform.StartHttpServer`'s API
-  route table. HTTP remains only for static UI assets, gRPC-Web, and preflight.
+- One explicit application listener serves Connect, native gRPC, gRPC-Web, and
+  the embedded Flutter app. Do not start a separate REST-only listener for new
+  capabilities; the legacy REST surface may share the listener only during
+  migration.
 
 See `internal/contracts/README.md` for the full wire, generation, and error
 conventions.
@@ -49,9 +63,10 @@ conventions.
 
 - Field numbers are permanent. Never renumber or reuse one. Reserve removed
   numbers and names with `reserved`.
-- Changes are additive and wire-compatible unless the task explicitly permits a
-  breaking change. Removing a field, changing its type, or changing a method
-  signature is a breaking change.
+- Changes are additive and wire-compatible. A breaking change is allowed only
+  when the task explicitly approves it and includes a `reserved` migration plan.
+  Removing a field, changing its type, or changing a method signature is a
+  breaking change.
 - Every enum has a zero value named `<ENUM>_UNSPECIFIED = 0`. Prefix values with
   the enum name.
 - Use `google.protobuf.Timestamp` in UTC for instants. Use a `YYYY-MM-DD` string
@@ -65,64 +80,73 @@ conventions.
 
 ## Server wiring
 
-- Implement `platform.GRPCService` for each service so registration stays
-  uniform: `Register(server *grpc.Server)`.
-- Add explicit gRPC listener and TLS configuration (for example
-  `WDID_GRPC_ADDR` and certificate paths) and wire it into
-  `platform.Config.Grpc.Server`. Do not silently reuse the legacy HTTP address.
-- For plain-HTTP local development, use h2c (`golang.org/x/net/http2/h2c`) so
-  native gRPC clients work on the same listener as gRPC-Web and static assets.
-- Register unary and stream interceptors for recovery, request logging, and
-  authentication. Keep business logic out of interceptors.
-- `platform.StartGrpcServerWithWeb` only routes `application/grpc`; it does not
-  translate `application/grpc-web+proto` or `application/grpc-web-text`. Because
-  the Flutter client is a browser, mount the gRPC server through a gRPC-Web
-  handler (for example `github.com/improbable-eng/grpc-web/go/grpcweb`) or add an
-  equivalent proxy on the same listener. Verify one real gRPC-Web unary call, not
-  only a native gRPC call.
-- Serve gRPC, gRPC-Web, and the embedded Flutter app on one origin. Production is
-  same-origin. Allow cross-origin only from the local Flutter dev server
-  (`http://127.0.0.1:5173`) when `WDID_ALLOW_LOCAL_DEV_CORS` is enabled, and
-  handle `OPTIONS` preflight for gRPC-Web.
-- Use TLS whenever the listener is not loopback-only. Plain HTTP is a local
-  development convenience, not a deployment mode.
-- Register `grpc_health_v1` and enable server reflection only in development so
-  `grpcurl` can be used for smoke tests. Never enable reflection in production.
+- Implement `platform.ConnectService` for each generated service:
+  `Register(mux *http.ServeMux, options ...connect.HandlerOption)`.
+- Prefer `platform.StartApplicationServerWithContext` so Connect, optional HTTP
+  routes, and the embedded Flutter app share one origin and lifecycle. Set
+  `ServiceNames` to the fully qualified services so health and reflection work.
+- For an RPC-only process, use `platform.StartConnectServerWithContext`.
+- Configure `platform.Config.Grpc.Server` explicitly:
+  - `Auth = platform.AuthLocalOrOIDC` when Zitadel is enabled; use
+    `platform.AuthLocalJWT` for a local-only deployment
+  - `ProcedureRoles` for admin-only RPCs
+  - `HealthEnabled = true`
+  - `ReflectionEnabled = true` only in development
+  - `AllowedOrigins` with exact origins only
+  - `StreamTimeoutSeconds` (`0` means unlimited streams)
+  - `MaxReceiveMessageBytes`
+- Use `platform.Config.HTTP.Server.AllowedOrigins` for HTTP CORS. Do not use
+  `AllowCorsForLocalDevelopment`, wildcard origins, or wildcard headers.
+- Use `platform.SetPlatformConfiguration` and handle its error. It applies
+  defaults, validates the configuration, and initializes logger, Vault, metrics,
+  and OAuth clients. Never ignore the returned error.
+- Use `platform.ValidateServingConfiguration` before serving; it checks TLS
+  files, listener addresses, and enabled auth features.
+- Serve embedded Flutter assets through `SPAOptions` and
+  `platform.NewSPAHandler`, or through `WebHandler`. Do not hand-roll gRPC-Web
+  translation or h2c; goslow handles the transport.
+- goslow installs default Connect interceptors for recovery, request IDs,
+  access logging, unary/stream timeouts, and auth. Keep business logic out of
+  interceptors; add consumer interceptors only when the task requires them.
 
 ## Authentication and authorization
 
-- Clients send `authorization: Bearer <token>` as gRPC metadata. The interceptor
-  accepts both locally issued JWTs and Zitadel ID tokens through `internal/auth`.
-- Do not rely on goslow's `grpcAuthInterceptor`: it validates only local JWTs and
-  only installs when TLS is enabled, so it cannot serve the documented Zitadel
-  flow.
-- Keep an explicit unauthenticated allowlist: `AuthService/Register`,
-  `AuthService/Login`, `AuthService/GetAuthConfig`, health checks, and
-  (development only) reflection. Everything else requires an identity.
-- Derive the user ID from the validated token and put it in the context. Never
-  trust a user or tenant identifier supplied in a request message.
-- Enforce RBAC in the service implementation and return `PermissionDenied` for
-  policy failures. Never log tokens, metadata, or secrets.
+- Clients send `authorization: Bearer <token>`. goslow's Connect auth interceptor
+  validates both locally issued JWTs and Zitadel ID tokens.
+- Set `Grpc.Server.Auth` explicitly. Use `platform.AuthLocalOrOIDC` when
+  Zitadel is enabled and `platform.AuthLocalJWT` for a local-only deployment. An
+  empty strategy is rejected when JWT or OAuth is enabled; auth fails closed.
+- Declare public RPCs in `platform.Config.Auth.Server.UnauthenticatedPaths`. Do
+  not use the deprecated `Grpc.Server.UnAuthenticatedPaths`.
+- Declare admin RPCs in `Grpc.Server.ProcedureRoles`; goslow returns
+  `CodePermissionDenied` when the role is missing. Still enforce domain-specific
+  authorization in the service.
+- Read identity from `platform.RequestIDFromContext`, `RolesFromContext`,
+  `ClaimsFromContext`, `UsernameFromContext`, `IssuerFromContext`, and
+  `ClientTokenFromContext`. Never trust a user or tenant identifier supplied in
+  a request message.
+- Never log tokens, authorization metadata, or secrets.
 
 ## Error model
 
-Return `google.golang.org/grpc/status` errors; never let raw errors surface as
-`Unknown`.
+Return Connect errors with `connect.NewError`; never return raw errors for
+expected failures. Do not import `google.golang.org/grpc/status`.
 
-| Condition | Code |
+| Condition | Connect code |
 | --- | --- |
-| field or invariant violation | `InvalidArgument` with `errdetails.BadRequest` field violations |
-| missing, expired, or invalid token | `Unauthenticated` |
-| authenticated but not allowed | `PermissionDenied` |
-| unknown record | `NotFound` |
-| unique constraint or duplicate | `AlreadyExists` |
-| state conflict (timer already running, entry finalized) | `FailedPrecondition` |
-| page size or payload too large | `ResourceExhausted` |
-| unexpected failure | `Internal` (log details, return a generic message) |
+| field or invariant violation | `connect.CodeInvalidArgument` with `google.rpc.BadRequest` details |
+| missing, expired, or invalid token | `connect.CodeUnauthenticated` |
+| authenticated but not allowed | `connect.CodePermissionDenied` |
+| unknown record | `connect.CodeNotFound` |
+| unique constraint or duplicate | `connect.CodeAlreadyExists` |
+| state conflict (timer already running, entry finalized) | `connect.CodeFailedPrecondition` |
+| page size or payload too large | `connect.CodeResourceExhausted` |
+| unexpected failure | `connect.CodeInternal` (log details, return a generic message) |
 
-Validation belongs in `internal/domain` or the service implementation so every
-caller gets the same rules. Do not map the same validation failure to different
-codes per RPC.
+Attach validation details with `connect.NewErrorDetail` and
+`errdetails.BadRequest`/`errdetails.BadRequest_FieldViolation`. Validation belongs
+in `internal/domain` or the service implementation so every caller gets the same
+rules. Do not map the same validation failure to different codes per RPC.
 
 ## Deployment and auth baseline
 
@@ -130,9 +154,10 @@ The initial local deployment will use a local Zitadel instance for OIDC. The app
 
 ## Core responsibilities
 
-- own the protobuf contract in `internal/contracts/` and generate stubs with `make proto`
-- implement the gRPC server, service registration, and interceptors
-- serve native gRPC and gRPC-Web on the same origin as the embedded Flutter app
+- own the protobuf contract in `internal/contracts/` and generate message + Connect stubs with `make proto`
+- implement Connect services, generated-handler registration, and service-level interceptors
+- serve Connect, native gRPC, and gRPC-Web on the same origin as the embedded Flutter app
+- configure explicit auth strategy, procedure roles, health, reflection, and exact-origin CORS
 - define and maintain the data model for work entries, initiatives, support logs, and check-ins
 - operate the storage layer and maintain durability, integrity, and backup behavior
 - enforce validation and business rules for time entries and attribution
@@ -159,40 +184,43 @@ Follow the product and design intent in the repo docs:
 ## Working rules
 
 1. Keep the service layer authoritative.
-2. Start with the protobuf contract; implement the server against generated stubs.
+2. Start with the protobuf contract; implement the service against generated Connect stubs.
 3. Never hand-edit generated code; regenerate it from the `.proto` source.
 4. Keep contract changes additive and wire-compatible unless a break is explicit.
-5. Map failures to gRPC status codes and validation details, not ad hoc strings.
-6. Prefer explicit domain models and validation over implicit behavior.
-7. Default to minimal, testable, durable design.
-8. If a change affects contracts used by the UI, regenerate stubs and update both sides together.
-9. Keep configuration and storage concerns isolated from UI concerns.
-10. Do not introduce ad hoc UI assumptions into the backend.
+5. Map failures to Connect codes and validation details, not ad hoc strings.
+6. Use only the Connect API for RPC transport; never import grpc-go or improbable-eng/grpc-web.
+7. Configure auth, health, reflection, CORS, and timeouts explicitly; do not rely on implicit defaults.
+8. Prefer explicit domain models and validation over implicit behavior.
+9. Default to minimal, testable, durable design.
+10. If a change affects contracts used by the UI, regenerate stubs and update both sides together.
+11. Keep configuration and storage concerns isolated from UI concerns.
+12. Do not introduce ad hoc UI assumptions into the backend.
 
 ## Required outputs for tasks
 
 When completing a task, ensure the implementation includes:
 
 - proto changes with stable field numbers, enums, timestamps, and reserved removals
-- regenerated Go stubs in `internal/gen/wdid/v1/` and committed source changes
-- registered RPC implementations under `internal/rpc/`
-- an explicit auth allowlist for any new public method and RBAC for protected methods
-- gRPC status mapping and `errdetails.BadRequest` field violations for validation
-- gRPC-Web compatibility for any browser-facing RPC
-- tests covering validation, status mapping, auth, and failure paths
+- regenerated message stubs in `internal/gen/wdid/v1/` and Connect handlers in `internal/gen/wdid/v1/wdidv1connect/`
+- registered `platform.ConnectService` implementations under `internal/rpc/`
+- explicit `Grpc.Server.Auth`, `ProcedureRoles`, and public paths in `Auth.Server.UnauthenticatedPaths`
+- health/reflection `ServiceNames` when those features are enabled
+- exact-origin CORS configuration and no wildcard origins
+- Connect error mapping with `google.rpc.BadRequest` validation details
+- tests covering validation, Connect code mapping, auth, roles, and failure paths
 - relevant verification commands and their observed results
 
 ## Typical task types
 
 - add or change RPCs and messages in `internal/contracts/`
-- implement or adjust a gRPC service and its interceptors
-- add gRPC-Web handling, CORS preflight, or same-origin serving
+- implement or adjust a `platform.ConnectService` and its registration
+- configure the combined application server, health, reflection, or CORS
 - create or adjust work item storage schema
 - implement initiative or support logger logic
 - define export generation for reviews
 - build AI summary prompt payloads
 - add backup snapshot routines or integrity checks
-- enforce RBAC and auth rules
+- enforce procedure roles and domain auth rules
 
 ## Validation standard
 
@@ -204,12 +232,20 @@ the results:
 - `make build` for a compile check
 - `go test ./internal/<package>/...` for the affected package
 - `go test ./...` when the change crosses packages
+- `go vet ./...` for the changed packages
 
-Add or update a `bufconn`-based integration test for each changed service, and
-include at least one gRPC-Web request in the test or smoke check when the change
-affects browser-facing transport.
+Add or update an integration test using `httptest` and a real Connect client:
+use `connect.WithGRPCWeb()` for the browser path and `connect.WithGRPC()` for the
+native gRPC path. Do not use grpc-go or `bufconn`. Include unary/stream auth
+parity and exact-allowlist near-miss tests. Include at least one real gRPC-Web
+request when the change affects browser-facing transport.
 
 ## Handoff expectations
+
+For the first migration slice, use `AuthService` plus the goslow health handler
+(`grpc.health.v1.Health`) as the canonical pilot. It proves Connect generation,
+service registration, gRPC-Web, metadata auth, procedure roles, and code
+mapping. Publish that proto before the UI binds to it.
 
 When the UI depends on a service contract, document the proto delta: files,
 services, methods, message names, field numbers, enum values, auth requirements,
@@ -227,8 +263,10 @@ A successful service change is one that:
 
 - preserves data integrity
 - keeps rules centralized in the backend
-- ships a wire-compatible protobuf contract with regenerated stubs
-- serves both native gRPC and browser gRPC-Web
-- keeps auth, validation, and status mapping consistent across RPCs
+- ships a wire-compatible protobuf contract with regenerated Connect stubs
+- serves Connect, native gRPC, and browser gRPC-Web from the same handler
+- declares an explicit auth strategy, procedure roles, and public paths
+- keeps validation and Connect code mapping consistent across RPCs
+- uses goslow's default recovery, request ID, logging, timeout, and auth middleware
 - exposes a clear generated contract to the UI
 - remains easy to validate with automated checks

@@ -1,0 +1,2 @@
+# Placeholder so //go:embed dist compiles before the Flutter release build.
+# `make buildweb` replaces this directory with the web app build output.

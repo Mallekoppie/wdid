@@ -73,9 +73,10 @@ flutter build web
 
 ## Service contract status
 
-The Go service landed after this UI slice started. Its transport is moving to
-gRPC with gRPC-Web for the browser; the legacy REST surface is narrower than the
-product sample documents and is retired as RPCs land.
+The Go service landed after this UI slice started. Its transport is Connect,
+which serves Connect, native gRPC, and gRPC-Web for the browser; the legacy REST
+surface is narrower than the product sample documents and is retired as RPCs
+land.
 
 - **Implemented by the service:** initiatives, work entries, timer, period
   summary, exports, and auth.

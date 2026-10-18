@@ -52,11 +52,11 @@
         "PATH": "/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     },
 
-    // The server serves the Flutter web app and the gRPC-Web endpoints on the
-    // same port. Keep this in step with the Makefile / platform config default.
+    // The server serves native gRPC, gRPC-Web, and the Flutter web app on one
+    // application origin. Keep this in step with the Makefile / config default.
     "forwardPorts": [8080],
     "portsAttributes": {
-        "8080": { "label": "wdid web UI and gRPC-Web" }
+        "8080": { "label": "wdid app origin (gRPC, gRPC-Web, web UI)" }
     },
 
     "customizations": {

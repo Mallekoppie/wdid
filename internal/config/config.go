@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -16,8 +17,22 @@ const (
 	defaultJWTSigningMethod    = "HS256"
 	defaultJWTExpirationMinute = 720
 	defaultMaxBlockMinutes     = 240
+	defaultAllowedOrigins      = "http://127.0.0.1:5173,http://localhost:5173"
 	minRegistrationSecretLen   = 16
 	minJWTSecretLen            = 32
+
+	// AuthServiceName is the fully qualified Connect service registered by the
+	// service process. It is also used for health and reflection reporting.
+	AuthServiceName = "wdid.v1.AuthService"
+
+	// AuthRegisterAccountProcedure is public: a new account needs no token.
+	AuthRegisterAccountProcedure = "/wdid.v1.AuthService/RegisterAccount"
+	// AuthLoginProcedure is public: login exchanges credentials for a token.
+	AuthLoginProcedure = "/wdid.v1.AuthService/Login"
+	// AuthConfigProcedure is public: the UI needs to know which login modes exist.
+	AuthConfigProcedure = "/wdid.v1.AuthService/GetAuthConfig"
+	// AuthCurrentUserProcedure is protected and derives identity from the token.
+	AuthCurrentUserProcedure = "/wdid.v1.AuthService/GetCurrentUser"
 )
 
 // Zitadel holds the OIDC settings for the initial local Zitadel deployment.
@@ -35,7 +50,8 @@ type Zitadel struct {
 type Config struct {
 	HTTPAddr             string
 	DBPath               string
-	AllowLocalDevCORS    bool
+	AllowedOrigins       []string
+	DevMode              bool
 	RegistrationSecret   string
 	JWTSecret            string
 	JWTSigningMethod     string
@@ -49,7 +65,8 @@ func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:             envString("WDID_HTTP_ADDR", defaultHTTPAddr),
 		DBPath:               envString("WDID_DB_PATH", defaultDBPath),
-		AllowLocalDevCORS:    envBool("WDID_ALLOW_LOCAL_DEV_CORS", true),
+		AllowedOrigins:       splitList(envString("WDID_ALLOWED_ORIGINS", defaultAllowedOrigins)),
+		DevMode:              envBool("WDID_DEV_MODE", false),
 		RegistrationSecret:   os.Getenv("WDID_REGISTRATION_SECRET"),
 		JWTSecret:            os.Getenv("WDID_JWT_SECRET"),
 		JWTSigningMethod:     envString("WDID_JWT_SIGNING_METHOD", defaultJWTSigningMethod),
@@ -80,6 +97,11 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.DBPath) == "" {
 		problems = append(problems, "WDID_DB_PATH must not be empty")
+	}
+	for _, origin := range c.AllowedOrigins {
+		if err := validateOrigin(origin); err != nil {
+			problems = append(problems, fmt.Sprintf("WDID_ALLOWED_ORIGINS entry %q is invalid: %v", origin, err))
+		}
 	}
 	if len(c.RegistrationSecret) < minRegistrationSecretLen {
 		problems = append(problems,
@@ -122,11 +144,10 @@ func (c Config) Validate() error {
 // PlatformConfig translates the service configuration into goslow's platform
 // configuration.
 //
-// Local JWT issuance stays enabled so the initial local-user login works.
-// Zitadel tokens are verified by internal/auth instead of goslow's OAuth
-// middleware: goslow applies both middlewares to any AuthRequired route when
-// both are enabled, which would reject local-issued tokens. Keeping one
-// verifier that understands both token sources avoids that conflict.
+// Local JWT issuance is always enabled so the initial local-user login works.
+// Zitadel adds goslow's OAuth verifier, which lets Connect and HTTP routes use
+// AuthLocalOrOIDC. A local-only deployment uses AuthLocalJWT so goslow does not
+// require an OAuth provider that is not configured.
 func (c Config) PlatformConfig() platform.Config {
 	var pc platform.Config
 
@@ -139,7 +160,27 @@ func (c Config) PlatformConfig() platform.Config {
 	pc.Component.ComponentName = "wdid"
 
 	pc.HTTP.Server.ListeningAddress = c.HTTPAddr
-	pc.HTTP.Server.AllowCorsForLocalDevelopment = c.AllowLocalDevCORS
+	pc.HTTP.Server.AllowedOrigins = append([]string(nil), c.AllowedOrigins...)
+
+	pc.Grpc.Server.ListeningAddress = c.HTTPAddr
+	pc.Grpc.Server.AllowedOrigins = append([]string(nil), c.AllowedOrigins...)
+	pc.Grpc.Server.Auth = platform.AuthLocalJWT
+	pc.Grpc.Server.HealthEnabled = true
+	pc.Grpc.Server.ReflectionEnabled = c.DevMode
+	pc.Grpc.Server.StreamTimeoutSeconds = 0
+	pc.Grpc.Server.MaxReceiveMessageBytes = 4 << 20
+
+	pc.Auth.Server.UnauthenticatedPaths = []string{
+		"GET /healthz",
+		"/grpc.health.v1.Health/Check",
+		"/grpc.health.v1.Health/Watch",
+		"POST /api/v1/auth/register",
+		"POST /api/v1/auth/login",
+		"GET /api/v1/auth/config",
+		AuthRegisterAccountProcedure,
+		AuthLoginProcedure,
+		AuthConfigProcedure,
+	}
 
 	pc.Database.BoltDB.Enabled = true
 	pc.Database.BoltDB.FileName = c.DBPath
@@ -149,7 +190,42 @@ func (c Config) PlatformConfig() platform.Config {
 	pc.Auth.Server.LocalJwt.JwtSigningMethod = c.JWTSigningMethod
 	pc.Auth.Server.LocalJwt.JwtExpiration = c.JWTExpirationMinutes
 
+	if c.Zitadel.Enabled {
+		pc.Grpc.Server.Auth = platform.AuthLocalOrOIDC
+		pc.Auth.Server.OAuth.Enabled = true
+		pc.Auth.Server.OAuth.IdpWellKnownURL = c.Zitadel.IssuerURL + "/.well-known/openid-configuration"
+		pc.Auth.Server.OAuth.ClientID = c.Zitadel.ClientID
+		pc.Auth.Server.OAuth.AllowedAlgorithms = append([]string(nil), c.Zitadel.AllowedAlgorithms...)
+		pc.Auth.Server.OAuth.RolesClaim = "roles"
+	}
+
 	return pc
+}
+
+// validateOrigin accepts an exact http(s) origin. Wildcards, paths, queries and
+// fragments are rejected so CORS cannot be opened accidentally.
+func validateOrigin(origin string) error {
+	trimmed := strings.TrimSpace(origin)
+	if trimmed == "" {
+		return errors.New("must not be empty")
+	}
+	if strings.Contains(trimmed, "*") {
+		return errors.New("wildcards are not allowed")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("scheme must be http or https")
+	}
+	if parsed.Host == "" {
+		return errors.New("host is required")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
+		return errors.New("must be an origin without credentials, trailing slash, path, query or fragment")
+	}
+	return nil
 }
 
 func envString(key string, fallback string) string {

@@ -7,9 +7,9 @@ A reproducible toolchain for developing **wdid** in VS Code (or the
 
 | Tool | Version | Why |
 |------|---------|-----|
-| Go | 1.26 (base image) | builds `cmd/wdid` |
+| Go | 1.27 (base image) | builds `cmd/wdid` and goslow |
 | protoc | 27.3 | `make proto` |
-| protoc-gen-go / protoc-gen-go-grpc | 1.36.11 / 1.2.0 | Go stubs |
+| protoc-gen-go / protoc-gen-connect-go | 1.36.12 / 1.21.1 | Go message + Connect stubs |
 | Dart + Flutter | stable channel (`/opt/flutter`) | `make buildweb`, Dart stubs |
 | protoc-gen-dart | 25.1.0 | Dart stubs |
 | podman + `docker` shim | (client only) | drive the **host** engine |
@@ -57,9 +57,10 @@ make fmt                       # format the Go and Dart sources
 make docker-build              # build the image via the host engine
 ```
 
-Forwarded port: 8080 (web UI and gRPC-Web share it). If you change the listen
-address in the platform config or the Makefile, update `forwardPorts` in
-`devcontainer.json` too.
+Forwarded port: 8080 is the single application origin for native gRPC,
+gRPC-Web, and the embedded web UI. If you change the listen address in the
+platform config or the Makefile, update `forwardPorts` in `devcontainer.json`
+too.
 
 ## Regenerating the image
 

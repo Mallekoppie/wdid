@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/Mallekoppie/goslow/platform"
 
 	"github.com/Mallekoppie/wdid/internal/api"
 	"github.com/Mallekoppie/wdid/internal/auth"
@@ -51,12 +51,15 @@ func newTestServer(t *testing.T) *httptest.Server {
 	authService := auth.NewService(database, cfg)
 	handler := api.New(database, authService, cfg)
 
-	router := mux.NewRouter()
-	for _, route := range handler.Routes() {
-		router.Path(route.Path).Methods(route.Method).Handler(route.HandlerFunc)
+	application, err := platform.NewApplicationHandler(platform.ApplicationServerOptions{
+		Routes:       handler.Routes(),
+		ServiceNames: []string{config.AuthServiceName},
+	})
+	if err != nil {
+		t.Fatalf("build application handler: %v", err)
 	}
 
-	server := httptest.NewServer(router)
+	server := httptest.NewServer(application)
 	t.Cleanup(server.Close)
 
 	return server

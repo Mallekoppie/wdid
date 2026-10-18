@@ -36,7 +36,9 @@ type Store struct{}
 
 // Open configures goslow and opens the BoltDB database.
 func Open(cfg config.Config) (*Store, error) {
-	platform.SetPlatformConfiguration(cfg.PlatformConfig())
+	if err := platform.SetPlatformConfiguration(cfg.PlatformConfig()); err != nil {
+		return nil, fmt.Errorf("configure platform: %w", err)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)

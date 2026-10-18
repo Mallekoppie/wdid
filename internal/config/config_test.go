@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Mallekoppie/goslow/platform"
+
 	"github.com/Mallekoppie/wdid/internal/config"
 )
 
@@ -51,6 +53,7 @@ func TestLoadFromEnvironment(t *testing.T) {
 	t.Setenv("WDID_ZITADEL_ISSUER_URL", "http://zitadel.local:8080/")
 	t.Setenv("WDID_ZITADEL_CLIENT_ID", "wdid-client")
 	t.Setenv("WDID_ZITADEL_ALLOWED_ALGORITHMS", "RS256, ES256")
+	t.Setenv("WDID_ALLOWED_ORIGINS", "http://127.0.0.1:5173,https://wdid.example")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -80,9 +83,63 @@ func TestLoadFromEnvironment(t *testing.T) {
 	if platformConfig.Auth.Server.LocalJwt.JwtSigningKey != cfg.JWTSecret {
 		t.Fatal("local JWT signing key not mapped")
 	}
-	// goslow applies configured auth middlewares exclusively; enabling OAuth
-	// there would reject locally issued tokens. OIDC is verified in auth.Service.
+	if platformConfig.Grpc.Server.Auth != platform.AuthLocalOrOIDC {
+		t.Fatalf("grpc auth = %q, want local-or-oidc", platformConfig.Grpc.Server.Auth)
+	}
+	if !platformConfig.Auth.Server.OAuth.Enabled {
+		t.Fatal("goslow OAuth must be enabled when Zitadel is enabled")
+	}
+	if platformConfig.Auth.Server.OAuth.IdpWellKnownURL != "http://zitadel.local:8080/.well-known/openid-configuration" {
+		t.Fatalf("well-known url = %q", platformConfig.Auth.Server.OAuth.IdpWellKnownURL)
+	}
+	if len(platformConfig.HTTP.Server.AllowedOrigins) != 2 {
+		t.Fatalf("allowed origins = %v", platformConfig.HTTP.Server.AllowedOrigins)
+	}
+	public := make(map[string]struct{}, len(platformConfig.Auth.Server.UnauthenticatedPaths))
+	for _, path := range platformConfig.Auth.Server.UnauthenticatedPaths {
+		public[path] = struct{}{}
+	}
+	if _, ok := public[config.AuthRegisterAccountProcedure]; !ok {
+		t.Fatalf("register procedure missing from public paths: %v", platformConfig.Auth.Server.UnauthenticatedPaths)
+	}
+}
+
+func TestPlatformConfigLocalOnlyUsesLocalJWT(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	platformConfig := cfg.PlatformConfig()
+	if platformConfig.Grpc.Server.Auth != platform.AuthLocalJWT {
+		t.Fatalf("grpc auth = %q, want local-jwt", platformConfig.Grpc.Server.Auth)
+	}
 	if platformConfig.Auth.Server.OAuth.Enabled {
-		t.Fatal("goslow OAuth middleware must stay disabled")
+		t.Fatal("oauth must stay disabled without Zitadel")
+	}
+	if !platformConfig.Grpc.Server.HealthEnabled {
+		t.Fatal("connect health should be enabled")
+	}
+	if platformConfig.Grpc.Server.ReflectionEnabled {
+		t.Fatal("reflection must be opt-in")
+	}
+}
+
+func TestValidateRejectsWildcardOrigin(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		AllowedOrigins:       []string{"*"},
+		RegistrationSecret:   "test-registration-secret",
+		JWTSecret:            strings.Repeat("k", 32),
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected wildcard origin to be rejected")
 	}
 }
