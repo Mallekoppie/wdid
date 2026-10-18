@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-17T12:00:00Z",
+  "person": "Alex",
+  "period": {
+    "start": "2026-07-01",
+    "end": "2026-10-02"
+  },
+  "summary": {
+    "totalMinutes": 12780,
+    "initiativeMinutes": {
+      "billing-migration": 2300,
+      "platform-hardening": 1320,
+      "customer-ops-automation": 980
+    },
+    "categoryMinutes": {
+      "support": 870,
+      "meetings": 420,
+      "design-review": 560,
+      "admin": 310,
+      "learning": 240
+    },
+    "otherMinutes": 2460
+  },
+  "initiatives": [
+    {
+      "id": "billing-migration",
+      "name": "Billing migration",
+      "status": "active",
+      "minutes": 2300,
+      "progress": 64,
+      "targetOutcome": "Invoice generation under 5 minutes"
+    },
+    {
+      "id": "platform-hardening",
+      "name": "Platform hardening",
+      "status": "active",
+      "minutes": 1320,
+      "progress": 48,
+      "targetOutcome": "Reduce service incidents and flaky deployments"
+    },
+    {
+      "id": "customer-ops-automation",
+      "name": "Customer ops automation",
+      "status": "planned",
+      "minutes": 980,
+      "progress": 22,
+      "targetOutcome": "Reduce repeated customer support work by 30%"
+    }
+  ],
+  "categories": [
+    {
+      "id": "support",
+      "label": "Support",
+      "minutes": 870
+    },
+    {
+      "id": "meetings",
+      "label": "Meetings",
+      "minutes": 420
+    },
+    {
+      "id": "design-review",
+      "label": "Design review",
+      "minutes": 560
+    },
+    {
+      "id": "admin",
+      "label": "Admin",
+      "minutes": 310
+    },
+    {
+      "id": "learning",
+      "label": "Learning",
+      "minutes": 240
+    }
+  ],
+  "workItems": [
+    {
+      "id": "w-001",
+      "date": "2026-10-17",
+      "type": "initiative",
+      "initiativeId": "billing-migration",
+      "initiativeName": "Billing migration",
+      "category": null,
+      "categoryLabel": null,
+      "summary": "Backfill script skeleton",
+      "minutes": 42,
+      "outcome": "Script runs against staging",
+      "tags": ["migration", "billing"],
+      "person": null,
+      "team": null,
+      "source": "timer"
+    },
+    {
+      "id": "w-002",
+      "date": "2026-10-17",
+      "type": "category",
+      "initiativeId": null,
+      "initiativeName": null,
+      "category": "design-review",
+      "categoryLabel": "Design review",
+      "summary": "Reviewed event bus design",
+      "minutes": 30,
+      "outcome": "Three risks identified before implementation",
+      "tags": ["architecture", "review"],
+      "person": "Priya",
+      "team": "Payments",
+      "source": "manual"
+    },
+    {
+      "id": "w-003",
+      "date": "2026-10-18",
+      "type": "category",
+      "initiativeId": null,
+      "initiativeName": null,
+      "category": "support",
+      "categoryLabel": "Support",
+      "summary": "Unblocked CI keys and service account issue",
+      "minutes": 45,
+      "outcome": "Pipeline was restored and deploy flow resumed",
+      "tags": ["infra", "support"],
+      "person": "Sam",
+      "team": "Platform",
+      "source": "manual"
+    },
+    {
+      "id": "w-004",
+      "date": "2026-10-18",
+      "type": "initiative",
+      "initiativeId": "platform-hardening",
+      "initiativeName": "Platform hardening",
+      "category": null,
+      "categoryLabel": null,
+      "summary": "Reviewed flaky deploy pipeline",
+      "minutes": 90,
+      "outcome": "Found root cause in retry policy",
+      "tags": ["deploy", "reliability"],
+      "person": null,
+      "team": null,
+      "source": "timer"
+    },
+    {
+      "id": "w-005",
+      "date": "2026-10-19",
+      "type": "category",
+      "initiativeId": null,
+      "initiativeName": null,
+      "category": "meetings",
+      "categoryLabel": "Meetings",
+      "summary": "Sprint planning and interlock",
+      "minutes": 75,
+      "outcome": "Priorities aligned across teams",
+      "tags": ["planning"],
+      "person": null,
+      "team": null,
+      "source": "manual"
+    },
+    {
+      "id": "w-006",
+      "date": "2026-10-20",
+      "type": "initiative",
+      "initiativeId": "customer-ops-automation",
+      "initiativeName": "Customer ops automation",
+      "category": null,
+      "categoryLabel": null,
+      "summary": "Mapped top support workflows",
+      "minutes": 60,
+      "outcome": "Identified automation candidates and effort estimates",
+      "tags": ["ops", "customer"],
+      "person": null,
+      "team": null,
+      "source": "manual"
+    }
+  ],
+  "notes": [
+    {
+      "date": "2026-10-17",
+      "text": "Backfill work is now stable enough to track by initiative."
+    },
+    {
+      "date": "2026-10-20",
+      "text": "Support and design review time is large enough to watch closely in the next review cycle."
+    }
+  ]
+}
