@@ -13,7 +13,7 @@ The product split is intentionally layered:
 
 - Service layer owns the source of truth, persistence, validation, auth, backup logic, exports, and AI prompt generation.
 - Web UI layer owns interaction flows, route screens, forms, timers, and display logic.
-- The two layers communicate through explicit API contracts and shared domain rules, not by implicit cross-layer shortcuts.
+- The two layers communicate through explicit protobuf contracts and shared domain rules, not by implicit cross-layer shortcuts.
 
 ## Core principles
 
@@ -24,6 +24,32 @@ The product split is intentionally layered:
 5. Prefer contract-first implementation over “just make it work in one place.”
 6. Never introduce UI assumptions into storage, auth, or data models.
 7. Never introduce storage assumptions into the UI layer.
+
+## Transport and contract rules
+
+The service speaks gRPC. The browser client speaks gRPC-Web. There is one
+protobuf contract and no parallel REST/JSON surface for the same capability.
+
+- `internal/contracts/*.proto` is the single source of truth for the service API.
+  Both agents implement against it; neither invents a side channel.
+- The Go service implements and registers the generated gRPC services. It also
+  serves gRPC-Web on the same origin as the embedded Flutter app so a browser
+  build works without a separate proxy.
+- The Flutter web UI consumes generated Dart stubs through a gRPC-Web channel
+  (`GrpcWebClientChannel.xhr`). It must not hand-write JSON DTOs or call REST
+  endpoints for capabilities that have RPCs.
+- Run `make proto` after every `.proto` change. Generated Go stubs in
+  `internal/gen/` are committed and never hand-edited. Generated Dart stubs in
+  `web/lib/src/generated/` are gitignored, so `make proto` is required before
+  Flutter analysis, tests, or builds.
+- Contract changes are additive and wire-compatible unless a break is explicitly
+  approved. Never renumber or reuse field numbers; use `reserved` for removals.
+- Authentication travels as `authorization: Bearer <token>` gRPC metadata and is
+  validated by a server interceptor for both local JWTs and Zitadel ID tokens.
+- Existing REST handlers in `internal/api/` are legacy. Do not extend them; retire
+  them as their RPC replacements land.
+
+See `internal/contracts/README.md` for the full wire and generation conventions.
 
 ## Deployment and auth model
 
@@ -41,7 +67,9 @@ This should be treated as the baseline deployment and auth pattern unless a task
 
 ### Service agent owns
 
-- Go backend code, HTTP handlers, middleware, routes, and APIs
+- Go backend code, gRPC service implementations, interceptors, and server wiring
+- protobuf contracts in `internal/contracts/` and generated Go stubs in `internal/gen/`
+- gRPC-Web translation, same-origin serving, TLS, and development reflection
 - database schema, storage buckets, models, validation, and migration logic
 - auth, RBAC, OIDC, invite validation, and session flow
 - timer lifecycle, work entry persistence, initiative tracking, and support logs
@@ -56,22 +84,24 @@ This should be treated as the baseline deployment and auth pattern unless a task
 - forms, cards, tables, modals, and filters
 - keyboard-first interactions and per-screen UX behavior
 - visual presentation, layout, status badges, and state transitions
-- fetching and rendering data from the service layer
+- the gRPC-Web client adapter and generated-Dart consumption from the service layer
 
 ### Shared rules
 
 - UI must use the service contract, not local state as a substitute for server validation.
 - Service must not depend on specific UI widgets or screen logic.
 - Both layers must respect the design language and information architecture in the product docs.
+- UI may read generated protobuf types but must not edit `.proto` files or generated stubs.
+- Contract gaps are reported to the owning agent; the consumer never patches the wire format locally.
 
 ## Routing rules for work
 
 Use the following rule when deciding which agent should own a task:
 
-- Backend, persistence, auth, RBAC, export, timer engine, AI synthesis, backup logic, or API contract changes belong to the service agent.
-- Screen design, forms, layout, navigation, visual hierarchy, and frontend interactions belong to the UI agent.
-- Tasks spanning both layers require a handoff: define the contract first, then implement each side against it.
-- Reviewing completed work, checking contract alignment, and producing a merge verdict belong to the review agent. The review agent reports findings with evidence and does not edit code.
+- Backend, persistence, auth, RBAC, export, timer engine, AI synthesis, backup logic, gRPC server wiring, gRPC-Web serving, or protobuf contract changes belong to the service agent.
+- Screen design, forms, layout, navigation, visual hierarchy, frontend interactions, and gRPC-Web client consumption belong to the UI agent.
+- Tasks spanning both layers require a handoff: define and generate the protobuf contract first, then implement each side against the generated stubs.
+- Reviewing completed work, checking wire compatibility, generated-stub state, transport boundaries, contract alignment, and producing a merge verdict belong to the review agent. The review agent reports findings with evidence and does not edit code.
 
 ## Validation expectations
 
@@ -79,7 +109,8 @@ Before concluding a change is complete, validate the relevant area:
 
 - Go backend changes: run the smallest relevant Go test or compile check
 - UI changes: run the smallest relevant frontend test, build, or typecheck
-- Contract changes: verify both sides of the boundary are implemented and aligned
+- Contract changes: run `make proto-check`, then verify both the server registration and the generated-typed client usage
+- gRPC-Web changes: verify a real browser-shaped request (`application/grpc-web+proto` or `grpc-web-text`) reaches the service, not only a native gRPC call
 
 Do not claim completion without fresh evidence from a relevant verification command.
 
@@ -102,23 +133,25 @@ When requirements are ambiguous, prefer the documented product intent over ad ho
 - Prefer explicit types, validation, and clear names.
 - Avoid broad “cleanup” refactors unrelated to the task.
 - Preserve existing patterns unless the change explicitly requires a consistent redesign.
-- If a task touches the API layer, update the consumer side in the same change set.
+- If a task touches the protobuf contract, regenerate stubs and update the consumer side in the same change set.
 
 ## Handoff checklist
 
 Before merging anything that changes both layers, confirm:
 
-- the service contract is defined and stable
-- UI state matches the contract shape
-- validation and error states are handled
+- the protobuf contract is defined, generated, and wire-compatible
+- generated Go stubs are committed and `make proto-check` passes
+- the service registers every RPC and serves the browser over gRPC-Web
+- UI state matches the generated contract shape
+- validation and gRPC status errors are handled
 - the task still matches the design documents
-- there is no duplicate logic across layers
+- there is no duplicate logic across layers and no parallel REST/JSON path
 
 ## Default task selection
 
 If no specific owner is stated, choose the most local owner:
 
-- data model, storage, or API → service agent
+- data model, storage, protobuf contract, or gRPC/gRPC-Web transport → service agent
 - screen flow or interface detail → UI agent
 
 When crossing boundaries, keep the contract as the source of truth and keep each agent in its lane.

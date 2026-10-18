@@ -16,9 +16,9 @@ The Go service is not connected yet. The UI runs against
 `WdidRepository` seam in `lib/data/repository.dart`.
 
 The demo adapter exists only so screens and flows can be reviewed. It does not
-define the production contract, and it must be replaced by the service client
-once the gRPC/REST handlers land. UI actions never bypass the seam:
-exports, summaries, aggregation, and persistence all go through `WdidRepository`.
+define the production contract, and it must be replaced by the gRPC-Web service
+client. UI actions never bypass the seam: exports, summaries, aggregation, and
+persistence all go through `WdidRepository`.
 
 ## Run
 
@@ -73,21 +73,22 @@ flutter build web
 
 ## Service contract status
 
-The Go service landed after this UI slice started. Its current REST contract is
-narrower than the product sample documents:
+The Go service landed after this UI slice started. Its transport is moving to
+gRPC with gRPC-Web for the browser; the legacy REST surface is narrower than the
+product sample documents and is retired as RPCs land.
 
 - **Implemented by the service:** initiatives, work entries, timer, period
-  summary (`/api/v1/summary`), exports, and auth.
+  summary, exports, and auth.
 - **Not implemented by the service yet:** check-in records, notes, settings, and
   backup/restore. Those screens run on the demo adapter and surface the gap
   rather than inventing a persistence model.
-- **Shape differences:** the service uses `kind` (`initiative`/`support`/`other`),
-  `description`, and a nested `support` object. `WorkItem.fromJson` accepts both
-  that shape and the richer `plan.md` shape, so a service repository can map
-  directly without screen changes.
-- **Auth:** protected routes need a bearer token from `/api/v1/auth/login` or a
-  Zitadel token. The sign-in screen is a shell until token/session handling is
-  wired.
+- **Shape differences:** the current HTTP mapping uses `kind`
+  (`initiative`/`support`/`other`), `description`, and a nested `support` object.
+  The protobuf contract is the source of truth; keep any temporary mapping in the
+  repository adapter, not in screens.
+- **Auth:** protected RPCs need `authorization: Bearer <token>` metadata from the
+  local login RPC or a Zitadel token. The sign-in screen is a shell until
+  token/session handling is wired.
 
 The UI demo currently expects the entities and fields documented in `plan.md`:
 
@@ -108,9 +109,12 @@ Known documentation gaps, surfaced in the UI rather than invented locally:
 
 Next steps for integration:
 
-1. Add `ServiceWdidRepository` over `/api/v1` with bearer-token injection and
-   DTO mapping (`kind`, `description`, `support`, timer responses, summary).
-2. Add the remaining service endpoints for check-ins, notes, settings, and
-   backup/restore, or keep those features demo-only.
-3. Switch `main.dart` to the service repository. No screen changes should be
+1. Run `make proto` and add `ServiceWdidRepository` over the generated Dart
+   clients with a `GrpcWebClientChannel.xhr` channel, bearer-token metadata, and
+   explicit deadlines.
+2. Add the remaining RPCs for check-ins, notes, settings, and backup/restore, or
+   keep those features demo-only until the contract exists.
+3. Map `GrpcError` codes and `errdetails.BadRequest` field violations onto the
+   existing loading, empty, error, and validation states.
+4. Switch `main.dart` to the service repository. No screen changes should be
    required.

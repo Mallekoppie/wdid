@@ -50,7 +50,6 @@ cmd/wdid/dist/
 web/build/
 web/.dart_tool/
 web/pubspec.lock
-web/lib/src/generated/*.pb.dart
-web/lib/src/generated/*.pbgrpc.dart
-web/lib/src/generated/*.pbenum.dart
-web/lib/src/generated/*.pbjson.dart
+
+# Generated Dart gRPC stubs - rebuild with `make proto`
+web/lib/src/generated/

@@ -5,13 +5,18 @@ initiative-based time attribution, support tracking, and review-ready period
 exports.
 
 This service is the source of truth for persistence, validation, identity,
-exports and AI-ready summaries. The web client consumes the HTTP contract and
-must not reimplement these rules.
+exports and AI-ready summaries. The web client consumes the gRPC contract over
+gRPC-Web and must not reimplement these rules.
+
+> **Transport status:** gRPC is the target service transport and
+> `internal/contracts/*.proto` is the source of truth. The REST surface
+> documented below is legacy and is retired as RPC replacements land. Do not add
+> new REST endpoints for capabilities that have RPCs.
 
 ## Stack
 
 - Go 1.26
-- `github.com/Mallekoppie/goslow` platform: HTTP routing, logging, BoltDB
+- `github.com/Mallekoppie/goslow` platform: gRPC/HTTP serving, logging, BoltDB
   helpers, local JWT issuance
 - `github.com/coreos/go-oidc` for Zitadel ID token verification
 - BoltDB persistence with per-user bucket isolation
@@ -65,21 +70,23 @@ the Makefile are for local development only.
 
 Initial local deployment baseline:
 
-1. A local user registers with `POST /api/v1/auth/register` and the shared
-   registration secret.
+1. A local user registers through the auth RPC (currently the legacy
+   `POST /api/v1/auth/register` route) and the shared registration secret.
 2. The **first** account becomes `admin`; later accounts are `user`.
-3. Login returns a local HS256 JWT. Protected routes accept
+3. Login returns a local HS256 JWT. Protected RPCs and routes accept
    `Authorization: Bearer <token>`.
-4. When Zitadel is enabled, the same routes also accept a Zitadel ID token. The
-   first OIDC login provisions a local account by email, and a configured role
-   claim maps to `admin`.
+4. When Zitadel is enabled, the same RPCs and routes also accept a Zitadel ID
+   token. The first OIDC login provisions a local account by email, and a
+   configured role claim maps to `admin`.
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
 the user profile, so hashes are never serialized into API responses.
 
-## API
+## API (legacy REST)
 
-All protected routes require `Authorization: Bearer <token>`.
+The table below documents the current legacy surface. The target contract is
+protobuf plus gRPC-Web in `internal/contracts/`. All protected routes require
+`Authorization: Bearer <token>`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -161,7 +168,8 @@ runs it with hot reload on `127.0.0.1:5173`.
 ## goslow integration notes
 
 - Persistence goes through `platform.Database.BoltDb` helpers.
-- HTTP uses `platform.StartHttpServer` and `platform.Routes`.
+- The target transport is gRPC with gRPC-Web. The legacy HTTP surface uses
+  `platform.StartHttpServer` and `platform.Routes` and is retired as RPCs land.
 - The database file is pre-created with `0600` permissions because goslow opens
   BoltDB with `os.ModeExclusive` as the file mode, which would create new files
   as `0000`.

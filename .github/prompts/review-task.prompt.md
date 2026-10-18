@@ -15,8 +15,9 @@ the chat input after this prompt.
 
 ## Required context
 
-1. Read `.github/copilot-instructions.md`, `plan.md`, `stich-design.md`, and
-   `GOSLOW-UPDATES.md` before judging the implementation.
+1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`,
+   `plan.md`, `stich-design.md`, and `GOSLOW-UPDATES.md` before judging the
+   implementation.
 2. Inspect the full change set with `git status` and `git diff`, and read the
    changed files in context.
 3. Compare the result against the ownership rules in
@@ -25,14 +26,19 @@ the chat input after this prompt.
 
 ## Method
 
-1. Confirm the contract: affected routes, payload shapes, validation rules, and
-   whether both layers were updated together.
-2. Verify the layering boundaries: no business logic in the UI, no UI
-   assumptions in the service, no duplicated validation.
-3. Check correctness, security, and the required UI states.
-4. Run the relevant Makefile verification commands yourself and record the exact
-   results.
-5. Produce findings with file and line references and a clear verdict.
+1. Confirm the contract: changed `.proto` files, field numbers, enum zero values,
+   wire compatibility, generated stubs, and whether both layers were updated
+   together.
+2. Verify the transport: every RPC is registered, the browser path works over
+   gRPC-Web, auth metadata is validated, and no parallel REST/JSON endpoint was
+   added.
+3. Verify the layering boundaries: no business logic in the UI, no UI
+   assumptions in the service, no duplicated validation, and no local
+   recomputation of server totals.
+4. Check correctness, security, gRPC status mapping, and the required UI states.
+5. Run `make proto-check` plus the relevant Makefile verification commands
+   yourself and record the exact results.
+6. Produce findings with file and line references and a clear verdict.
 
 ## Done when
 

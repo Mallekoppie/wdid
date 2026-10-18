@@ -11,9 +11,10 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-GO      ?= go
-FLUTTER ?= flutter
-DOCKER  ?= docker
+GO        ?= go
+FLUTTER   ?= flutter
+DOCKER    ?= docker
+GO_MODULE := github.com/Mallekoppie/wdid
 
 BINARY  ?= wdid
 BIN_DIR ?= bin
@@ -37,7 +38,7 @@ export WDID_HTTP_ADDR WDID_DB_PATH WDID_REGISTRATION_SECRET WDID_JWT_SECRET
 export WDID_ALLOW_LOCAL_DEV_CORS
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
-        lint fmt tidy proto docker-build clean check
+        lint fmt tidy proto proto-check docker-build clean check
 
 help: ## Show this help
 	@printf 'wdid targets:\n\n'
@@ -98,14 +99,48 @@ proto: ## Generate Go and Dart stubs from internal/contracts/*.proto
 		echo "No .proto files in internal/contracts - nothing to generate."; \
 		exit 0; \
 	fi; \
+	rm -rf internal/gen $(WEB_DIR)/lib/src/generated; \
 	mkdir -p internal/gen $(WEB_DIR)/lib/src/generated; \
 	protoc -I internal/contracts \
-		--go_out=internal/gen --go_opt=paths=source_relative \
-		--go-grpc_out=internal/gen --go-grpc_opt=paths=source_relative \
+		--go_out=. --go_opt=module=$(GO_MODULE) \
+		--go-grpc_out=. --go-grpc_opt=module=$(GO_MODULE) \
 		$${protos[@]}; \
 	protoc -I internal/contracts \
 		--dart_out=grpc:$(WEB_DIR)/lib/src/generated \
 		$${protos[@]}
+
+proto-check: ## Regenerate in a temp dir and fail if internal/gen is stale
+	@command -v protoc >/dev/null 2>&1 || { \
+		echo "protoc not found on PATH - use the dev container or install protoc" >&2; \
+		exit 1; \
+	}
+	@shopt -s nullglob; protos=(internal/contracts/*.proto); \
+	if [ $${#protos[@]} -eq 0 ]; then \
+		echo "No .proto files in internal/contracts - nothing to check."; \
+		exit 0; \
+	fi; \
+	tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	mkdir -p "$$tmp" "$$tmp/dart"; \
+	protoc -I internal/contracts \
+		--go_out="$$tmp" --go_opt=module=$(GO_MODULE) \
+		--go-grpc_out="$$tmp" --go-grpc_opt=module=$(GO_MODULE) \
+		$${protos[@]} || exit 1; \
+	protoc -I internal/contracts \
+		--dart_out=grpc:"$$tmp/dart" \
+		$${protos[@]} || exit 1; \
+	if [ ! -d internal/gen ]; then \
+		echo "internal/gen is missing - run 'make proto' and commit the generated Go stubs" >&2; \
+		exit 1; \
+	fi; \
+	if ! diff -ru internal/gen "$$tmp/internal/gen"; then \
+		echo "Generated Go stubs are stale or edited - run 'make proto' and commit internal/gen" >&2; \
+		exit 1; \
+	fi; \
+	find "$$tmp/dart" -name '*.dart' -print -quit | grep -q . || { \
+		echo "Dart stubs were not generated - check protoc-gen-dart" >&2; \
+		exit 1; \
+	}
 
 docker-build: ## Build the container image (requires a root Dockerfile)
 	@if [ ! -f Dockerfile ]; then \
