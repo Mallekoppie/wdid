@@ -810,12 +810,13 @@ one versioned place in the service and is surfaced in Settings for preview.
 | --- | --- | --- |
 | `auth.proto` | `AuthService` | Registration with invite, login, auth config, current user |
 | `categories.proto` | `CategoryService` | Categories and subcategories |
-| `entries.proto` | `EntryService` | Work entries, split, rollups |
+| `entries.proto` | `EntryService` | Work entries and split |
 | `milestones.proto` | `MilestoneService` | Project milestones |
+| `notes.proto` | `NoteService` | Day notes and project notes |
 | `timer.proto` | `TimerService` | Start, pause, resume, stop, active timer |
 | `check_ins.proto` | `CheckInService` | Manager check-ins and personal reviews |
-| `summaries.proto` | `SummaryService` | Export bundle, prompt, streaming summary |
-| `settings.proto` | `SettingsService` | User settings, backups, restore |
+| `summaries.proto` | `SummaryService` | Period report, export bundle, prompt, streaming summary |
+| `settings.proto` | `SettingsService` | User settings; backups and restore from M7 |
 
 **Representative RPCs**
 
@@ -823,15 +824,16 @@ one versioned place in the service and is surfaced in Settings for preview.
   `ArchiveCategory`, `ListSubcategories`, `CreateSubcategory`,
   `UpdateSubcategory`, `ArchiveSubcategory`.
 - `EntryService`: `ListEntries`, `GetEntry`, `CreateEntry`, `UpdateEntry`,
-  `DeleteEntry`, `SplitEntry`, `GetEntryRollup`.
+  `DeleteEntry`, `SplitEntry`.
 - `MilestoneService`: `ListMilestones`, `CreateMilestone`, `UpdateMilestone`,
   `DeleteMilestone`.
+- `NoteService`: `ListNotes`, `CreateNote`, `UpdateNote`, `DeleteNote`.
 - `TimerService`: `StartTimer`, `PauseTimer`, `ResumeTimer`, `StopTimer`,
   `GetActiveTimer`.
 - `CheckInService`: `ListCheckIns`, `CreateCheckIn`, `GetCheckIn`,
   `UpdateCheckIn`, `FinalizeCheckIn`, `DeleteCheckIn`.
-- `SummaryService`: `BuildExport`, `DownloadExport`, `BuildPrompt`,
-  `GenerateSummary` (stream).
+- `SummaryService`: `GetPeriodReport`, `BuildExport`, `DownloadExport`,
+  `BuildPrompt`, `GenerateSummary` (stream).
 - `SettingsService`: `GetSettings`, `UpdateSettings`, `BackupNow`,
   `GetBackupStatus`, `ListBackups`, `RestoreBackup`.
 
@@ -847,8 +849,11 @@ one versioned place in the service and is surfaced in Settings for preview.
   page size.
 - Request and response messages are distinct types.
 - Errors use Connect codes with `google.rpc.BadRequest` field violations.
-- No parallel REST/JSON surface for an RPC. Legacy handlers are retired as their
-  RPC replacements land.
+- `SummaryService.GetPeriodReport` is the single authoritative aggregation for
+  Today bars, Initiatives time, Support rollups, check-in detail, and live
+  personal reviews. The UI never composes authoritative totals.
+- No parallel REST/JSON surface. The legacy REST surface is removed in M1;
+  `/healthz` remains the only non-RPC route.
 
 ---
 
@@ -913,9 +918,9 @@ on the host filesystem, protected by directory permissions.
 | Milestone | Deliverable | Acceptance |
 | --- | --- | --- |
 | **M0 — Skeleton** | Dev container, Go module, goslow config, Makefile, Flutter web shell, proto generation | `make all`, `make test`, `make run` work in the container |
-| **M1 — Identity and taxonomy** | Accounts, bootstrap admin, invite codes, per-user buckets, categories/subcategories, settings, migrations | Round-trip tests for every bucket; a second account cannot read the first account's data; invite codes are single-use |
+| **M1 — Identity, taxonomy, and data core** | Accounts, bootstrap admin, invite codes, per-user buckets, the full data layer (categories, subcategories, work entries, milestones, notes, check-ins, settings), settings preferences RPC, legacy REST removal | Round-trip tests for every bucket; a second account cannot read the first account's data; invite codes are single-use; no domain REST route remains |
 | **M2 — Capture** | Timer service, global pill, Today screen, quick add, entry CRUD | Log a full day without touching the database directly |
-| **M3 — Organise** | Log screen with filters and inline edit; Initiatives view; category management | A quarter of historical data can be entered and corrected |
+| **M3 — Organise** | Log screen with filters and inline edit; Initiatives view; project detail with notes and milestones | A quarter of historical data can be entered and corrected |
 | **M4 — Support** | Support log, quick add, rollups by person and mode | Support appears correctly in aggregates |
 | **M5 — Check-ins and exports** | Manager check-ins, personal reviews, `summary.md` / `data.json` / CSVs, copy prompt | A pasted prompt produces a usable review draft; a personal review can be saved or discarded |
 | **M6 — Built-in AI** | Provider config, streaming generation, prompt variants, persistence | Generated summary saves on the check-in; failures are non-destructive |
@@ -960,6 +965,10 @@ moving.
 - Multi-user authentication and per-user isolation are in v1; admin UI, offsite
   push, WebAuthn, webhooks, and the review-readiness score are deferred.
 - The project is **wdid**; no earlier working name is part of its vocabulary.
+- The service is RPC-only through Connect. The legacy REST surface is removed in
+  M1, and `/healthz` remains the only non-RPC route.
+- Period aggregates come from `SummaryService.GetPeriodReport`; the UI never
+  composes authoritative totals.
 
 ### 14.2 Deferred beyond v1
 

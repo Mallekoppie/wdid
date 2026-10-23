@@ -1,153 +1,260 @@
-# wdid TODO — paused 2026-10-18
+# wdid work plan — updated 2026-10-23
 
-## Current state
+> **Status:** Active. `plan.md` is the canonical product and design source;
+> `GLOSSARY.md` defines the domain terms; `docs/adr/` records the hard-to-reverse
+> decisions. This file is the execution order.
 
-goslow was merged and wdid has been migrated onto the merged API.
+## Execution rules
 
-- goslow merged revision: `v0.0.0-20261018185216-5eded094f41a`
-  (`master` commit `5eded09`, "Fixes for wdid (#5)")
-- wdid module: `go 1.27.2`
-- The Makefile exports `GOTOOLCHAIN=auto` because the current container still
-  has Go 1.26.9; rebuild the dev container when convenient.
-- The service now starts `platform.StartApplicationServerWithContext` and serves
-  Connect, native gRPC, gRPC-Web, legacy REST routes, and the embedded Flutter
-  assets from one listener.
-- The first live contract is `internal/contracts/auth.proto` with
-  `wdid.v1.AuthService`:
-  - `RegisterAccount` — public
-  - `Login` — public
-  - `GetAuthConfig` — public
-  - `GetCurrentUser` — bearer token required
-- Generated Go stubs are under `internal/gen/wdid/v1/` and
-  `internal/gen/wdid/v1/wdidv1connect/`.
-- Generated Dart stubs are under `web/lib/src/generated/` and are gitignored.
-- `web/pubspec.yaml` now depends on `grpc` 5.2.0 and `protobuf` 6.1.0.
+1. **Replace the old model in place.** No compatibility layer and no data
+   migration: there is no `data/` or `backups/` directory and no user data.
+2. **RPC-only through Connect.** M1 deletes the legacy REST domain surface.
+   `/healthz` remains the only non-RPC route.
+3. **M1 defines the full data layer.** Later milestones add contracts, RPCs, and
+   screens; they do not reshape the store.
+4. **Work in vertical slices.** Each milestone runs
+   `proto → domain/store → service → generated Dart client → owning screen`.
+5. **The UI consumes generated clients.** `DemoWdidRepository` survives only for
+   screens whose slice has not landed and is deleted in M8.
+6. **No client-side authoritative totals.** Period aggregates come from
+   `SummaryService.GetPeriodReport`.
+7. **Every slice ships** Connect tests (unary and gRPC-Web), domain tests, and the
+   owning screen's loading, empty, error, and validation states.
 
-## Verification already run
+## Current state (2026-10-23)
 
-```text
-make proto-check                         pass
-make build                               pass
-go vet ./...                             pass
-go test -race ./...                      pass
-cd web && flutter analyze                pass
-cd web && flutter test                   pass (16 tests)
-```
+- Go module `github.com/Mallekoppie/wdid`, `go 1.27.2`, goslow merged revision
+  `v0.0.0-20261018185216-5eded094f41a`.
+- Connect serves one service: `wdid.v1.AuthService` (`RegisterAccount`, `Login`,
+  `GetAuthConfig`, `GetCurrentUser`). Generated Go and Connect stubs are
+  committed.
+- Legacy REST surface in `internal/api/`: auth, initiatives, entries, timer,
+  summary, export.
+- Domain in `internal/domain/`: `User`, `Initiative`, `Entry` with `kind`, and
+  `ActiveTimer`. Store buckets: `sys:users`, `sys:user_emails`,
+  `sys:user_credentials`, `user_<id>:initiatives`, `user_<id>:entries`,
+  `user_<id>:timer`.
+- The Flutter client runs on `DemoWdidRepository`; screens exist for every route.
+  There are no REST calls from `web/lib`.
+- No check-in, note, settings, milestone, or backup persistence exists.
+- No `data/` or `backups/` directory exists, so there is nothing to migrate.
+- The dev container still has Go 1.26.9; the Makefile exports `GOTOOLCHAIN=auto`.
+- Verification baseline: `make proto-check`, `make build`, `go test -race ./...`,
+  `cd web && flutter analyze`, `cd web && flutter test`.
 
-Runtime smoke test also passed:
+---
 
-- `GET /healthz` returned 200.
-- `POST /wdid.v1.AuthService/GetAuthConfig` returned the public auth config.
-- An unknown RPC path returned 404 instead of falling through to the SPA.
-- Connect, gRPC-Web, and native gRPC AuthService tests pass.
+## M1 — Identity, taxonomy, and data core
 
-## Immediate cleanup before committing
+Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
-1. **Restore `GOSLOW-UPDATES.md`.**
-   It is currently deleted in the working tree (` D GOSLOW-UPDATES.md`). Restore
-   it with `git checkout -- GOSLOW-UPDATES.md`, then re-apply the concise
-   merge-status version. Do not commit the deletion.
-2. **Run `git diff --check` again.**
-   The extra blank line at the end of `internal/auth/service.go` was fixed, but
-   the final check had not been re-run before stopping.
-3. **Confirm the generated artifacts are included.**
-   Commit `internal/contracts/auth.proto`, `internal/gen/`, `internal/rpc/`, and
-   `cmd/wdid/dist/.gitkeep`. Generated Dart stubs stay gitignored.
-4. **Rebuild the dev container.**
-   The Dockerfile is already on Go 1.27 and installs
-   `protoc-gen-connect-go` 1.21.1, but this running container is still on Go
-   1.26.9.
+### Domain and store
 
-## Next implementation steps
+- [ ] Replace `internal/domain` types with `Category`, `Subcategory`,
+      `WorkEntry`, `Milestone`, `Note`, `CheckIn`, and `Settings`; delete
+      `Initiative`, `EntryKind`, and `SupportDetail` (`person`/`team` move onto
+      the entry).
+- [ ] Add enums with validity checks: category role
+      (`initiative|support|other`), check-in kind (`manager|personal`), check-in
+      state, and audience.
+- [ ] Rewrite validation: category role is immutable; a subcategory must belong
+      to its category; a support-role category requires a person; minutes and
+      overlap rules follow `plan.md` §8.3.
+- [ ] Rewrite `internal/store` for the buckets in `plan.md` §8.2, including the
+      per-user entry indexes.
+- [ ] Seed `Initiatives`, `Support` (+ `Review`, `Pair`, `Unblock`, `Mentor`,
+      `Incident`, `Other`), and `Other` (+ `Meetings`, `Admin`, `Learning`,
+      `Unplanned`) at account creation.
+- [ ] Set `sys:meta.schema_version = 1`; no migration code (no data).
+- [ ] Tests: round-trip every bucket, cross-user isolation, seeds, archive-only
+      when referenced, role immutability, subcategory/category constraint, and
+      support person requirement.
 
-### 1. Wire the Flutter client to AuthService over gRPC-Web
+### Identity and invites
 
-- Create a gRPC-Web client adapter using `GrpcWebClientChannel.xhr`.
-- Use the generated `AuthServiceClient` from `web/lib/src/generated/`.
-- Add bearer-token metadata and per-call deadlines.
-- Map `GrpcError` / Connect codes to the existing login-screen error states.
-- Replace the demo auth behaviour before wiring the domain repository.
-- Run `make proto` before Flutter analysis or build.
+- [ ] Replace `WDID_REGISTRATION_SECRET` with `WDID_BOOTSTRAP_SECRET`; the first
+      account becomes `admin`.
+- [ ] Add `sys:invites` and single-use invite codes.
+- [ ] Add CLI: `wdid invite create|list|revoke`.
+- [ ] Update `auth.proto` and `AuthService.RegisterAccount` to accept an invite
+      code, or the bootstrap secret for the first account; update
+      `GetAuthConfig`.
+- [ ] Keep the Zitadel OIDC path unchanged.
+- [ ] Tests: first account admin, a later account requires an invite, invites are
+      single-use, and missing/invalid invites map to the right Connect code.
 
-### 2. Replace `DemoWdidRepository`
+### Surface cleanup
 
-- Implement a real `WdidRepository` backed by generated stubs.
-- Do not hand-write JSON DTOs for capabilities that have RPCs.
-- Keep server-owned totals, validation, and attribution rules authoritative.
-- Add loading, empty, error, and success states where the demo adapter currently
-  returns synthetic data.
+- [ ] Delete `internal/api` and its tests; keep `/healthz` as the only non-RPC
+      route.
+- [ ] Remove `gorilla/mux` if nothing else uses it; update `cmd/wdid/main.go`.
+- [ ] Remove the legacy REST sections from `README.md` once the routes are gone.
 
-### 3. Migrate the remaining domain contracts
+### Contracts and RPC
 
-Add protos and Connect services in this order:
+- [ ] Add `categories.proto` (`CategoryService`) and `settings.proto`
+      (`GetSettings`, `UpdateSettings`; backup methods arrive in M7).
+- [ ] Implement `CategoryService` in `internal/rpc/`.
+- [ ] Regenerate Go and Dart stubs; run `make proto-check`.
+- [ ] Tests: Connect unary and gRPC-Web, auth strategy, and Connect error
+      mapping.
 
-1. Initiatives
-2. Work entries and timer lifecycle
-3. Period summary and export
-4. Check-ins and AI summary prompt payload
-5. Settings and backups
+### UI
 
-For each one:
+- [ ] Replace demo auth with generated `AuthService` clients; login and
+      invite-code registration.
+- [ ] Wire Settings → Categories to `CategoryService` (list, create, rename,
+      archive, subcategories, role selection).
+- [ ] Keep the demo adapter for screens without a service yet.
 
-- Add request/response messages with permanent field numbers.
-- Add the service implementation under `internal/rpc/`.
-- Register the service with `ApplicationServerOptions.Services`.
-- Add the fully qualified service name to `ServiceNames`.
-- Move the matching REST handler out of `internal/api/` once the RPC lands.
-- Add Connect error mapping and `httptest` coverage.
-- Add gRPC-Web and, where relevant, native gRPC tests.
+### Acceptance
 
-### 4. Authorization follow-ups
+- Two accounts cannot read each other's data.
+- Invite codes are single-use and the first account is admin.
+- Categories and subcategories round-trip; roles cannot change.
+- Settings timezone and review cadence persist.
+- No domain REST route remains.
+- `make check` passes.
 
-- Add `Grpc.Server.ProcedureRoles` entries when admin-only RPCs land.
-- Keep identity derived from goslow's verified auth context; never trust a
-  `user_id` in a request message.
-- For OIDC, `GetCurrentUser` currently re-verifies the token because goslow
-  exposes roles/username/issuer but not verified subject/email claims. Prefer
-  exporting OIDC claims from goslow and remove the second verification.
-- Add an OIDC/Zitadel integration test once a local IdP is available.
+---
 
-### 5. UI and product validation
+## M2 — Capture
 
-- Verify the five-second quick-capture path still works after the repository
-  swap.
-- Verify keyboard-first flows, loading/empty/error states, and compact layout.
-- Run a real browser gRPC-Web request against the running service.
-- Build the Flutter web app into `cmd/wdid/dist` and verify the embedded SPA is
-  served on the same origin as Connect.
+- [ ] Add `entries.proto` and `timer.proto`; implement `EntryService` and
+      `TimerService`.
+- [ ] Add `summaries.proto` with `GetPeriodReport` — the only aggregation
+      source.
+- [ ] Timer lifecycle: start, pause, resume, stop; paused time excluded; stops
+      under one minute rejected unless `discard`; block limit returns keep/trim/
+      discard.
+- [ ] Wire Today: timer card, quick add, today list, and week bars from
+      `GetPeriodReport`.
+- [ ] Use settings for default duration, long-timer threshold, timezone, and week
+      start.
+- [ ] Tests: timer transitions, block limit, entry validation, gRPC-Web.
+
+**Acceptance:** a full day can be logged and corrected without touching BoltDB.
+
+---
+
+## M3 — Organise
+
+- [ ] Add `milestones.proto` and `notes.proto`; implement `MilestoneService` and
+      `NoteService`.
+- [ ] Wire Log: filters (today, this week, last 7 days, this month, since last
+      manager check-in, custom), category and subcategory filters, inline edit,
+      and the overlap marker.
+- [ ] Wire Initiatives: role-filtered portfolio; project detail with Timeline,
+      Notes, Milestones, and Report (from `GetPeriodReport`).
+- [ ] Tests: filters, inline edit, overlap flag, milestone and note CRUD.
+
+**Acceptance:** a quarter of historical data can be entered and corrected.
+
+---
+
+## M4 — Support
+
+- [ ] Wire Support: quick form (person, team, mode subcategory, duration,
+      outcome), feed, and rollups by person and mode.
+- [ ] Enforce person-required validation in the service.
+- [ ] Tests: support rollups, missing person rejected, cross-role reporting.
+
+**Acceptance:** support appears correctly in aggregates and the check-in report.
+
+---
+
+## M5 — Check-ins and exports
+
+- [ ] Add `check_ins.proto`; implement `CheckInService` (create, update,
+      finalize, list, get, delete personal).
+- [ ] Extend `summaries.proto` with `BuildExport`, `DownloadExport`, and
+      `BuildPrompt`.
+- [ ] Manager check-in boundary: last final manager check-in; audience `1:1` or
+      `performance review`.
+- [ ] Personal review: timeframe presets, live view from `GetPeriodReport`, saved
+      on demand, editable indefinitely, weekly/monthly prompt setting.
+- [ ] Export bundle: `summary.md`, `data.json`, `entries.csv`, `support.csv`.
+- [ ] Wire the Check-ins list and detail; mark final (manager only).
+- [ ] Tests: boundary logic, kind filtering, save/discard, export contents.
+
+**Acceptance:** a pasted prompt produces a usable review draft; a personal review
+can be saved or discarded.
+
+---
+
+## M6 — Built-in AI
+
+- [ ] Add streaming `GenerateSummary` and prompt variants (manager 1:1, manager
+      performance review, personal review).
+- [ ] OpenAI-compatible provider; environment-only key; URL and note redaction.
+- [ ] Stream into the editable summary; failures leave the existing summary
+      untouched.
+- [ ] Wire Settings → AI and the check-in summary actions.
+- [ ] Tests with a fake provider: prompt selection, redaction, failure path.
+
+**Acceptance:** generation persists model and prompt version; failures are
+non-destructive.
+
+---
+
+## M7 — Durability
+
+- [ ] Extend `settings.proto` with `BackupNow`, `GetBackupStatus`,
+      `ListBackups`, and `RestoreBackup`.
+- [ ] Implement snapshots (`tx.WriteTo`, fsync, atomic rename), verification,
+      retention (scheduled only), restore with a pre-restore copy, and index
+      rebuild.
+- [ ] Add CLI `wdid backup` and `wdid restore`.
+- [ ] Wire Settings → Data & backups and the overdue warning.
+- [ ] Tests: snapshot verification, retention, restore round-trip.
+
+**Acceptance:** restore from a backup in a test instance; the overdue warning
+works.
+
+---
+
+## M8 — Polish
+
+- [ ] Themes (System/Light/Dark/High Contrast), density, tabular figures.
+- [ ] Keyboard shortcuts and visible focus rings.
+- [ ] Empty, loading, and error states everywhere; accessibility pass (AA).
+- [ ] Delete `DemoWdidRepository`; every screen uses generated clients.
+- [ ] Browser gRPC-Web smoke test against the running service.
+
+**Acceptance:** keyboard-only manager check-in flow; AA contrast verified.
+
+---
+
+## Cross-cutting rules
+
+- Contracts are additive with stable field numbers, enum zero values, UTC
+  timestamps, `YYYY-MM-DD` local dates, and `google.protobuf.Duration`.
+- Errors use Connect codes with `google.rpc.BadRequest` field violations.
+- Identity comes from the token, never a request field; data lives in per-user
+  buckets.
+- No parallel REST for any RPC; no hand-written JSON DTOs in Flutter.
+- Update `plan.md` before changing a decision; record hard-to-reverse decisions
+  in `docs/adr/`.
 
 ## Known non-blocking notes
 
-- goslow logs `code":"unknown"` for successful RPCs; this is a goslow logging
-  issue, not a wdid failure.
-- The expected missing-user path logs a BoltDB "no entry found" error from
-  `ReadObject`; the store wrapper still returns `ErrNotFound`.
-- `cmd/wdid/dist` contains only `.gitkeep` until `make buildweb` runs. The embed
-  uses `//go:embed all:dist`.
-- `GOSLOW-UPDATES.md` should retain only remaining goslow follow-ups:
-  custom-handler h2c documentation, handler `TLSEnabled` semantics, OIDC claims
-  context, duplicate denied-auth metrics, `http.TimeoutHandler` cancellation,
-  deprecated indirect protobuf dependency, and metrics listener lifetime.
+- goslow logs `code":"unknown"` for successful RPCs.
+- `ReadObject` panics on a missing bucket; the store wrapper must use
+  `ReadAllObjects`.
+- goslow opens BoltDB with `os.ModeExclusive`; pre-create the database file with
+  `0600`.
+- `cmd/wdid/dist` contains only `.gitkeep` until `make buildweb`.
+- Remaining goslow follow-ups are listed in `GOSLOW-UPDATES.md`.
 
-## Useful commands
+## Deferred
 
-```bash
-make proto          # regenerate Go + Dart stubs
-make proto-check    # fail if generated stubs are stale
-make build          # compile bin/wdid
-make test-go        # Go tests
-make test-web       # Flutter tests
-make lint           # go vet + flutter analyze
-make check          # lint + proto-check + Go/Flutter tests
-```
+See `plan.md` §14.2. Do not pull these into v1: admin UI, offsite backup push,
+backup encryption, webhooks, WebAuthn, review-readiness score, cross-attribution
+links, arbitrary nesting, shared categories, notifications, mobile/PWA, and
+calendar or issue-tracker imports.
 
-Smoke test:
+## Ticket creation
 
-```bash
-WDID_HTTP_ADDR=127.0.0.1:18080 \
-WDID_DB_PATH=/tmp/wdid.db \
-WDID_REGISTRATION_SECRET=local-dev-registration-secret \
-WDID_JWT_SECRET=local-dev-jwt-secret-change-me-32chars \
-WDID_DEV_MODE=true \
-./bin/wdid
-```
+Run the `to-tickets` skill against this plan. Create one ticket per checklist
+item that can be reviewed independently, and link every ticket to its milestone
+and acceptance criterion.

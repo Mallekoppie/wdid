@@ -43,11 +43,11 @@ in either generated directory.
   ```
 
 - File names follow the domain: `auth.proto`, `categories.proto`,
-  `entries.proto`, `milestones.proto`, `timer.proto`, `check_ins.proto`,
-  `summaries.proto`, `settings.proto`.
+  `entries.proto`, `milestones.proto`, `notes.proto`, `timer.proto`,
+  `check_ins.proto`, `summaries.proto`, `settings.proto`.
 - Service names end in `Service` (`AuthService`, `CategoryService`,
-  `EntryService`, `MilestoneService`, `TimerService`, `CheckInService`,
-  `SummaryService`, `SettingsService`).
+  `EntryService`, `MilestoneService`, `NoteService`, `TimerService`,
+  `CheckInService`, `SummaryService`, `SettingsService`).
 - Hand-written Go implementations live in `internal/rpc/`, implement
   `platform.ConnectService`, and register the generated `wdidv1connect` handler.
   Never edit generated packages.

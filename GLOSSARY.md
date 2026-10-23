@@ -1,48 +1,70 @@
-# Glossary
+# wdid
 
-The project's domain language. Terms here are canonical: use them exactly as
-defined and do not drift to synonyms.
+wdid is a personal work ledger: it records time against a user-configurable
+taxonomy, captures outcomes and support work, and produces manager check-ins and
+personal reviews.
 
-- **Work entry** (or **entry**) — a recorded block of work time in the ledger; the
-  atomic unit the journal reports on. An entry is not a task or a ticket.
+## Language
 
-- **Category** — a user-defined top-level grouping of work. Every category has one
-  reporting role, a name, an optional colour, a sort order, and an archived flag.
+**Work entry**:
+A recorded block of work time with one category, an optional subcategory, a
+description, an outcome, and authoritative minutes.
+_Avoid_: work item, task, ticket, log entry, time log
 
-- **Subcategory** — the optional second level under a category. A subcategory
-  never has children. Under an initiative-role category it is the project the user
-  is working on.
+**Category**:
+A user-defined top-level grouping of work with one immutable reporting role, a
+name, and an archived state.
+_Avoid_: tag, label, bucket, project
 
-- **Reporting role** — what a category means for reporting and validation:
-  `initiative`, `support`, or `other`. The role is immutable and is independent of
-  the category's name. Reports and validation use the role, never the name.
+**Subcategory**:
+The optional second level under a category; it never has children. Under an
+initiative-role category it is the specific project the user is working on.
+_Avoid_: child category, sub-project, third level, project (in domain discussion)
 
-- **Initiative** — work whose category has the `initiative` role; typically a
-  major body of work spanning days or weeks. The unit that carries status,
-  progress, target outcome, and milestones is the subcategory beneath it.
+**Reporting role**:
+What a category means for reporting and validation: `initiative`, `support`, or
+`other`. Reports use the role, never the category name.
+_Avoid_: type, kind, category type
 
-- **Support** — work whose category has the `support` role: time spent helping
-  another person succeed. Support is reported separately because reviews routinely
-  omit it. A support entry requires a person; its mode is its subcategory, and its
-  impact is its outcome.
+**Initiative**:
+Work in a category whose reporting role is `initiative`: a major body of work
+spanning days or weeks. The specific effort is its subcategory.
+_Avoid_: epic, goal, objective
 
-- **Other** — work whose category has the `other` role: meetings, admin, learning,
-  and unplanned work.
+**Support**:
+Work in a category whose reporting role is `support`: time spent helping another
+person succeed. A support entry requires a person; its mode is its subcategory and
+its impact is its outcome.
+_Avoid_: assistance, help, mentoring (that is a mode)
 
-- **Check-in** — a saved artifact covering a period, with focus notes, aggregates,
-  and an optional summary. Every check-in has a kind.
+**Other**:
+Work in a category whose reporting role is `other`: meetings, admin, learning,
+and unplanned work.
+_Avoid_: misc, uncategorized, overhead
 
-- **Manager check-in** — a check-in whose kind is `manager`. It answers "everything
-  since we last spoke". Only a final manager check-in moves the boundary for the
-  next manager check-in.
+**Check-in**:
+A saved artifact covering a period, with focus notes, aggregates, and an optional
+summary. Every check-in has a kind.
+_Avoid_: report, review, summary
 
-- **Personal review** — a check-in whose kind is `personal`. It is used for weekly
-  or monthly self-review, never moves the manager boundary, and remains editable
-  indefinitely.
+**Manager check-in**:
+A check-in whose kind is `manager`. Only a final manager check-in moves the
+boundary for the next manager check-in.
+_Avoid_: 1:1 (that is an audience), status report, checkpoint
 
-- **Period** — the date range a check-in covers. A period is not necessarily a
-  calendar quarter.
+**Personal review**:
+A check-in whose kind is `personal`. It is used for weekly or monthly self-review,
+never moves the manager boundary, and remains editable.
+_Avoid_: self-check-in, retro, personal check-in
 
-- **Milestone** — a dated checkpoint attached to a subcategory.
+**Period**:
+The date range a check-in covers; it is not necessarily a calendar quarter.
+_Avoid_: range, window, cycle, sprint
 
-- **Note** — free text attached to a day or to a subcategory.
+**Milestone**:
+A dated checkpoint attached to a subcategory.
+_Avoid_: task, ticket
+
+**Note**:
+Free text attached to a day or to a subcategory.
+_Avoid_: comment, memo, annotation
