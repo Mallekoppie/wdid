@@ -28,19 +28,20 @@ CMD     := ./cmd/wdid
 WEB_DIR   := web
 WEB_BUILD := $(WEB_DIR)/build/web
 DIST_DIR  := cmd/wdid/dist
+API_BASE_URL ?= http://127.0.0.1:8080
 
 IMAGE ?= wdid:dev
 
-# Local-only defaults. internal/config requires a registration secret of at
-# least 16 characters and a JWT secret of at least 32 characters.
+# Local-only defaults. internal/config requires a bootstrap secret of at least
+# 16 characters and a JWT secret of at least 32 characters.
 WDID_HTTP_ADDR            ?= 127.0.0.1:8080
 WDID_DB_PATH              ?= ./data/wdid.db
-WDID_REGISTRATION_SECRET  ?= local-dev-registration-secret
+WDID_BOOTSTRAP_SECRET     ?= local-dev-bootstrap-secret
 WDID_JWT_SECRET           ?= local-dev-jwt-secret-change-me-32chars
 WDID_ALLOWED_ORIGINS      ?= http://127.0.0.1:5173,http://localhost:5173
 WDID_DEV_MODE             ?= true
 
-export WDID_HTTP_ADDR WDID_DB_PATH WDID_REGISTRATION_SECRET WDID_JWT_SECRET
+export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
@@ -80,7 +81,8 @@ buildweb: web-deps ## Build the Flutter web app into cmd/wdid/dist
 
 serveweb: web-deps ## Serve the Flutter web app with hot reload on 127.0.0.1:5173
 	cd $(WEB_DIR) && $(FLUTTER) run -d web-server \
-		--web-hostname 127.0.0.1 --web-port 5173
+		--web-hostname 127.0.0.1 --web-port 5173 \
+		--dart-define=WDID_API_BASE_URL=$(API_BASE_URL)
 
 lint: ## Run go vet and flutter analyze
 	$(GO) vet ./...

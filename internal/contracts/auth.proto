@@ -23,11 +23,21 @@ message User {
   google.protobuf.Timestamp created_at = 5;
 }
 
+// RegisterAccountRequest creates the first account with the deployment
+// bootstrap secret, and every later account with a single-use invite code.
+// Exactly one of invite_code or bootstrap_secret is used, depending on whether
+// the workspace already has an account.
 message RegisterAccountRequest {
+  // Field 4 was registration_secret in the pre-invite contract. It is reserved
+  // rather than reused so the field number stays stable.
+  reserved 4;
+  reserved "registration_secret";
+
   string email = 1;
   string password = 2;
   string display_name = 3;
-  string registration_secret = 4;
+  string invite_code = 5;
+  string bootstrap_secret = 6;
 }
 
 message RegisterAccountResponse {
@@ -55,8 +65,13 @@ message OIDCConfig {
 
 message GetAuthConfigResponse {
   bool local_login = 1;
+  // registration_enabled reports whether invite-based registration is
+  // available. It becomes true once the first account exists.
   bool registration_enabled = 2;
   OIDCConfig oidc = 3;
+  // bootstrap_required reports whether the workspace still needs its first
+  // account, created with the deployment bootstrap secret.
+  bool bootstrap_required = 4;
 }
 
 message GetCurrentUserRequest {}
@@ -66,8 +81,9 @@ message GetCurrentUserResponse {
 }
 
 // AuthService owns local registration, login, auth configuration, and the
-// current-user lookup. RegisterAccount, Login, and GetAuthConfig are public;
-// GetCurrentUser requires a bearer token.
+// current-user lookup. The first account uses the bootstrap secret; later
+// accounts use single-use invite codes issued by the CLI. RegisterAccount,
+// Login, and GetAuthConfig are public; GetCurrentUser requires a bearer token.
 service AuthService {
   rpc RegisterAccount(RegisterAccountRequest) returns (RegisterAccountResponse);
   rpc Login(LoginRequest) returns (LoginResponse);

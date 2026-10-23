@@ -7,10 +7,19 @@ import (
 	"testing"
 
 	"github.com/Mallekoppie/goslow/platform"
+
+	"github.com/Mallekoppie/wdid/internal/config"
 )
 
 func newRouteServer(t *testing.T) *httptest.Server {
 	t.Helper()
+
+	// Other tests in this package configure the platform for storage-only CLI
+	// commands; reset it so the route server does not depend on test order.
+	storage := config.Config{StorageOnly: true}
+	if err := platform.SetPlatformConfiguration(storage.PlatformConfig()); err != nil {
+		t.Fatalf("reset platform configuration: %v", err)
+	}
 
 	handler, err := platform.NewApplicationHandler(platform.ApplicationServerOptions{
 		Routes: nonRPCRoutes(),

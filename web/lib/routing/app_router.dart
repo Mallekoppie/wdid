@@ -11,9 +11,14 @@ import '../screens/settings_screen.dart';
 import '../screens/support_screen.dart';
 import '../screens/today_screen.dart';
 import '../state/app_state.dart';
+import '../state/auth_state.dart';
 import '../widgets/app_shell.dart';
 
-GoRouter buildRouter(AppState state, {String? initialLocation}) {
+GoRouter buildRouter(
+  AppState state,
+  AuthState auth, {
+  String? initialLocation,
+}) {
   return GoRouter(
     initialLocation: initialLocation ?? '/today',
     routes: [
@@ -69,7 +74,7 @@ GoRouter buildRouter(AppState state, {String? initialLocation}) {
       ),
       GoRoute(
         path: '/login',
-        builder: (context, routerState) => const LoginScreen(),
+        builder: (context, routerState) => LoginScreen(auth: auth),
       ),
     ],
     errorBuilder: (context, routerState) => Scaffold(

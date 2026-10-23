@@ -16,12 +16,23 @@ import (
 
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
+	"github.com/Mallekoppie/wdid/internal/invite"
 	"github.com/Mallekoppie/wdid/internal/store"
 )
 
 var (
-	// ErrInvalidRegistrationSecret is returned when the sign-up secret is wrong.
-	ErrInvalidRegistrationSecret = errors.New("invalid registration secret")
+	// ErrInvalidBootstrapSecret is returned when the bootstrap secret is wrong.
+	ErrInvalidBootstrapSecret = errors.New("invalid bootstrap secret")
+	// ErrBootstrapComplete is returned when the first account already exists.
+	ErrBootstrapComplete = errors.New("workspace is already bootstrapped")
+	// ErrInviteRequired is returned when registration has no invite code.
+	ErrInviteRequired = errors.New("an invite code is required")
+	// ErrInvalidInvite is returned when an invite code does not exist.
+	ErrInvalidInvite = errors.New("invalid invite code")
+	// ErrInviteUsed is returned when an invite code has already been redeemed.
+	ErrInviteUsed = errors.New("invite code has already been used")
+	// ErrInviteEmailMismatch is returned when a code is used for another email.
+	ErrInviteEmailMismatch = errors.New("invite code is for a different email")
 	// ErrInvalidCredentials is returned for an unknown email or wrong password.
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	// ErrUnauthenticated is returned when a token cannot be verified.
@@ -36,12 +47,15 @@ const (
 	LocalSource = "local"
 )
 
-// RegisterRequest is the payload for creating the first or a later account.
+// RegisterRequest is the payload for creating the first or a later account. The
+// first account uses the deployment bootstrap secret; every later account needs
+// a single-use invite code.
 type RegisterRequest struct {
-	Email              string `json:"email"`
-	Password           string `json:"password"`
-	DisplayName        string `json:"displayName"`
-	RegistrationSecret string `json:"registrationSecret"`
+	Email           string
+	Password        string
+	DisplayName     string
+	InviteCode      string
+	BootstrapSecret string
 }
 
 // Identity is the authenticated caller attached to a request context.
@@ -77,8 +91,9 @@ func NewService(database *store.Store, cfg config.Config) *Service {
 	return &Service{store: database, cfg: cfg}
 }
 
-// Register creates an account after checking the shared registration secret.
-// The first account becomes the administrator so a fresh deployment is usable.
+// Register creates an account. The first account needs the deployment
+// bootstrap secret and becomes the administrator; every later account needs a
+// single-use invite code.
 func (s *Service) Register(request RegisterRequest, now time.Time) (domain.User, string, error) {
 	request.Email = strings.ToLower(strings.TrimSpace(request.Email))
 	request.DisplayName = strings.TrimSpace(request.DisplayName)
@@ -87,20 +102,29 @@ func (s *Service) Register(request RegisterRequest, now time.Time) (domain.User,
 		return domain.User{}, "", err
 	}
 
-	if subtle.ConstantTimeCompare(
-		[]byte(request.RegistrationSecret), []byte(s.cfg.RegistrationSecret),
-	) != 1 {
-		return domain.User{}, "", ErrInvalidRegistrationSecret
-	}
-
 	count, err := s.store.CountUsers()
 	if err != nil {
 		return domain.User{}, "", err
 	}
 
-	role := domain.RoleUser
+	// Validate the credential before hashing the password, so an unauthorised
+	// caller cannot force bcrypt work with garbage input.
+	var codeHash string
 	if count == 0 {
-		role = domain.RoleAdmin
+		if subtle.ConstantTimeCompare(
+			[]byte(request.BootstrapSecret), []byte(s.cfg.BootstrapSecret),
+		) != 1 {
+			return domain.User{}, "", ErrInvalidBootstrapSecret
+		}
+	} else {
+		code := strings.TrimSpace(request.InviteCode)
+		if code == "" {
+			return domain.User{}, "", ErrInviteRequired
+		}
+		codeHash = invite.Hash(code)
+		if err := s.store.CheckInvite(codeHash, request.Email); err != nil {
+			return domain.User{}, "", inviteRegistrationError(err)
+		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
@@ -117,18 +141,22 @@ func (s *Service) Register(request RegisterRequest, now time.Time) (domain.User,
 		ID:          domain.NewID(),
 		Email:       request.Email,
 		DisplayName: displayName,
-		Role:        role,
 		CreatedAt:   now.UTC(),
 	}
 
-	// Store the credential before the profile so a created account is always
-	// usable for login.
-	if err := s.store.SetPasswordHash(user.ID, string(hash)); err != nil {
-		return domain.User{}, "", err
-	}
-
-	if err := s.store.CreateUser(user); err != nil {
-		return domain.User{}, "", err
+	if count == 0 {
+		user.Role = domain.RoleAdmin
+		if err := s.store.CreateBootstrapUser(user, string(hash)); err != nil {
+			if errors.Is(err, store.ErrAlreadyBootstrapped) {
+				return domain.User{}, "", ErrBootstrapComplete
+			}
+			return domain.User{}, "", err
+		}
+	} else {
+		user.Role = domain.RoleUser
+		if _, err := s.store.CreateInvitedUser(user, string(hash), codeHash, now); err != nil {
+			return domain.User{}, "", inviteRegistrationError(err)
+		}
 	}
 
 	token, err := s.issueToken(user)
@@ -137,6 +165,20 @@ func (s *Service) Register(request RegisterRequest, now time.Time) (domain.User,
 	}
 
 	return user, token, nil
+}
+
+// inviteRegistrationError maps store invite failures onto auth errors.
+func inviteRegistrationError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return ErrInvalidInvite
+	case errors.Is(err, store.ErrInviteUsed):
+		return ErrInviteUsed
+	case errors.Is(err, store.ErrInviteEmailMismatch):
+		return ErrInviteEmailMismatch
+	default:
+		return err
+	}
 }
 
 // Login verifies a local password and issues a token.

@@ -42,6 +42,16 @@ Work in a category whose reporting role is `other`: meetings, admin, learning,
 and unplanned work.
 _Avoid_: misc, uncategorized, overhead
 
+**Invite**:
+A single-use registration code issued for one email address, redeemable once by
+that person.
+_Avoid_: token, referral code, invite link, signup secret
+
+**Bootstrap secret**:
+The deployment-provided secret used once to create the first account, which
+becomes admin. It is not accepted after that account exists.
+_Avoid_: registration secret, signup secret, setup key, admin password
+
 **Check-in**:
 A saved artifact covering a period, with focus notes, aggregates, and an optional
 summary. Every check-in has a kind.

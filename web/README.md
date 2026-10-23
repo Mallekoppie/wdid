@@ -11,8 +11,9 @@ documents in the repository root:
 - `GLOSSARY.md`
 - `.github/copilot-instructions.md`
 
-The Go service is not connected yet. The UI runs against
-`DemoWdidRepository`, an in-memory stand-in exposed through the
+Login, first-account bootstrap, and invite-code registration call the generated
+`AuthService` gRPC-Web client in `lib/data/auth_api.dart`. The journal screens
+still run against `DemoWdidRepository`, an in-memory stand-in exposed through the
 `WdidRepository` seam in `lib/data/repository.dart`.
 
 The demo adapter exists only so screens and flows can be reviewed. It does not
@@ -25,8 +26,12 @@ persistence all go through `WdidRepository`.
 ```bash
 cd web
 flutter pub get
-flutter run -d chrome
+flutter run -d chrome --dart-define=WDID_API_BASE_URL=http://127.0.0.1:8080
 ```
+
+The auth client uses the page origin by default; set `WDID_API_BASE_URL` when the
+service is on another origin, as with the Flutter dev server. `make serveweb`
+passes it automatically.
 
 Validation:
 
@@ -82,8 +87,10 @@ The Go service transport is Connect, which serves Connect, native gRPC, and
 gRPC-Web for the browser. `/healthz` is the only non-RPC route; there is no REST
 surface.
 
-- **Implemented by the service:** the auth RPCs. The earlier Initiative and Work
-  entry model still exists internally but is no longer exposed.
+- **Implemented by the service:** the auth RPCs. Login, invite-code registration,
+  and first-account bootstrap call them via generated gRPC-Web stubs. The earlier
+  Initiative and Work entry model still exists internally but is no longer
+  exposed.
 - **Not implemented by the service yet:** categories and subcategories,
   milestones, check-in records, personal reviews, notes, settings, and
   backup/restore. Those screens run on the demo adapter and surface the gap
@@ -94,8 +101,8 @@ surface.
   protobuf contract is the source of truth; keep any temporary mapping in the
   repository adapter, not in screens.
 - **Auth:** protected RPCs need `authorization: Bearer <token>` metadata from the
-  local login RPC or a Zitadel token. The sign-in screen is a shell until
-  token/session handling is wired.
+  local login RPC or a Zitadel token. The sign-in screen stores the session in
+  memory; the browser OIDC redirect flow is still pending.
 
 The UI demo currently uses the earlier `Initiative` / `WorkItem` shape. It must
 migrate to the plan's model:

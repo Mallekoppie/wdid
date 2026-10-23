@@ -38,10 +38,11 @@ func (s *AuthService) Register(mux *http.ServeMux, options ...connect.HandlerOpt
 // RegisterAccount creates an account after validating the registration secret.
 func (s *AuthService) RegisterAccount(ctx context.Context, request *connect.Request[wdidv1.RegisterAccountRequest]) (*connect.Response[wdidv1.RegisterAccountResponse], error) {
 	user, token, err := s.auth.Register(auth.RegisterRequest{
-		Email:              request.Msg.GetEmail(),
-		Password:           request.Msg.GetPassword(),
-		DisplayName:        request.Msg.GetDisplayName(),
-		RegistrationSecret: request.Msg.GetRegistrationSecret(),
+		Email:           request.Msg.GetEmail(),
+		Password:        request.Msg.GetPassword(),
+		DisplayName:     request.Msg.GetDisplayName(),
+		InviteCode:      request.Msg.GetInviteCode(),
+		BootstrapSecret: request.Msg.GetBootstrapSecret(),
 	}, time.Now().UTC())
 	if err != nil {
 		return nil, toConnectError(err)
@@ -68,9 +69,15 @@ func (s *AuthService) Login(_ context.Context, request *connect.Request[wdidv1.L
 
 // GetAuthConfig reports the enabled login modes without requiring a token.
 func (s *AuthService) GetAuthConfig(_ context.Context, _ *connect.Request[wdidv1.GetAuthConfigRequest]) (*connect.Response[wdidv1.GetAuthConfigResponse], error) {
+	count, err := s.store.CountUsers()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
 	return connect.NewResponse(&wdidv1.GetAuthConfigResponse{
 		LocalLogin:          true,
-		RegistrationEnabled: len(s.cfg.RegistrationSecret) > 0,
+		RegistrationEnabled: count > 0,
+		BootstrapRequired:   count == 0,
 		Oidc: &wdidv1.OIDCConfig{
 			Enabled:   s.cfg.Zitadel.Enabled,
 			IssuerUrl: s.cfg.Zitadel.IssuerURL,

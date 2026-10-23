@@ -34,8 +34,15 @@ func toConnectError(err error) error {
 		return connect.NewError(connect.CodeNotFound, err)
 	case errors.Is(err, store.ErrEmailExists):
 		return connect.NewError(connect.CodeAlreadyExists, err)
-	case errors.Is(err, auth.ErrInvalidRegistrationSecret):
+	case errors.Is(err, auth.ErrInvalidBootstrapSecret),
+		errors.Is(err, auth.ErrInvalidInvite),
+		errors.Is(err, auth.ErrInviteUsed),
+		errors.Is(err, auth.ErrInviteEmailMismatch):
 		return connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, auth.ErrBootstrapComplete):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, auth.ErrInviteRequired):
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrUnauthenticated):
 		return connect.NewError(connect.CodeUnauthenticated, err)
 	default:

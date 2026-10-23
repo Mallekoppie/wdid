@@ -7,6 +7,7 @@ require (
 	github.com/Mallekoppie/goslow v0.0.0-20261018185216-5eded094f41a
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.6.0
+	go.etcd.io/bbolt v1.5.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.58.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
@@ -51,7 +52,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	go.etcd.io/bbolt v1.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.61.0 // indirect

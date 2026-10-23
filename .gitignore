@@ -33,11 +33,11 @@ go.work.sum
 # .vscode/
 
 # Local build output
-bin/
+/bin/
 
-# wdid runtime data, backups and logs
-data/
-backups/
+# wdid runtime data, backups and logs (root only; web/lib/data is source)
+/data/
+/backups/
 *.db
 *.db.lock
 log.txt

@@ -150,14 +150,19 @@ func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// RegisterAccountRequest creates the first account with the deployment
+// bootstrap secret, and every later account with a single-use invite code.
+// Exactly one of invite_code or bootstrap_secret is used, depending on whether
+// the workspace already has an account.
 type RegisterAccountRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Email              string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Password           string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
-	DisplayName        string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	RegistrationSecret string                 `protobuf:"bytes,4,opt,name=registration_secret,json=registrationSecret,proto3" json:"registration_secret,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Email           string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Password        string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	DisplayName     string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	InviteCode      string                 `protobuf:"bytes,5,opt,name=invite_code,json=inviteCode,proto3" json:"invite_code,omitempty"`
+	BootstrapSecret string                 `protobuf:"bytes,6,opt,name=bootstrap_secret,json=bootstrapSecret,proto3" json:"bootstrap_secret,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RegisterAccountRequest) Reset() {
@@ -211,9 +216,16 @@ func (x *RegisterAccountRequest) GetDisplayName() string {
 	return ""
 }
 
-func (x *RegisterAccountRequest) GetRegistrationSecret() string {
+func (x *RegisterAccountRequest) GetInviteCode() string {
 	if x != nil {
-		return x.RegistrationSecret
+		return x.InviteCode
+	}
+	return ""
+}
+
+func (x *RegisterAccountRequest) GetBootstrapSecret() string {
+	if x != nil {
+		return x.BootstrapSecret
 	}
 	return ""
 }
@@ -471,12 +483,17 @@ func (x *OIDCConfig) GetClientId() string {
 }
 
 type GetAuthConfigResponse struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	LocalLogin          bool                   `protobuf:"varint,1,opt,name=local_login,json=localLogin,proto3" json:"local_login,omitempty"`
-	RegistrationEnabled bool                   `protobuf:"varint,2,opt,name=registration_enabled,json=registrationEnabled,proto3" json:"registration_enabled,omitempty"`
-	Oidc                *OIDCConfig            `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	LocalLogin bool                   `protobuf:"varint,1,opt,name=local_login,json=localLogin,proto3" json:"local_login,omitempty"`
+	// registration_enabled reports whether invite-based registration is
+	// available. It becomes true once the first account exists.
+	RegistrationEnabled bool        `protobuf:"varint,2,opt,name=registration_enabled,json=registrationEnabled,proto3" json:"registration_enabled,omitempty"`
+	Oidc                *OIDCConfig `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// bootstrap_required reports whether the workspace still needs its first
+	// account, created with the deployment bootstrap secret.
+	BootstrapRequired bool `protobuf:"varint,4,opt,name=bootstrap_required,json=bootstrapRequired,proto3" json:"bootstrap_required,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GetAuthConfigResponse) Reset() {
@@ -528,6 +545,13 @@ func (x *GetAuthConfigResponse) GetOidc() *OIDCConfig {
 		return x.Oidc
 	}
 	return nil
+}
+
+func (x *GetAuthConfigResponse) GetBootstrapRequired() bool {
+	if x != nil {
+		return x.BootstrapRequired
+	}
+	return false
 }
 
 type GetCurrentUserRequest struct {
@@ -622,12 +646,14 @@ const file_auth_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12%\n" +
 	"\x04role\x18\x04 \x01(\x0e2\x11.wdid.v1.UserRoleR\x04role\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x9e\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xd4\x01\n" +
 	"\x16RegisterAccountRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
-	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12/\n" +
-	"\x13registration_secret\x18\x04 \x01(\tR\x12registrationSecret\"R\n" +
+	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1f\n" +
+	"\vinvite_code\x18\x05 \x01(\tR\n" +
+	"inviteCode\x12)\n" +
+	"\x10bootstrap_secret\x18\x06 \x01(\tR\x0fbootstrapSecretJ\x04\b\x04\x10\x05R\x13registration_secret\"R\n" +
 	"\x17RegisterAccountResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.wdid.v1.UserR\x04user\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"@\n" +
@@ -643,12 +669,13 @@ const file_auth_proto_rawDesc = "" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1d\n" +
 	"\n" +
 	"issuer_url\x18\x02 \x01(\tR\tissuerUrl\x12\x1b\n" +
-	"\tclient_id\x18\x03 \x01(\tR\bclientId\"\x94\x01\n" +
+	"\tclient_id\x18\x03 \x01(\tR\bclientId\"\xc3\x01\n" +
 	"\x15GetAuthConfigResponse\x12\x1f\n" +
 	"\vlocal_login\x18\x01 \x01(\bR\n" +
 	"localLogin\x121\n" +
 	"\x14registration_enabled\x18\x02 \x01(\bR\x13registrationEnabled\x12'\n" +
-	"\x04oidc\x18\x03 \x01(\v2\x13.wdid.v1.OIDCConfigR\x04oidc\"\x17\n" +
+	"\x04oidc\x18\x03 \x01(\v2\x13.wdid.v1.OIDCConfigR\x04oidc\x12-\n" +
+	"\x12bootstrap_required\x18\x04 \x01(\bR\x11bootstrapRequired\"\x17\n" +
 	"\x15GetCurrentUserRequest\";\n" +
 	"\x16GetCurrentUserResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.wdid.v1.UserR\x04user*N\n" +

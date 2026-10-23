@@ -33,8 +33,9 @@
   `ActiveTimer`. Store buckets: `sys:users`, `sys:user_emails`,
   `sys:user_credentials`, `user_<id>:initiatives`, `user_<id>:entries`,
   `user_<id>:timer`.
-- The Flutter client runs on `DemoWdidRepository`; screens exist for every route.
-  There are no REST calls from `web/lib`.
+- The Flutter client runs on `DemoWdidRepository` for journal screens; login,
+  invite registration, and first-account bootstrap use the generated auth
+  gRPC-Web client. There are no REST calls from `web/lib`.
 - No check-in, note, settings, milestone, or backup persistence exists.
 - No `data/` or `backups/` directory exists, so there is nothing to migrate.
 - The dev container still has Go 1.26.9; the Makefile exports `GOTOOLCHAIN=auto`.
@@ -71,15 +72,15 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ### Identity and invites
 
-- [ ] Replace `WDID_REGISTRATION_SECRET` with `WDID_BOOTSTRAP_SECRET`; the first
+- [x] Replace `WDID_REGISTRATION_SECRET` with `WDID_BOOTSTRAP_SECRET`; the first
       account becomes `admin`.
-- [ ] Add `sys:invites` and single-use invite codes.
-- [ ] Add CLI: `wdid invite create|list|revoke`.
-- [ ] Update `auth.proto` and `AuthService.RegisterAccount` to accept an invite
+- [x] Add `sys:invites` and single-use invite codes.
+- [x] Add CLI: `wdid invite create|list|revoke`.
+- [x] Update `auth.proto` and `AuthService.RegisterAccount` to accept an invite
       code, or the bootstrap secret for the first account; update
       `GetAuthConfig`.
-- [ ] Keep the Zitadel OIDC path unchanged.
-- [ ] Tests: first account admin, a later account requires an invite, invites are
+- [x] Keep the Zitadel OIDC path unchanged.
+- [x] Tests: first account admin, a later account requires an invite, invites are
       single-use, and missing/invalid invites map to the right Connect code.
 
 ### Surface cleanup
@@ -100,7 +101,7 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ### UI
 
-- [ ] Replace demo auth with generated `AuthService` clients; login and
+- [x] Replace demo auth with generated `AuthService` clients; login and
       invite-code registration.
 - [ ] Wire Settings → Categories to `CategoryService` (list, create, rename,
       archive, subcategories, role selection).
@@ -238,6 +239,8 @@ works.
 ## Known non-blocking notes
 
 - goslow logs `code":"unknown"` for successful RPCs.
+- Invite CLI commands open BoltDB directly, so the service must be stopped
+  while they run. Live invite management needs an admin RPC.
 - `ReadObject` panics on a missing bucket; the store wrapper must use
   `ReadAllObjects`.
 - goslow opens BoltDB with `os.ModeExclusive`; pre-create the database file with

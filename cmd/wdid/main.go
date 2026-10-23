@@ -35,6 +35,13 @@ func health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "invite" {
+		if err := runInvite(os.Args[2:], os.Stdout); err != nil {
+			log.Fatalf("wdid invite: %v", err)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		log.Fatalf("wdid: %v", err)
 	}

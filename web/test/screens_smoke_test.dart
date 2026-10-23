@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/demo_repository.dart';
 
+import 'fake_auth_api.dart';
+
 void main() {
   Future<void> pumpRoute(
     WidgetTester tester,
@@ -18,6 +20,7 @@ void main() {
     await tester.pumpWidget(
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
+        authApi: FakeAuthApi(),
         initialRoute: route,
       ),
     );
@@ -33,7 +36,7 @@ void main() {
     '/checkins': 'Create check-in',
     '/checkins/checkin-generated': 'Summary',
     '/settings': 'Data',
-    '/login': 'Continue with Zitadel',
+    '/login': 'Sign in',
   };
 
   for (final entry in cases.entries) {

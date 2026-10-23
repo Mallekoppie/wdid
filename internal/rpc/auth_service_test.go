@@ -8,31 +8,34 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/Mallekoppie/goslow/platform"
 
 	"github.com/Mallekoppie/wdid/internal/auth"
 	"github.com/Mallekoppie/wdid/internal/config"
+	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
 	"github.com/Mallekoppie/wdid/internal/gen/wdid/v1/wdidv1connect"
+	"github.com/Mallekoppie/wdid/internal/invite"
 	"github.com/Mallekoppie/wdid/internal/rpc"
 	"github.com/Mallekoppie/wdid/internal/store"
 )
 
 const (
-	testRegistrationSecret = "test-registration-secret"
-	testPassword           = "longenough1"
+	testBootstrapSecret = "test-bootstrap-secret"
+	testPassword        = "longenough1"
 )
 
-func newAuthHandler(t *testing.T) http.Handler {
+func testConfig(t *testing.T) config.Config {
 	t.Helper()
 
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid-rpc.db"),
 		AllowedOrigins:       []string{"http://127.0.0.1:5173"},
-		RegistrationSecret:   testRegistrationSecret,
+		BootstrapSecret:      testBootstrapSecret,
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
 		JWTExpirationMinutes: 60,
@@ -41,6 +44,11 @@ func newAuthHandler(t *testing.T) http.Handler {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("test config invalid: %v", err)
 	}
+	return cfg
+}
+
+func newAuthHandlerWithConfig(t *testing.T, cfg config.Config) (http.Handler, *store.Store) {
+	t.Helper()
 
 	database, err := store.Open(cfg)
 	if err != nil {
@@ -61,32 +69,70 @@ func newAuthHandler(t *testing.T) http.Handler {
 		t.Fatalf("build application handler: %v", err)
 	}
 
-	return application
+	return application, database
 }
 
-func newAuthServer(t *testing.T) *httptest.Server {
+func newAuthHandler(t *testing.T) (http.Handler, *store.Store) {
+	t.Helper()
+	return newAuthHandlerWithConfig(t, testConfig(t))
+}
+
+func newAuthServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Helper()
 
-	server := httptest.NewServer(newAuthHandler(t))
+	handler, database := newAuthHandler(t)
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	return server
+	return server, database
 }
 
 func authClient(server *httptest.Server, options ...connect.ClientOption) wdidv1connect.AuthServiceClient {
 	return wdidv1connect.NewAuthServiceClient(server.Client(), server.URL, options...)
 }
 
+func registerBootstrap(t *testing.T, client wdidv1connect.AuthServiceClient) *wdidv1.RegisterAccountResponse {
+	t.Helper()
+
+	response, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Email:           "admin@example.com",
+		Password:        testPassword,
+		DisplayName:     "Admin",
+		BootstrapSecret: testBootstrapSecret,
+	}))
+	if err != nil {
+		t.Fatalf("bootstrap account: %v", err)
+	}
+	return response.Msg
+}
+
+func createInvite(t *testing.T, database *store.Store, email string) string {
+	t.Helper()
+
+	code, err := invite.New()
+	if err != nil {
+		t.Fatalf("generate invite code: %v", err)
+	}
+	record := domain.Invite{ID: domain.NewID(), Email: email, CreatedAt: time.Now().UTC()}
+	if err := database.CreateInvite(record, invite.Hash(code)); err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	return code
+}
+
 func TestAuthServiceConnectFlow(t *testing.T) {
-	server := newAuthServer(t)
+	server, _ := newAuthServer(t)
 	client := authClient(server)
 
 	configResponse, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
 	if err != nil {
 		t.Fatalf("get auth config: %v", err)
 	}
-	if !configResponse.Msg.GetLocalLogin() || !configResponse.Msg.GetRegistrationEnabled() {
-		t.Fatalf("unexpected auth config: %v", configResponse.Msg)
+	if !configResponse.Msg.GetLocalLogin() || !configResponse.Msg.GetBootstrapRequired() {
+		t.Fatalf("initial auth config = %v, want local login and bootstrap required", configResponse.Msg)
+	}
+	if configResponse.Msg.GetRegistrationEnabled() {
+		t.Fatal("invite registration must wait for the first account")
 	}
 
 	_, err = client.GetCurrentUser(context.Background(), connect.NewRequest(&wdidv1.GetCurrentUserRequest{}))
@@ -94,50 +140,123 @@ func TestAuthServiceConnectFlow(t *testing.T) {
 		t.Fatalf("unauthenticated GetCurrentUser code = %v, want unauthenticated", connect.CodeOf(err))
 	}
 
-	registration, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
-		Email:              "dev@example.com",
-		Password:           testPassword,
-		DisplayName:        "Dev",
-		RegistrationSecret: testRegistrationSecret,
-	}))
-	if err != nil {
-		t.Fatalf("register account: %v", err)
+	registration := registerBootstrap(t, client)
+	if registration.GetUser().GetRole() != wdidv1.UserRole_USER_ROLE_ADMIN {
+		t.Fatalf("first user role = %v, want admin", registration.GetUser().GetRole())
 	}
-	if registration.Msg.GetUser().GetRole() != wdidv1.UserRole_USER_ROLE_ADMIN {
-		t.Fatalf("first user role = %v, want admin", registration.Msg.GetUser().GetRole())
-	}
-	if registration.Msg.GetToken() == "" {
+	if registration.GetToken() == "" {
 		t.Fatal("registration returned an empty token")
 	}
 
-	current, err := client.GetCurrentUser(context.Background(), withBearer(&wdidv1.GetCurrentUserRequest{}, registration.Msg.GetToken()))
+	current, err := client.GetCurrentUser(context.Background(), withBearer(&wdidv1.GetCurrentUserRequest{}, registration.GetToken()))
 	if err != nil {
 		t.Fatalf("get current user: %v", err)
 	}
-	if current.Msg.GetUser().GetEmail() != "dev@example.com" {
+	if current.Msg.GetUser().GetEmail() != "admin@example.com" {
 		t.Fatalf("current user email = %q", current.Msg.GetUser().GetEmail())
 	}
 
 	login, err := client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
-		Email:    "DEV@example.com",
+		Email:    "ADMIN@example.com",
 		Password: testPassword,
 	}))
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	if login.Msg.GetUser().GetId() != registration.Msg.GetUser().GetId() {
-		t.Fatalf("login user = %q, want %q", login.Msg.GetUser().GetId(), registration.Msg.GetUser().GetId())
+	if login.Msg.GetUser().GetId() != registration.GetUser().GetId() {
+		t.Fatalf("login user = %q, want %q", login.Msg.GetUser().GetId(), registration.GetUser().GetId())
+	}
+
+	configResponse, err = client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get auth config after bootstrap: %v", err)
+	}
+	if configResponse.Msg.GetBootstrapRequired() || !configResponse.Msg.GetRegistrationEnabled() {
+		t.Fatalf("post-bootstrap auth config = %v, want invite registration enabled", configResponse.Msg)
 	}
 }
 
-func TestAuthServiceRejectsBadRegistrationSecret(t *testing.T) {
-	server := newAuthServer(t)
+func TestAuthServiceRejectsBadBootstrapSecret(t *testing.T) {
+	server, _ := newAuthServer(t)
 	client := authClient(server)
 
 	_, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
-		Email:              "dev@example.com",
-		Password:           testPassword,
-		RegistrationSecret: "wrong-secret-value",
+		Email:           "admin@example.com",
+		Password:        testPassword,
+		BootstrapSecret: "wrong-secret-value",
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("code = %v, want permission denied", connect.CodeOf(err))
+	}
+}
+
+func TestAuthServiceRequiresInviteAfterBootstrap(t *testing.T) {
+	server, _ := newAuthServer(t)
+	client := authClient(server)
+	registerBootstrap(t, client)
+
+	_, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Email:           "second@example.com",
+		Password:        testPassword,
+		BootstrapSecret: testBootstrapSecret,
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+}
+
+func TestAuthServiceInviteRegistration(t *testing.T) {
+	server, database := newAuthServer(t)
+	client := authClient(server)
+	registerBootstrap(t, client)
+
+	code := createInvite(t, database, "new@example.com")
+
+	registration, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Email:       "NEW@example.com",
+		Password:    testPassword,
+		DisplayName: "New User",
+		InviteCode:  strings.ToLower(code),
+	}))
+	if err != nil {
+		t.Fatalf("invite registration: %v", err)
+	}
+	if registration.Msg.GetUser().GetRole() != wdidv1.UserRole_USER_ROLE_USER {
+		t.Fatalf("invited role = %v, want user", registration.Msg.GetUser().GetRole())
+	}
+
+	login, err := client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
+		Email:    "new@example.com",
+		Password: testPassword,
+	}))
+	if err != nil {
+		t.Fatalf("login invited user: %v", err)
+	}
+	if login.Msg.GetUser().GetId() != registration.Msg.GetUser().GetId() {
+		t.Fatalf("login user = %q, want %q", login.Msg.GetUser().GetId(), registration.Msg.GetUser().GetId())
+	}
+
+	_, err = client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Email:      "another@example.com",
+		Password:   testPassword,
+		InviteCode: code,
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("reused invite code = %v, want permission denied", connect.CodeOf(err))
+	}
+}
+
+func TestAuthServiceInviteRejectsAnotherEmail(t *testing.T) {
+	server, database := newAuthServer(t)
+	client := authClient(server)
+	registerBootstrap(t, client)
+
+	code := createInvite(t, database, "new@example.com")
+
+	_, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Email:      "someone@example.com",
+		Password:   testPassword,
+		InviteCode: code,
 	}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code = %v, want permission denied", connect.CodeOf(err))
@@ -145,7 +264,7 @@ func TestAuthServiceRejectsBadRegistrationSecret(t *testing.T) {
 }
 
 func TestAuthServiceHealthIsPublic(t *testing.T) {
-	server := newAuthServer(t)
+	server, _ := newAuthServer(t)
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/grpc.health.v1.Health/Check", strings.NewReader(`{"service":"wdid.v1.AuthService"}`))
 	if err != nil {
 		t.Fatalf("build health request: %v", err)
@@ -172,7 +291,7 @@ func TestAuthServiceHealthIsPublic(t *testing.T) {
 }
 
 func TestAuthServiceServesGRPCWeb(t *testing.T) {
-	server := newAuthServer(t)
+	server, _ := newAuthServer(t)
 	client := authClient(server, connect.WithGRPCWeb())
 
 	response, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
@@ -185,7 +304,8 @@ func TestAuthServiceServesGRPCWeb(t *testing.T) {
 }
 
 func TestAuthServiceServesNativeGRPC(t *testing.T) {
-	server := httptest.NewUnstartedServer(newAuthHandler(t))
+	handler, _ := newAuthHandler(t)
+	server := httptest.NewUnstartedServer(handler)
 	server.EnableHTTP2 = true
 	server.StartTLS()
 	t.Cleanup(server.Close)
@@ -197,6 +317,35 @@ func TestAuthServiceServesNativeGRPC(t *testing.T) {
 	}
 	if !response.Msg.GetLocalLogin() {
 		t.Fatal("native gRPC response did not include local login")
+	}
+}
+
+func TestAuthServiceReportsOIDCConfig(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Zitadel = config.Zitadel{
+		Enabled:           true,
+		IssuerURL:         "http://zitadel.local:8080",
+		ClientID:          "wdid-client",
+		AllowedAlgorithms: []string{"RS256"},
+		AdminRole:         "wdid-admins",
+	}
+
+	handler, _ := newAuthHandlerWithConfig(t, cfg)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	response, err := authClient(server).GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get auth config: %v", err)
+	}
+	if !response.Msg.GetOidc().GetEnabled() {
+		t.Fatal("OIDC must be reported as enabled")
+	}
+	if response.Msg.GetOidc().GetIssuerUrl() != cfg.Zitadel.IssuerURL || response.Msg.GetOidc().GetClientId() != cfg.Zitadel.ClientID {
+		t.Fatalf("OIDC config = %v, want issuer and client id", response.Msg.GetOidc())
+	}
+	if !response.Msg.GetLocalLogin() {
+		t.Fatal("local login must stay available with OIDC")
 	}
 }
 

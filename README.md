@@ -30,7 +30,7 @@ gRPC-Web and must not reimplement these rules.
 ## Run
 
 ```bash
-export WDID_REGISTRATION_SECRET='change-me-at-least-16-chars'
+export WDID_BOOTSTRAP_SECRET='change-me-at-least-16-chars'
 export WDID_JWT_SECRET='change-me-at-least-32-characters-long'
 go run ./cmd/wdid
 ```
@@ -60,7 +60,7 @@ the Makefile are for local development only.
 | --- | --- | --- |
 | `WDID_HTTP_ADDR` | `127.0.0.1:8080` | Listen address |
 | `WDID_DB_PATH` | `./data/wdid.db` | BoltDB file |
-| `WDID_REGISTRATION_SECRET` | required | Shared secret required for sign-up |
+| `WDID_BOOTSTRAP_SECRET` | required | Deployment secret for the first (admin) account |
 | `WDID_JWT_SECRET` | required | HS256 signing key for local tokens |
 | `WDID_JWT_SIGNING_METHOD` | `HS256` | `HS256`, `HS384` or `HS512` |
 | `WDID_JWT_EXPIRATION_MINUTES` | `720` | Local token lifetime |
@@ -77,9 +77,13 @@ the Makefile are for local development only.
 
 Initial local deployment baseline:
 
-1. A local user registers through `wdid.v1.AuthService/RegisterAccount` with the
-   shared registration secret.
-2. The **first** account becomes `admin`; later accounts are `user`.
+1. The **first** account registers through
+   `wdid.v1.AuthService/RegisterAccount` with the deployment bootstrap secret and
+   becomes `admin`. The bootstrap secret is not accepted once that account
+   exists.
+2. Every later account needs a single-use invite code issued by an admin with
+   `wdid invite create --email <address>` and becomes `user`. Reusing or
+   revoking a code makes it unusable.
 3. Login returns a local HS256 JWT. Protected RPCs accept
    `Authorization: Bearer <token>`.
 4. When Zitadel is enabled, goslow's Connect auth interceptor uses
@@ -88,6 +92,19 @@ Initial local deployment baseline:
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
 the user profile, so hashes are never serialized into API responses.
+
+## Invite CLI
+
+```bash
+wdid invite create --email person@example.com   # prints the code once
+wdid invite list                                 # id, email, status, created, used by
+wdid invite revoke <id>
+```
+
+Invite codes are single-use and bound to the email they were issued for. Only a
+SHA-256 hash of the code is stored. The CLI reads `WDID_DB_PATH` and needs no
+serving secrets. BoltDB allows one writer, so stop the service before running
+invite commands; the CLI reports the lock if it is still running.
 
 ## Connect API
 
@@ -110,6 +127,7 @@ the liveness probe.
 ## Storage layout
 
 - `sys:users`, `sys:user_emails`, `sys:user_credentials`
+- `sys:invites` (keyed by the invite-code hash)
 - `user_<id>:initiatives`
 - `user_<id>:entries`
 - `user_<id>:timer`

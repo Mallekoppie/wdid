@@ -18,7 +18,7 @@ const (
 	defaultJWTExpirationMinute = 720
 	defaultMaxBlockMinutes     = 240
 	defaultAllowedOrigins      = "http://127.0.0.1:5173,http://localhost:5173"
-	minRegistrationSecretLen   = 16
+	minBootstrapSecretLen      = 16
 	minJWTSecretLen            = 32
 
 	// AuthServiceName is the fully qualified Connect service registered by the
@@ -52,12 +52,15 @@ type Config struct {
 	DBPath               string
 	AllowedOrigins       []string
 	DevMode              bool
-	RegistrationSecret   string
+	BootstrapSecret      string
 	JWTSecret            string
 	JWTSigningMethod     string
 	JWTExpirationMinutes int64
 	MaxBlockMinutes      int
 	Zitadel              Zitadel
+	// StorageOnly marks commands that open the database without serving
+	// requests, so no transport or health configuration is required.
+	StorageOnly bool
 }
 
 // Load reads the service configuration from the environment and validates it.
@@ -67,7 +70,7 @@ func Load() (Config, error) {
 		DBPath:               envString("WDID_DB_PATH", defaultDBPath),
 		AllowedOrigins:       splitList(envString("WDID_ALLOWED_ORIGINS", defaultAllowedOrigins)),
 		DevMode:              envBool("WDID_DEV_MODE", false),
-		RegistrationSecret:   os.Getenv("WDID_REGISTRATION_SECRET"),
+		BootstrapSecret:      os.Getenv("WDID_BOOTSTRAP_SECRET"),
 		JWTSecret:            os.Getenv("WDID_JWT_SECRET"),
 		JWTSigningMethod:     envString("WDID_JWT_SIGNING_METHOD", defaultJWTSigningMethod),
 		JWTExpirationMinutes: int64(envInt("WDID_JWT_EXPIRATION_MINUTES", defaultJWTExpirationMinute)),
@@ -88,6 +91,12 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// LoadStorage reads only the database location. CLI commands that inspect or
+// seed the database do not need the serving secrets.
+func LoadStorage() Config {
+	return Config{DBPath: envString("WDID_DB_PATH", defaultDBPath), StorageOnly: true}
+}
+
 // Validate enforces the configuration invariants required to start the service.
 func (c Config) Validate() error {
 	var problems []string
@@ -103,9 +112,9 @@ func (c Config) Validate() error {
 			problems = append(problems, fmt.Sprintf("WDID_ALLOWED_ORIGINS entry %q is invalid: %v", origin, err))
 		}
 	}
-	if len(c.RegistrationSecret) < minRegistrationSecretLen {
+	if len(c.BootstrapSecret) < minBootstrapSecretLen {
 		problems = append(problems,
-			fmt.Sprintf("WDID_REGISTRATION_SECRET must be at least %d characters", minRegistrationSecretLen))
+			fmt.Sprintf("WDID_BOOTSTRAP_SECRET must be at least %d characters", minBootstrapSecretLen))
 	}
 	if len(c.JWTSecret) < minJWTSecretLen {
 		problems = append(problems,
@@ -165,8 +174,8 @@ func (c Config) PlatformConfig() platform.Config {
 	pc.Grpc.Server.ListeningAddress = c.HTTPAddr
 	pc.Grpc.Server.AllowedOrigins = append([]string(nil), c.AllowedOrigins...)
 	pc.Grpc.Server.Auth = platform.AuthLocalJWT
-	pc.Grpc.Server.HealthEnabled = true
-	pc.Grpc.Server.ReflectionEnabled = c.DevMode
+	pc.Grpc.Server.HealthEnabled = !c.StorageOnly
+	pc.Grpc.Server.ReflectionEnabled = c.DevMode && !c.StorageOnly
 	pc.Grpc.Server.StreamTimeoutSeconds = 0
 	pc.Grpc.Server.MaxReceiveMessageBytes = 4 << 20
 

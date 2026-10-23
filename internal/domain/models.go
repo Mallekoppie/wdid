@@ -61,6 +61,21 @@ type User struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
+// Invite is a single-use registration code issued for one email address.
+// Only a SHA-256 hash of the code is stored; the code itself is shown once.
+type Invite struct {
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UsedAt    *time.Time `json:"usedAt,omitempty"`
+	UsedBy    string     `json:"usedBy,omitempty"`
+}
+
+// Normalize trims invite input into its canonical form.
+func (i *Invite) Normalize() {
+	i.Email = strings.ToLower(strings.TrimSpace(i.Email))
+}
+
 // Initiative is a major body of work that spans days or weeks.
 type Initiative struct {
 	ID            string           `json:"id"`

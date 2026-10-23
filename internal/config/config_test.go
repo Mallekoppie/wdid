@@ -11,7 +11,7 @@ import (
 
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("WDID_REGISTRATION_SECRET", "test-registration-secret")
+	t.Setenv("WDID_BOOTSTRAP_SECRET", "test-registration-secret")
 	t.Setenv("WDID_JWT_SECRET", strings.Repeat("k", 32))
 }
 
@@ -33,7 +33,7 @@ func TestValidateAcceptsCompleteConfig(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:8080",
 		DBPath:               "./data/wdid.db",
-		RegistrationSecret:   "test-registration-secret",
+		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
 		JWTExpirationMinutes: 60,
@@ -135,7 +135,7 @@ func TestValidateRejectsWildcardOrigin(t *testing.T) {
 		HTTPAddr:             "127.0.0.1:8080",
 		DBPath:               "./data/wdid.db",
 		AllowedOrigins:       []string{"*"},
-		RegistrationSecret:   "test-registration-secret",
+		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
 		JWTExpirationMinutes: 60,

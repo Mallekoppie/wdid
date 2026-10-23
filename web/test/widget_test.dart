@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/demo_repository.dart';
 
+import 'fake_auth_api.dart';
+
 void main() {
   testWidgets('renders Today and navigates to Log', (tester) async {
     tester.view.physicalSize = const Size(1440, 1000);
@@ -14,6 +16,7 @@ void main() {
     await tester.pumpWidget(
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
+        authApi: FakeAuthApi(),
       ),
     );
     await tester.pumpAndSettle();
