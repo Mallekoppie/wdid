@@ -34,7 +34,7 @@ IMAGE ?= wdid:dev
 
 # Local-only defaults. internal/config requires a bootstrap secret of at least
 # 16 characters and a JWT secret of at least 32 characters.
-WDID_HTTP_ADDR            ?= 127.0.0.1:8080
+WDID_HTTP_ADDR            ?= 127.0.0.1:9101
 WDID_DB_PATH              ?= ./data/wdid.db
 WDID_BOOTSTRAP_SECRET     ?= local-dev-bootstrap-secret
 WDID_JWT_SECRET           ?= local-dev-jwt-secret-change-me-32chars
