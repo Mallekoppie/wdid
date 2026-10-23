@@ -253,8 +253,8 @@ backup encryption, webhooks, WebAuthn, review-readiness score, cross-attribution
 links, arbitrary nesting, shared categories, notifications, mobile/PWA, and
 calendar or issue-tracker imports.
 
-## Ticket creation
+## Tickets
 
-Run the `to-tickets` skill against this plan. Create one ticket per checklist
-item that can be reviewed independently, and link every ticket to its milestone
-and acceptance criterion.
+The work is published as tickets 01–24 under `.scratch/implementation/issues/`.
+Work the frontier: any ticket whose blockers are complete. Tickets 01 and 02 can
+start immediately.
