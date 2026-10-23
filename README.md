@@ -8,6 +8,11 @@ This service is the source of truth for persistence, validation, identity,
 exports and AI-ready summaries. The web client consumes the Connect contract over
 gRPC-Web and must not reimplement these rules.
 
+> **Status:** This README describes the current service implementation. `plan.md`
+> is the canonical product and domain model; where the two differ, the plan wins
+> and the service is to be migrated. The `kind`-based attribution described below
+> is the pre-taxonomy shape.
+
 > **Transport status:** Connect is the target service transport. Connect serves
 > Connect, native gRPC, and gRPC-Web from one handler, and
 > `internal/contracts/*.proto` is the source of truth. The REST surface

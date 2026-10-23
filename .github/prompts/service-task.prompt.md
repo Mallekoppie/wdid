@@ -14,7 +14,7 @@ If no text was selected, use the task described in the chat input after this pro
 
 ## Required context
 
-1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`, `plan.md`, and `stich-design.md` before changing anything.
+1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`, `plan.md`, and `GLOSSARY.md` before changing anything.
 2. Follow the Go service structure and `goslow` framework patterns used in `/var/home/Mallekoppie/code/source/ChaosGenerator`.
 
 ## Method

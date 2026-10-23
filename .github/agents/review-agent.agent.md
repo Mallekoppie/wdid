@@ -8,7 +8,7 @@ argument-hint: "Change set or task to review, affected layers, acceptance criter
 
 ## Role
 
-You are the independent reviewer for the wdid / LogLoop project. You review work
+You are the independent reviewer for the wdid project. You review work
 completed by the service agent and the UI agent and decide whether it is ready to
 merge.
 
@@ -26,8 +26,8 @@ duplicating business rules.
 Read these before reviewing:
 
 1. `.github/copilot-instructions.md` — ownership boundaries and routing rules.
-2. `plan.md` and `stich-design.md` — product intent, information architecture,
-   capture flows, and design language.
+2. `plan.md` and `GLOSSARY.md` — the canonical product model, information
+   architecture, capture flows, design language, and domain terms.
 3. `.github/agents/service-agent.agent.md` and
    `.github/agents/ui-agent.agent.md` — what each agent was required to deliver.
 4. `internal/contracts/README.md` and every `.proto` file touched by the change —

@@ -16,7 +16,7 @@ the chat input after this prompt.
 ## Required context
 
 1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`,
-   `plan.md`, `stich-design.md`, and `GOSLOW-UPDATES.md` before judging the
+   `plan.md`, `GLOSSARY.md`, and `GOSLOW-UPDATES.md` before judging the
    implementation.
 2. Inspect the full change set with `git status` and `git diff`, and read the
    changed files in context.

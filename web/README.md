@@ -1,14 +1,14 @@
 # wdid web client
 
-Flutter web client for the wdid / LogLoop work journal.
+Flutter web client for the wdid work journal.
 
 ## Status
 
-This is the first UI slice, built against the product and design documents in the
-repository root:
+This is the first UI slice, built against the canonical product model and design
+documents in the repository root:
 
-- `plan.md`
-- `stich-design.md`
+- `plan.md` (canonical product and domain model)
+- `GLOSSARY.md`
 - `.github/copilot-instructions.md`
 
 The Go service is not connected yet. The UI runs against
@@ -44,7 +44,7 @@ flutter build web
 | `/today` | Timer, quick capture, today's feed, week allocation, day note |
 | `/log` | Period filters, search, grouped entries, inline edit, export |
 | `/initiatives` | Portfolio cards and archived initiatives |
-| `/initiatives/:id` | Timeline, notes, milestones (contract pending), evidence report |
+| `/initiatives/:id` | Timeline, notes, milestones, evidence report |
 | `/support` | Support rollups by mode and person, support feed |
 | `/checkins` | Check-in list and create flow |
 | `/checkins/:id` | Period report, summary generation/editing, export, finalize |
@@ -73,40 +73,52 @@ flutter build web
 
 ## Service contract status
 
-The Go service landed after this UI slice started. Its transport is Connect,
-which serves Connect, native gRPC, and gRPC-Web for the browser; the legacy REST
-surface is narrower than the product sample documents and is retired as RPCs
-land.
+`plan.md` supersedes the model this UI slice was built against. The current
+service uses the earlier fixed `kind` shape (`initiative` / `support` / `other`);
+the plan replaces it with per-user categories, subcategories, and reporting
+roles. The service must migrate; `plan.md` is the target, not the current code.
 
-- **Implemented by the service:** initiatives, work entries, timer, period
-  summary, exports, and auth.
-- **Not implemented by the service yet:** check-in records, notes, settings, and
+The Go service transport is Connect, which serves Connect, native gRPC, and
+gRPC-Web for the browser; the legacy REST surface is narrower than the product
+plan and is retired as RPCs land.
+
+- **Implemented by the service:** auth, the earlier initiative/work-entry model,
+  timer, period summary, and exports.
+- **Not implemented by the service yet:** categories and subcategories,
+  milestones, check-in records, personal reviews, notes, settings, and
   backup/restore. Those screens run on the demo adapter and surface the gap
   rather than inventing a persistence model.
 - **Shape differences:** the current HTTP mapping uses `kind`
   (`initiative`/`support`/`other`), `description`, and a nested `support` object.
-  The protobuf contract is the source of truth; keep any temporary mapping in the
+  The plan replaces this with `categoryId` plus an optional `subcategoryId`. The
+  protobuf contract is the source of truth; keep any temporary mapping in the
   repository adapter, not in screens.
 - **Auth:** protected RPCs need `authorization: Bearer <token>` metadata from the
   local login RPC or a Zitadel token. The sign-in screen is a shell until
   token/session handling is wired.
 
-The UI demo currently expects the entities and fields documented in `plan.md`:
+The UI demo currently uses the earlier `Initiative` / `WorkItem` shape. It must
+migrate to the plan's model:
 
-- `Initiative`
-- `WorkItem` (`type`, `initiativeId`, `category`, `categoryLabel`, `minutes`,
-  `localDate`, `outcome`, `person`, `team`, links, tags)
-- `CheckIn` (`periodStart`, `periodEnd`, `state`, `summaryMarkdown`, `totals`)
+- `Category` (`name`, `role`, archived)
+- `Subcategory` (`categoryId`, optional project fields, milestones)
+- `Work entry` (`categoryId`, optional `subcategoryId`, `minutes`, `localDate`,
+  `outcome`, `person` for support, links, tags)
+- `Milestone`
+- `CheckIn` (`kind`: `manager` or `personal`, `periodStart`, `periodEnd`, `state`,
+  `summaryMarkdown`, `totals`)
 - `Note`
 - `AppSettings`
 
-Known documentation gaps, surfaced in the UI rather than invented locally:
+Known gaps, surfaced in the UI rather than invented locally:
 
-- **Milestones** are described in the design but have no entity or service
-  method in the documented contract. The initiative detail tab states this.
+- **Milestones** are defined in `plan.md` but have no service method yet. The
+  project detail tab states this.
+- **Categories and subcategories** are defined in `plan.md` but not implemented
+  by the service yet.
 - **Restore** is a host-level backup operation with no documented endpoint yet.
-- **Auth** (Zitadel login, invite registration, break-glass passkey) has no
-  service client in this slice; the login screen explains that.
+- **Auth** (Zitadel login and invite-code registration) has no service client in
+  this slice; the login screen explains that.
 
 Next steps for integration:
 

@@ -5,6 +5,9 @@ The Go service implements the generated Connect handlers and the Flutter web
 client calls them through gRPC-Web using generated Dart stubs. Connect serves
 Connect, native gRPC, and gRPC-Web from one handler.
 
+The domain model behind these contracts is defined in `plan.md`; `GLOSSARY.md` is
+canonical for domain terms. This file covers wire and generation conventions only.
+
 ## Generation
 
 ```bash
@@ -39,10 +42,12 @@ in either generated directory.
   option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
   ```
 
-- File names follow the domain: `auth.proto`, `timer.proto`,
-  `work_items.proto`, `initiatives.proto`, `check_ins.proto`,
+- File names follow the domain: `auth.proto`, `categories.proto`,
+  `entries.proto`, `milestones.proto`, `timer.proto`, `check_ins.proto`,
   `summaries.proto`, `settings.proto`.
-- Service names end in `Service` (`TimerService`, `WorkItemService`, ...).
+- Service names end in `Service` (`AuthService`, `CategoryService`,
+  `EntryService`, `MilestoneService`, `TimerService`, `CheckInService`,
+  `SummaryService`, `SettingsService`).
 - Hand-written Go implementations live in `internal/rpc/`, implement
   `platform.ConnectService`, and register the generated `wdidv1connect` handler.
   Never edit generated packages.

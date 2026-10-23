@@ -14,7 +14,7 @@ If no text was selected, use the task described in the chat input after this pro
 
 ## Required context
 
-1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`, `plan.md`, and `stich-design.md` before changing anything.
+1. Read `.github/copilot-instructions.md`, `internal/contracts/README.md`, `plan.md`, and `GLOSSARY.md` before changing anything.
 2. Treat the service layer and generated protobuf contract as the source of truth; do not reimplement backend rules in the client.
 
 ## Method

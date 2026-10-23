@@ -1,8 +1,8 @@
-# Copilot instructions for wdid / LogLoop
+# Copilot instructions for wdid
 
 ## Project intent
 
-This repository is a local-first personal work journal and review assistant for tracking time, outcomes, strategic initiative progress, support work, and AI-assisted check-in summaries.
+This repository is a local-first personal work journal and review assistant for tracking time, outcomes, category and project progress, support work, and AI-assisted check-in and personal-review summaries.
 
 Reference implementation:
 
@@ -71,7 +71,8 @@ For the initial local deployment:
 - use a local Zitadel instance for OIDC authentication
 - configure the app to integrate with Zitadel as the identity provider
 - allow initial login using a local user account
-- require a registration secret for sign-up flows during the initial rollout
+- bootstrap the first admin account from a deployment secret, then require a
+  single-use admin-issued invite code for every later account
 - keep the architecture compatible with a hosted deployment model as the product grows, without compromising the local-first developer setup
 
 This should be treated as the baseline deployment and auth pattern unless a task explicitly changes the identity architecture.
@@ -85,7 +86,7 @@ This should be treated as the baseline deployment and auth pattern unless a task
 - Connect/gRPC/gRPC-Web serving, exact-origin CORS, TLS, health, and development reflection
 - database schema, storage buckets, models, validation, and migration logic
 - auth, RBAC, OIDC, invite validation, and session flow
-- timer lifecycle, work entry persistence, initiative tracking, and support logs
+- timer lifecycle, work entry persistence, category and project tracking, and support logs
 - export generation (JSON, Markdown, CSV)
 - AI summary prompt content and structured payload generation
 - backup and restore logic, snapshot creation, integrity checks
@@ -132,11 +133,17 @@ Do not claim completion without fresh evidence from a relevant verification comm
 
 Follow the intent in the product and design docs:
 
-- single-user, local-first, privacy-preserving
+- `plan.md` is the canonical product and domain model; where implementation and
+  plan disagree, the implementation is migrated, not the plan
+- `GLOSSARY.md` defines the canonical domain terms; use them exactly
+- multi-user from day one, local-first, privacy-preserving
 - fast capture under five seconds
 - keyboard-first and minimal friction
-- initiative-based attribution, support tracking, and outcome evidence
-- review-ready summaries and exports
+- category- and subcategory-based attribution with `initiative`, `support`, and
+  `other` reporting roles
+- outcome evidence, not just duration
+- review-ready summaries and exports for both manager check-ins and personal
+  reviews
 - quiet, developer-tool aesthetic with compact density
 
 When requirements are ambiguous, prefer the documented product intent over ad hoc assumptions.

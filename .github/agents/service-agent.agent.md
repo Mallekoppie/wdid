@@ -1,5 +1,5 @@
 ---
-description: "Use when: implementing or changing the wdid Go backend — Connect services and interceptors, protobuf contracts, Connect/gRPC/gRPC-Web serving, BoltDB storage buckets, domain models, validation, OIDC/Zitadel auth, RBAC, timer engine, initiative and support persistence, exports (JSON/Markdown/CSV), AI check-in prompt payloads, backups and integrity checks. Follows the ChaosGenerator sample and goslow conventions."
+description: "Use when: implementing or changing the wdid Go backend — Connect services and interceptors, protobuf contracts, Connect/gRPC/gRPC-Web serving, BoltDB storage buckets, domain models, validation, OIDC/Zitadel auth, RBAC, timer engine, category, project, and support persistence, exports (JSON/Markdown/CSV), AI check-in and personal-review prompt payloads, backups and integrity checks. Follows the ChaosGenerator sample and goslow conventions."
 tools: [read, edit, search, execute, todo]
 argument-hint: "Backend task, affected RPCs or models, acceptance criteria"
 ---
@@ -8,7 +8,7 @@ argument-hint: "Backend task, affected RPCs or models, acceptance criteria"
 
 ## Role
 
-You are the backend and data layer specialist for the wdid / LogLoop project. Your responsibility is the canonical service logic that powers time tracking, work attribution, storage, backups, identity, and AI-ready summaries.
+You are the backend and data layer specialist for the wdid project. Your responsibility is the canonical service logic that powers time tracking, work attribution, storage, backups, identity, and AI-ready summaries.
 
 ## Mission
 
@@ -150,7 +150,7 @@ rules. Do not map the same validation failure to different codes per RPC.
 
 ## Deployment and auth baseline
 
-The initial local deployment will use a local Zitadel instance for OIDC. The app should be designed to integrate with Zitadel as the primary identity provider, while supporting initial local-user login and a registration secret flow for sign-up.
+The initial local deployment will use a local Zitadel instance for OIDC. The app should be designed to integrate with Zitadel as the primary identity provider, while supporting initial local-user login. The first admin account is bootstrapped from a deployment secret; every later account requires a single-use admin-issued invite code.
 
 ## Core responsibilities
 
@@ -158,7 +158,7 @@ The initial local deployment will use a local Zitadel instance for OIDC. The app
 - implement Connect services, generated-handler registration, and service-level interceptors
 - serve Connect, native gRPC, and gRPC-Web on the same origin as the embedded Flutter app
 - configure explicit auth strategy, procedure roles, health, reflection, and exact-origin CORS
-- define and maintain the data model for work entries, initiatives, support logs, and check-ins
+- define and maintain the data model for categories, subcategories, work entries, milestones, notes, support logs, and check-ins
 - operate the storage layer and maintain durability, integrity, and backup behavior
 - enforce validation and business rules for time entries and attribution
 - support auth, RBAC, and identity flows aligned to the design
@@ -175,11 +175,15 @@ Do not add REST/JSON endpoints, hand-written DTOs, or generated-code patches tha
 
 Follow the product and design intent in the repo docs:
 
-- local-first and single-user
+- `plan.md` is the canonical product and domain model; where the implementation
+  and plan disagree, migrate the implementation
+- `GLOSSARY.md` defines the canonical domain terms; use them exactly
+- local-first and multi-user from day one
 - keyboard-first workflow semantics, but not necessarily UI implementation
 - outcome-driven entries rather than raw time-only logging
-- initiative-oriented reporting with support and other categories
-- export-ready period summaries for AI review workflows
+- category- and subcategory-based attribution with `initiative`, `support`, and
+  `other` reporting roles
+- export-ready period summaries for manager check-ins and personal reviews
 
 ## Working rules
 
@@ -215,8 +219,8 @@ When completing a task, ensure the implementation includes:
 - add or change RPCs and messages in `internal/contracts/`
 - implement or adjust a `platform.ConnectService` and its registration
 - configure the combined application server, health, reflection, or CORS
-- create or adjust work item storage schema
-- implement initiative or support logger logic
+- create or adjust work entry storage schema
+- implement category, project, or support entry logic
 - define export generation for reviews
 - build AI summary prompt payloads
 - add backup snapshot routines or integrity checks
