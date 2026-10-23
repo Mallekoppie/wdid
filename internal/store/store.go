@@ -28,6 +28,21 @@ var (
 	ErrInviteUsed = errors.New("invite already used")
 	// ErrInviteEmailMismatch is returned when a code is used for another email.
 	ErrInviteEmailMismatch = errors.New("invite is for a different email")
+	// ErrCategoryNotFound is returned when a category does not exist for the user.
+	ErrCategoryNotFound = errors.New("category not found")
+	// ErrSubcategoryNotFound is returned when a subcategory does not exist for the user.
+	ErrSubcategoryNotFound = errors.New("subcategory not found")
+	// ErrCategoryRoleImmutable is returned when a save tries to change a role.
+	ErrCategoryRoleImmutable = errors.New("category role cannot change")
+	// ErrCategoryInUse is returned when a referenced category is deleted.
+	ErrCategoryInUse = errors.New("category is referenced and cannot be deleted")
+	// ErrSubcategoryInUse is returned when a referenced subcategory is deleted.
+	ErrSubcategoryInUse = errors.New("subcategory is referenced and cannot be deleted")
+	// ErrSubcategoryReparent is returned when a referenced subcategory moves.
+	ErrSubcategoryReparent = errors.New("a referenced subcategory cannot change category")
+	// ErrFinalCheckInReadOnly is returned when a final manager check-in is
+	// edited or deleted.
+	ErrFinalCheckInReadOnly = errors.New("a final manager check-in is read-only")
 )
 
 const (
@@ -36,6 +51,7 @@ const (
 	sysCredentialsBucket = "sys:user_credentials"
 	sysInvitesBucket     = "sys:invites"
 	timerKey             = "active"
+	settingsKey          = "app"
 )
 
 // Store persists domain records in BoltDB through goslow's platform helpers.
@@ -67,6 +83,13 @@ func Open(cfg config.Config) (*Store, error) {
 
 	if err := platform.SetupBoltDB(); err != nil {
 		return nil, fmt.Errorf("open boltdb: %w", err)
+	}
+
+	if err := ensureMeta(); err != nil {
+		return nil, fmt.Errorf("record instance metadata: %w", err)
+	}
+	if err := ensureEntryIndexes(); err != nil {
+		return nil, fmt.Errorf("rebuild entry indexes: %w", err)
 	}
 
 	return &Store{}, nil
@@ -259,144 +282,6 @@ func (s *Store) CreateInvitedUser(user domain.User, passwordHash, codeHash strin
 	return invite, nil
 }
 
-// --- initiatives ---------------------------------------------------------
-
-// SaveInitiative creates or replaces an initiative.
-func (s *Store) SaveInitiative(initiative domain.Initiative) error {
-	return saveObject(userBucket(initiative.UserID, "initiatives"), initiative.ID, initiative)
-}
-
-// Initiative returns one initiative owned by the user.
-func (s *Store) Initiative(userID, id string) (domain.Initiative, error) {
-	var initiative domain.Initiative
-	if err := readObject(userBucket(userID, "initiatives"), id, &initiative); err != nil {
-		return domain.Initiative{}, err
-	}
-	return initiative, nil
-}
-
-// Initiatives returns the user's initiatives, most recently updated first.
-func (s *Store) Initiatives(userID string) ([]domain.Initiative, error) {
-	raw, err := readAllRaw(userBucket(userID, "initiatives"))
-	if err != nil {
-		return nil, err
-	}
-
-	initiatives := make([]domain.Initiative, 0, len(raw))
-	for _, value := range raw {
-		var initiative domain.Initiative
-		if err := json.Unmarshal([]byte(value), &initiative); err != nil {
-			return nil, fmt.Errorf("decode initiative: %w", err)
-		}
-		initiatives = append(initiatives, initiative)
-	}
-
-	sort.Slice(initiatives, func(i, j int) bool {
-		return initiatives[i].UpdatedAt.After(initiatives[j].UpdatedAt)
-	})
-
-	return initiatives, nil
-}
-
-// DeleteInitiative removes an initiative record. Existing entries keep their
-// initiative identifier so historical reporting stays intact.
-func (s *Store) DeleteInitiative(userID, id string) error {
-	if _, err := s.Initiative(userID, id); err != nil {
-		return err
-	}
-	return platform.Database.BoltDb.RemoveObject(userBucket(userID, "initiatives"), id)
-}
-
-// --- entries -------------------------------------------------------------
-
-// EntryFilter narrows an entry listing.
-type EntryFilter struct {
-	From         time.Time
-	To           time.Time
-	Kind         domain.EntryKind
-	InitiativeID string
-	Query        string
-	Limit        int
-}
-
-// SaveEntry creates or replaces a work entry.
-func (s *Store) SaveEntry(entry domain.Entry) error {
-	return saveObject(userBucket(entry.UserID, "entries"), entry.ID, entry)
-}
-
-// Entry returns one entry owned by the user.
-func (s *Store) Entry(userID, id string) (domain.Entry, error) {
-	var entry domain.Entry
-	if err := readObject(userBucket(userID, "entries"), id, &entry); err != nil {
-		return domain.Entry{}, err
-	}
-	return entry, nil
-}
-
-// DeleteEntry removes one entry owned by the user.
-func (s *Store) DeleteEntry(userID, id string) error {
-	if _, err := s.Entry(userID, id); err != nil {
-		return err
-	}
-	return platform.Database.BoltDb.RemoveObject(userBucket(userID, "entries"), id)
-}
-
-// Entries returns the user's entries matching the filter, newest first.
-func (s *Store) Entries(userID string, filter EntryFilter) ([]domain.Entry, error) {
-	raw, err := readAllRaw(userBucket(userID, "entries"))
-	if err != nil {
-		return nil, err
-	}
-
-	query := strings.ToLower(strings.TrimSpace(filter.Query))
-	entries := make([]domain.Entry, 0, len(raw))
-	for _, value := range raw {
-		var entry domain.Entry
-		if err := json.Unmarshal([]byte(value), &entry); err != nil {
-			return nil, fmt.Errorf("decode entry: %w", err)
-		}
-		if !entryMatches(entry, filter, query) {
-			continue
-		}
-		entries = append(entries, entry)
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].StartedAt.Equal(entries[j].StartedAt) {
-			return entries[i].CreatedAt.After(entries[j].CreatedAt)
-		}
-		return entries[i].StartedAt.After(entries[j].StartedAt)
-	})
-
-	if filter.Limit > 0 && len(entries) > filter.Limit {
-		entries = entries[:filter.Limit]
-	}
-
-	return entries, nil
-}
-
-func entryMatches(entry domain.Entry, filter EntryFilter, query string) bool {
-	if !filter.From.IsZero() && entry.StartedAt.Before(filter.From) {
-		return false
-	}
-	if !filter.To.IsZero() && !entry.StartedAt.Before(filter.To) {
-		return false
-	}
-	if filter.Kind != "" && entry.Kind != filter.Kind {
-		return false
-	}
-	if filter.InitiativeID != "" && entry.InitiativeID != filter.InitiativeID {
-		return false
-	}
-	if query != "" {
-		haystack := strings.ToLower(entry.Description + " " + entry.Outcome)
-		if !strings.Contains(haystack, query) {
-			return false
-		}
-	}
-	return true
-}
-
 // --- timer ---------------------------------------------------------------
 
 // ActiveTimer returns the user's running timer, if one exists.
@@ -453,8 +338,48 @@ func createUserTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
 	if err := putJSON(tx, sysUsersBucket, user.ID, user); err != nil {
 		return err
 	}
+	if err := putJSON(tx, sysUserEmailsBucket, emailKey, user.ID); err != nil {
+		return err
+	}
 
-	return putJSON(tx, sysUserEmailsBucket, emailKey, user.ID)
+	return seedUserTx(tx, user)
+}
+
+// readTxObject reads one record inside an open transaction. A missing bucket
+// or key is ErrNotFound.
+func readTxObject(tx *bbolt.Tx, bucket, id string, out interface{}) error {
+	target := tx.Bucket([]byte(bucket))
+	if target == nil {
+		return ErrNotFound
+	}
+	raw := target.Get([]byte(id))
+	if raw == nil {
+		return ErrNotFound
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode %s/%s: %w", bucket, id, err)
+	}
+	return nil
+}
+
+// scanTxBucket visits every value in a bucket and stops at the first match.
+func scanTxBucket(tx *bbolt.Tx, bucket string, match func([]byte) (bool, error)) (bool, error) {
+	target := tx.Bucket([]byte(bucket))
+	if target == nil {
+		return false, nil
+	}
+
+	cursor := target.Cursor()
+	for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+		ok, err := match(value)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func putJSON(tx *bbolt.Tx, bucket, id string, object interface{}) error {

@@ -4,14 +4,14 @@
 
 **Blocked by:** 01 (Remove the legacy REST surface), 02 (Bootstrap admin and invite-gated registration)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Categories, subcategories, work entries, milestones, notes, check-ins, and settings round-trip through storage.
-- [ ] Each new account receives the seeded taxonomy.
-- [ ] A subcategory must belong to its category.
-- [ ] Entries in a support-role category require a person.
-- [ ] A category role cannot change after creation.
-- [ ] A referenced category or subcategory can be archived but not deleted; an unused one can be deleted.
-- [ ] Two accounts cannot read each other's records.
-- [ ] The old fixed-kind model and its storage shape are removed.
-- [ ] Tests cover every bucket, cross-user isolation, seeds, and the invariants above.
+- [x] Categories, subcategories, work entries, milestones, notes, check-ins, and settings round-trip through storage.
+- [x] Each new account receives the seeded taxonomy.
+- [x] A subcategory must belong to its category.
+- [x] Entries in a support-role category require a person.
+- [x] A category role cannot change after creation.
+- [x] A referenced category or subcategory can be archived but not deleted; an unused one can be deleted.
+- [x] Two accounts cannot read each other's records.
+- [x] The old fixed-kind model and its storage shape are removed.
+- [x] Tests cover every bucket, cross-user isolation, seeds, and the invariants above.

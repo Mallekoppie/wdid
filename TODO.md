@@ -29,14 +29,16 @@
   `GetAuthConfig`, `GetCurrentUser`). Generated Go and Connect stubs are
   committed.
 - No REST surface: `/healthz` is the only non-RPC route.
-- Domain in `internal/domain/`: `User`, `Initiative`, `Entry` with `kind`, and
-  `ActiveTimer`. Store buckets: `sys:users`, `sys:user_emails`,
-  `sys:user_credentials`, `user_<id>:initiatives`, `user_<id>:entries`,
-  `user_<id>:timer`.
+- Domain in `internal/domain/`: `User`, `Invite`, `Category`, `Subcategory`,
+  `WorkEntry`, `Milestone`, `Note`, `CheckIn`, `Settings`, and `ActiveTimer`.
+  Store buckets: `sys:*` plus per-user `categories`, `subcategories`, `entries`
+  (with day/category/subcategory/person indexes), `milestones`, `notes`,
+  `checkins`, `settings`, and `timer`. New accounts are seeded with the default
+  taxonomy and settings.
 - The Flutter client runs on `DemoWdidRepository` for journal screens; login,
   invite registration, and first-account bootstrap use the generated auth
   gRPC-Web client. There are no REST calls from `web/lib`.
-- No check-in, note, settings, milestone, or backup persistence exists.
+- No backup persistence exists.
 - No `data/` or `backups/` directory exists, so there is nothing to migrate.
 - The dev container still has Go 1.26.9; the Makefile exports `GOTOOLCHAIN=auto`.
 - Verification baseline: `make proto-check`, `make build`, `go test -race ./...`,
@@ -50,23 +52,23 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ### Domain and store
 
-- [ ] Replace `internal/domain` types with `Category`, `Subcategory`,
+- [x] Replace `internal/domain` types with `Category`, `Subcategory`,
       `WorkEntry`, `Milestone`, `Note`, `CheckIn`, and `Settings`; delete
       `Initiative`, `EntryKind`, and `SupportDetail` (`person`/`team` move onto
       the entry).
-- [ ] Add enums with validity checks: category role
+- [x] Add enums with validity checks: category role
       (`initiative|support|other`), check-in kind (`manager|personal`), check-in
       state, and audience.
-- [ ] Rewrite validation: category role is immutable; a subcategory must belong
+- [x] Rewrite validation: category role is immutable; a subcategory must belong
       to its category; a support-role category requires a person; minutes and
       overlap rules follow `plan.md` §8.3.
-- [ ] Rewrite `internal/store` for the buckets in `plan.md` §8.2, including the
+- [x] Rewrite `internal/store` for the buckets in `plan.md` §8.2, including the
       per-user entry indexes.
-- [ ] Seed `Initiatives`, `Support` (+ `Review`, `Pair`, `Unblock`, `Mentor`,
+- [x] Seed `Initiatives`, `Support` (+ `Review`, `Pair`, `Unblock`, `Mentor`,
       `Incident`, `Other`), and `Other` (+ `Meetings`, `Admin`, `Learning`,
       `Unplanned`) at account creation.
-- [ ] Set `sys:meta.schema_version = 1`; no migration code (no data).
-- [ ] Tests: round-trip every bucket, cross-user isolation, seeds, archive-only
+- [x] Set `sys:meta.schema_version = 1`; no migration code (no data).
+- [x] Tests: round-trip every bucket, cross-user isolation, seeds, archive-only
       when referenced, role immutability, subcategory/category constraint, and
       support person requirement.
 
@@ -258,5 +260,5 @@ calendar or issue-tracker imports.
 ## Tickets
 
 The work is published as tickets 01–24 under `.scratch/implementation/issues/`.
-Work the frontier: any ticket whose blockers are complete. Tickets 01 and 02 can
+Work the frontier: any ticket whose blockers are complete. Tickets 04 and 05 can
 start immediately.

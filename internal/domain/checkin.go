@@ -1,0 +1,101 @@
+package domain
+
+import (
+	"strings"
+	"time"
+)
+
+// CheckInKind separates manager-facing check-ins from personal reviews.
+type CheckInKind string
+
+const (
+	CheckInKindManager  CheckInKind = "manager"
+	CheckInKindPersonal CheckInKind = "personal"
+)
+
+// Valid reports whether the check-in kind is known.
+func (k CheckInKind) Valid() bool {
+	switch k {
+	case CheckInKindManager, CheckInKindPersonal:
+		return true
+	default:
+		return false
+	}
+}
+
+// CheckInState is where a check-in sits in its editing lifecycle.
+type CheckInState string
+
+const (
+	CheckInStateDraft     CheckInState = "draft"
+	CheckInStateGenerated CheckInState = "generated"
+	CheckInStateEdited    CheckInState = "edited"
+	CheckInStateFinal     CheckInState = "final"
+)
+
+// Valid reports whether the check-in state is known.
+func (s CheckInState) Valid() bool {
+	switch s {
+	case CheckInStateDraft, CheckInStateGenerated, CheckInStateEdited, CheckInStateFinal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Audience is who a manager check-in is prepared for.
+type Audience string
+
+const (
+	AudienceOneOnOne          Audience = "one_on_one"
+	AudiencePerformanceReview Audience = "performance_review"
+)
+
+// Valid reports whether the audience is known.
+func (a Audience) Valid() bool {
+	switch a {
+	case AudienceOneOnOne, AudiencePerformanceReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// CheckInTotals is the period snapshot taken when a check-in is created.
+type CheckInTotals struct {
+	Minutes         int            `json:"minutes"`
+	ByCategory      map[string]int `json:"byCategory,omitempty"`
+	BySubcategory   map[string]int `json:"bySubcategory,omitempty"`
+	SupportByPerson map[string]int `json:"supportByPerson,omitempty"`
+}
+
+// CheckIn is a saved artifact covering a period, with focus notes, aggregates
+// and an optional summary. Only final manager check-ins move the boundary.
+type CheckIn struct {
+	ID              string        `json:"id"`
+	UserID          string        `json:"userId"`
+	Kind            CheckInKind   `json:"kind"`
+	PeriodStart     string        `json:"periodStart"`
+	PeriodEnd       string        `json:"periodEnd"`
+	State           CheckInState  `json:"state"`
+	Audience        Audience      `json:"audience,omitempty"`
+	FocusNotes      string        `json:"focusNotes,omitempty"`
+	SummaryMarkdown string        `json:"summaryMarkdown,omitempty"`
+	SummaryModel    string        `json:"summaryModel,omitempty"`
+	PromptVersion   string        `json:"promptVersion,omitempty"`
+	Totals          CheckInTotals `json:"totals"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	UpdatedAt       time.Time     `json:"updatedAt"`
+}
+
+// Normalize trims check-in input into its canonical form.
+func (c *CheckIn) Normalize() {
+	c.PeriodStart = strings.TrimSpace(c.PeriodStart)
+	c.PeriodEnd = strings.TrimSpace(c.PeriodEnd)
+	c.FocusNotes = strings.TrimSpace(c.FocusNotes)
+	c.SummaryMarkdown = strings.TrimSpace(c.SummaryMarkdown)
+	c.SummaryModel = strings.TrimSpace(c.SummaryModel)
+	c.PromptVersion = strings.TrimSpace(c.PromptVersion)
+	c.CreatedAt = utc(c.CreatedAt)
+	c.UpdatedAt = utc(c.UpdatedAt)
+}

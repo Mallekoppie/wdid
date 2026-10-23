@@ -114,7 +114,7 @@ the embedded app.
 
 | RPC | Auth | Purpose |
 | --- | --- | --- |
-| `wdid.v1.AuthService/RegisterAccount` | public | Create an account with the registration secret |
+| `wdid.v1.AuthService/RegisterAccount` | public | Create the first account with the bootstrap secret, or a later one with an invite code |
 | `wdid.v1.AuthService/Login` | public | Exchange email + password for a local JWT |
 | `wdid.v1.AuthService/GetAuthConfig` | public | Report local/OIDC login capabilities |
 | `wdid.v1.AuthService/GetCurrentUser` | bearer token | Resolve the current account |
@@ -126,14 +126,20 @@ the liveness probe.
 
 ## Storage layout
 
+- `sys:meta` — `schema_version`, `instance_id`, `index_version`
 - `sys:users`, `sys:user_emails`, `sys:user_credentials`
 - `sys:invites` (keyed by the invite-code hash)
-- `user_<id>:initiatives`
-- `user_<id>:entries`
-- `user_<id>:timer`
+- `user_<id>:categories`, `user_<id>:subcategories`
+- `user_<id>:entries`, `user_<id>:milestones`, `user_<id>:notes`
+- `user_<id>:checkins`, `user_<id>:settings`, `user_<id>:timer`
+- `user_<id>:idx_entries_day`, `idx_entries_category`,
+  `idx_entries_subcategory`, `idx_entries_person`
 
 User-owned records live in user-prefixed buckets, so cross-account reads return
-not found by construction.
+not found by construction. Entry indexes are written in the same transaction as
+the entry and rebuilt on startup when `index_version` changes. Every new account
+is seeded with `Initiatives`, `Support` (+ modes) and `Other` (+ modes), plus
+default settings.
 
 ## Verification
 
@@ -171,7 +177,7 @@ runs it with hot reload on `127.0.0.1:5173`.
 ## Not yet implemented
 
 - Browser OIDC authorization-code flow (PKCE) and session cookies
-- Check-in records and persistence
+- Category, entry, timer, milestone, note, check-in and settings RPCs
 - Backup snapshots: goslow does not expose the raw `*bolt.DB`, so the
   `db.View(tx.WriteTo)` hot snapshot needs an upstream accessor
 - Admin-only settings and user-management RPCs

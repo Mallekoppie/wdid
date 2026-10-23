@@ -15,41 +15,13 @@ const (
 	RoleUser  Role = "user"
 )
 
-// InitiativeStatus describes where an initiative sits in its lifecycle.
-type InitiativeStatus string
-
-const (
-	InitiativePlanned  InitiativeStatus = "planned"
-	InitiativeActive   InitiativeStatus = "active"
-	InitiativeBlocked  InitiativeStatus = "blocked"
-	InitiativeDone     InitiativeStatus = "done"
-	InitiativeArchived InitiativeStatus = "archived"
-)
-
-// EntryKind is the single primary attribution of a work entry.
-type EntryKind string
-
-const (
-	EntryInitiative EntryKind = "initiative"
-	EntrySupport    EntryKind = "support"
-	EntryOther      EntryKind = "other"
-)
-
-// SupportMode classifies how support was delivered.
-type SupportMode string
-
-const (
-	SupportReview   SupportMode = "review"
-	SupportPair     SupportMode = "pair"
-	SupportUnblock  SupportMode = "unblock"
-	SupportMentor   SupportMode = "mentor"
-	SupportIncident SupportMode = "incident"
-	SupportOther    SupportMode = "other"
-)
-
-// NewID returns a random identifier for a new record.
+// NewID returns a new UUIDv7 so bucket scans are chronological by key.
 func NewID() string {
-	return uuid.NewString()
+	id, err := uuid.NewV7()
+	if err != nil {
+		return uuid.NewString()
+	}
+	return id.String()
 }
 
 // User is an account. Credentials are stored separately from the profile.
@@ -76,61 +48,11 @@ func (i *Invite) Normalize() {
 	i.Email = strings.ToLower(strings.TrimSpace(i.Email))
 }
 
-// Initiative is a major body of work that spans days or weeks.
-type Initiative struct {
-	ID            string           `json:"id"`
-	UserID        string           `json:"userId"`
-	Name          string           `json:"name"`
-	Status        InitiativeStatus `json:"status"`
-	TargetOutcome string           `json:"targetOutcome"`
-	Progress      int              `json:"progress"`
-	Links         []string         `json:"links"`
-	CreatedAt     time.Time        `json:"createdAt"`
-	UpdatedAt     time.Time        `json:"updatedAt"`
-}
-
-// SupportDetail captures the people and mode behind a support entry.
-type SupportDetail struct {
-	Person string      `json:"person"`
-	Team   string      `json:"team,omitempty"`
-	Mode   SupportMode `json:"mode"`
-	Impact string      `json:"impact,omitempty"`
-}
-
-// Entry is a block of work with exactly one primary attribution.
-type Entry struct {
-	ID           string         `json:"id"`
-	UserID       string         `json:"userId"`
-	Kind         EntryKind      `json:"kind"`
-	InitiativeID string         `json:"initiativeId,omitempty"`
-	Description  string         `json:"description"`
-	Outcome      string         `json:"outcome,omitempty"`
-	StartedAt    time.Time      `json:"startedAt"`
-	EndedAt      time.Time      `json:"endedAt"`
-	Minutes      int            `json:"minutes"`
-	Support      *SupportDetail `json:"support,omitempty"`
-	Tags         []string       `json:"tags,omitempty"`
-	Links        []string       `json:"links,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
-}
-
-// DurationMinutes returns the recorded minutes, falling back to the timestamp
-// span when an explicit duration was not supplied.
-func (e Entry) DurationMinutes() int {
-	if e.Minutes > 0 {
-		return e.Minutes
-	}
-	if e.EndedAt.After(e.StartedAt) {
-		return int(e.EndedAt.Sub(e.StartedAt).Minutes())
-	}
-	return 0
-}
-
 // ActiveTimer is the single running timer for a user.
 type ActiveTimer struct {
 	UserID             string     `json:"userId"`
-	InitiativeID       string     `json:"initiativeId,omitempty"`
+	CategoryID         string     `json:"categoryId"`
+	SubcategoryID      string     `json:"subcategoryId,omitempty"`
 	Description        string     `json:"description,omitempty"`
 	StartedAt          time.Time  `json:"startedAt"`
 	PausedAt           *time.Time `json:"pausedAt,omitempty"`
@@ -156,27 +78,6 @@ func (t ActiveTimer) Elapsed(now time.Time) time.Duration {
 func (u *User) Normalize() {
 	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
-}
-
-// Normalize trims initiative input into its canonical form.
-func (i *Initiative) Normalize() {
-	i.Name = strings.TrimSpace(i.Name)
-	i.TargetOutcome = strings.TrimSpace(i.TargetOutcome)
-	i.Links = NormalizeList(i.Links)
-}
-
-// Normalize trims entry input into its canonical form.
-func (e *Entry) Normalize() {
-	e.Description = strings.TrimSpace(e.Description)
-	e.Outcome = strings.TrimSpace(e.Outcome)
-	e.InitiativeID = strings.TrimSpace(e.InitiativeID)
-	e.Tags = NormalizeList(e.Tags)
-	e.Links = NormalizeList(e.Links)
-	if e.Support != nil {
-		e.Support.Person = strings.TrimSpace(e.Support.Person)
-		e.Support.Team = strings.TrimSpace(e.Support.Team)
-		e.Support.Impact = strings.TrimSpace(e.Support.Impact)
-	}
 }
 
 // NormalizeList trims entries, drops empties and removes case-insensitive duplicates.
