@@ -49,6 +49,52 @@ func (s *Store) SaveWorkEntry(entry domain.WorkEntry) error {
 	})
 }
 
+// SplitWorkEntry divides one entry into two contiguous entries in a single
+// transaction. The first half keeps the original identity and start; the second
+// half gets a new id and begins where the first ends. Attribution, description,
+// outcome and source carry over to both halves.
+func (s *Store) SplitWorkEntry(userID, id string, atMinutes int) (domain.WorkEntry, domain.WorkEntry, error) {
+	var first, second domain.WorkEntry
+
+	err := platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
+		var entry domain.WorkEntry
+		if err := readTxObject(tx, userBucket(userID, entriesBucket), id, &entry); err != nil {
+			return err
+		}
+
+		total := entry.DurationMinutes()
+		if atMinutes < 1 || atMinutes >= total {
+			return domain.ValidationError{
+				Field:   "atMinutes",
+				Message: "must leave at least one minute on each side",
+			}
+		}
+
+		now := time.Now().UTC()
+		first = entry
+		first.Minutes = atMinutes
+		first.EndedAt = entry.StartedAt.Add(time.Duration(atMinutes) * time.Minute)
+		first.UpdatedAt = now
+
+		second = entry
+		second.ID = domain.NewID()
+		second.StartedAt = first.EndedAt
+		second.Minutes = total - atMinutes
+		second.EndedAt = second.StartedAt.Add(time.Duration(second.Minutes) * time.Minute)
+		second.CreatedAt = now
+		second.UpdatedAt = now
+
+		if err := saveWorkEntryTx(tx, first); err != nil {
+			return err
+		}
+		return saveWorkEntryTx(tx, second)
+	})
+	if err != nil {
+		return domain.WorkEntry{}, domain.WorkEntry{}, err
+	}
+	return first, second, nil
+}
+
 // saveWorkEntryTx validates and writes an entry in the caller's transaction.
 // Timer stops use it so the timer is cleared and the entry is saved atomically.
 func saveWorkEntryTx(tx *bbolt.Tx, entry domain.WorkEntry) error {
@@ -109,6 +155,44 @@ func (s *Store) LocalDate(userID string, instant time.Time) (string, error) {
 		return "", err
 	}
 	return date, nil
+}
+
+// LocalDayRange resolves inclusive local calendar dates to a half-open instant
+// range in the user's configured timezone. Either date may be empty. This is
+// how Log presets avoid trusting the device clock for the day boundary.
+func (s *Store) LocalDayRange(userID, fromDate, toDate string) (time.Time, time.Time, error) {
+	var from, to time.Time
+	err := platform.Database.BoltDb.View(func(tx *bbolt.Tx) error {
+		location := userLocation(tx, userID)
+
+		if fromDate != "" {
+			parsed, err := time.ParseInLocation(domain.DateLayout, fromDate, location)
+			if err != nil {
+				return domain.ValidationError{
+					Field:   "fromDate",
+					Message: "must be a date in YYYY-MM-DD form",
+				}
+			}
+			from = parsed
+		}
+		if toDate != "" {
+			parsed, err := time.ParseInLocation(domain.DateLayout, toDate, location)
+			if err != nil {
+				return domain.ValidationError{
+					Field:   "toDate",
+					Message: "must be a date in YYYY-MM-DD form",
+				}
+			}
+			// The filter's upper bound is exclusive, so it is the start of the
+			// following local day.
+			to = time.Date(parsed.Year(), parsed.Month(), parsed.Day()+1, 0, 0, 0, 0, location)
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	return from, to, nil
 }
 
 // WorkEntry returns one entry owned by the user.
@@ -293,12 +377,18 @@ func removeEntryIndexes(tx *bbolt.Tx, entry domain.WorkEntry) error {
 // entryLocalDate derives the grouping day from an instant in the user's
 // configured timezone. Missing settings fall back to UTC.
 func entryLocalDate(tx *bbolt.Tx, userID string, startedAt time.Time) string {
+	return startedAt.In(userLocation(tx, userID)).Format(domain.DateLayout)
+}
+
+// userLocation reads the timezone configured in the user's settings. A missing
+// record or unknown zone falls back to UTC.
+func userLocation(tx *bbolt.Tx, userID string) *time.Location {
 	settings := domain.DefaultSettings(userID)
 	_ = readTxObject(tx, userBucket(userID, settingsBucket), settingsKey, &settings)
 
 	location, err := time.LoadLocation(settings.Timezone)
 	if err != nil {
-		location = time.UTC
+		return time.UTC
 	}
-	return startedAt.In(location).Format(domain.DateLayout)
+	return location
 }

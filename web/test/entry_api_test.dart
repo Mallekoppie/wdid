@@ -20,6 +20,8 @@ class FakeEntryRpc implements EntryRpc {
   generated.ListEntriesRequest? listRequest;
   generated.CreateEntryRequest? createRequest;
   generated.UpdateEntryRequest? updateRequest;
+  generated.SplitEntryRequest? splitRequest;
+  generated.SplitEntryResponse splitResponse = generated.SplitEntryResponse();
   String? deletedId;
 
   void _maybeFail() {
@@ -61,6 +63,15 @@ class FakeEntryRpc implements EntryRpc {
     _maybeFail();
     return generated.DeleteEntryResponse();
   }
+
+  @override
+  Future<generated.SplitEntryResponse> splitEntry(
+    generated.SplitEntryRequest request,
+  ) async {
+    splitRequest = request;
+    _maybeFail();
+    return splitResponse;
+  }
 }
 
 generated.WorkEntry protoEntry({
@@ -96,18 +107,57 @@ void main() {
     final rpc = FakeEntryRpc()
       ..listResponse = generated.ListEntriesResponse(entries: [protoEntry()]);
 
-    final entries = await GrpcEntryApi(rpc: rpc).listEntries(today: true);
+    final listing = await GrpcEntryApi(rpc: rpc).listEntries(today: true);
 
     expect(rpc.listRequest!.today, isTrue);
-    expect(entries, hasLength(1));
-    expect(entries.first.id, 'entry-1');
-    expect(entries.first.categoryId, 'cat-1');
-    expect(entries.first.subcategoryId, 'sub-1');
-    expect(entries.first.description, 'Backfill script skeleton');
-    expect(entries.first.outcome, 'Script runs against staging');
-    expect(entries.first.minutes, 42);
-    expect(entries.first.localDate, '2026-10-17');
-    expect(entries.first.source, EntrySource.manual);
+    expect(listing.entries, hasLength(1));
+    expect(listing.entries.first.id, 'entry-1');
+    expect(listing.entries.first.categoryId, 'cat-1');
+    expect(listing.entries.first.subcategoryId, 'sub-1');
+    expect(listing.entries.first.description, 'Backfill script skeleton');
+    expect(listing.entries.first.outcome, 'Script runs against staging');
+    expect(listing.entries.first.minutes, 42);
+    expect(listing.entries.first.localDate, '2026-10-17');
+    expect(listing.entries.first.source, EntrySource.manual);
+  });
+
+  test('listEntries sends every filter and keeps overlap ids', () async {
+    final rpc = FakeEntryRpc()
+      ..listResponse = generated.ListEntriesResponse(
+        entries: [protoEntry()],
+        overlappingEntryIds: ['entry-1', 'entry-9'],
+      );
+    final listing = await GrpcEntryApi(rpc: rpc).listEntries(
+      fromDate: '2026-10-17',
+      toDate: '2026-10-18',
+      categoryId: 'cat-1',
+      subcategoryId: 'sub-1',
+      query: 'backfill',
+    );
+
+    expect(rpc.listRequest!.fromDate, '2026-10-17');
+    expect(rpc.listRequest!.toDate, '2026-10-18');
+    expect(rpc.listRequest!.categoryId, 'cat-1');
+    expect(rpc.listRequest!.subcategoryId, 'sub-1');
+    expect(rpc.listRequest!.query, 'backfill');
+    expect(listing.overlappingIds, {'entry-1', 'entry-9'});
+  });
+
+  test('splitEntry sends the offset and returns both halves', () async {
+    final rpc = FakeEntryRpc()
+      ..splitResponse = generated.SplitEntryResponse(
+        first: protoEntry(id: 'entry-1', minutes: 20),
+        second: protoEntry(id: 'entry-2', minutes: 22),
+      );
+
+    final halves = await GrpcEntryApi(rpc: rpc).splitEntry('entry-1', 20);
+
+    expect(rpc.splitRequest!.id, 'entry-1');
+    expect(rpc.splitRequest!.at.seconds.toInt(), 20 * 60);
+    expect(halves.first.id, 'entry-1');
+    expect(halves.first.minutes, 20);
+    expect(halves.second.id, 'entry-2');
+    expect(halves.second.minutes, 22);
   });
 
   test('createEntry sends attribution, duration and description', () async {

@@ -263,6 +263,69 @@ func TestWorkEntryFiltersFollowIndexes(t *testing.T) {
 	}
 }
 
+func TestSplitWorkEntryCreatesContiguousHalves(t *testing.T) {
+	database := newStore(t)
+	userID := "user-split"
+	category, subcategory := testTaxonomy(t, database, userID)
+
+	start := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	entry := testWorkEntry(userID, category, subcategory.ID, start, "Long backfill")
+	entry.Person = ""
+	if err := database.SaveWorkEntry(entry); err != nil {
+		t.Fatalf("save entry: %v", err)
+	}
+
+	first, second, err := database.SplitWorkEntry(userID, entry.ID, 25)
+	if err != nil {
+		t.Fatalf("split entry: %v", err)
+	}
+
+	if first.ID != entry.ID {
+		t.Fatalf("first id = %q, want the original id", first.ID)
+	}
+	if first.Minutes != 25 || first.StartedAt != entry.StartedAt ||
+		!first.EndedAt.Equal(entry.StartedAt.Add(25*time.Minute)) {
+		t.Fatalf("first half = %+v, want 09:00–09:25 with 25 minutes", first)
+	}
+	if second.ID == "" || second.ID == entry.ID {
+		t.Fatalf("second id = %q, want a new id", second.ID)
+	}
+	if second.Minutes != 17 || !second.StartedAt.Equal(first.EndedAt) ||
+		!second.EndedAt.Equal(entry.StartedAt.Add(42*time.Minute)) {
+		t.Fatalf("second half = %+v, want 09:25–09:42 with 17 minutes", second)
+	}
+	if second.CategoryID != entry.CategoryID || second.SubcategoryID != entry.SubcategoryID {
+		t.Fatalf("second attribution = %+v, want the original category and subcategory", second)
+	}
+
+	stored, err := database.WorkEntries(userID, store.WorkEntryFilter{LocalDate: "2026-10-17"})
+	if err != nil {
+		t.Fatalf("list entries: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored entries = %d, want both halves", len(stored))
+	}
+	bySubcategory, err := database.WorkEntries(userID, store.WorkEntryFilter{SubcategoryID: subcategory.ID})
+	if err != nil {
+		t.Fatalf("list by subcategory: %v", err)
+	}
+	if len(bySubcategory) != 2 {
+		t.Fatalf("indexed halves = %d, want both halves under the subcategory", len(bySubcategory))
+	}
+
+	for _, at := range []int{0, 42, -5} {
+		if _, _, err := database.SplitWorkEntry(userID, entry.ID, at); err == nil || err.Error() != "atMinutes: must leave at least one minute on each side" {
+			t.Fatalf("split at %d error = %v, want an atMinutes validation error", at, err)
+		}
+	}
+	if _, _, err := database.SplitWorkEntry(userID, "missing", 10); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing entry error = %v, want ErrNotFound", err)
+	}
+	if _, _, err := database.SplitWorkEntry("user-other", entry.ID, 10); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("cross-user split error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestReferencedTaxonomyCanBeArchivedButNotDeleted(t *testing.T) {
 	database := newStore(t)
 	userID := "user-archive"

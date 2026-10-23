@@ -18,14 +18,33 @@ class EntryFailure extends ServiceFailure {
   const EntryFailure(super.message, {super.field});
 }
 
-/// The work-entry operations the Today screen consumes. Every call is scoped
-/// to the signed-in account by the service.
+/// A filtered entry listing. The service flags overlaps across the whole
+/// filter result so the Log can mark both sides of an intersecting pair.
+class EntryListing {
+  const EntryListing({this.entries = const [], this.overlappingIds = const {}});
+
+  final List<WorkEntry> entries;
+  final Set<String> overlappingIds;
+}
+
+/// The two blocks a split produced. The first keeps the original identity.
+class SplitHalves {
+  const SplitHalves({required this.first, required this.second});
+
+  final WorkEntry first;
+  final WorkEntry second;
+}
+
+/// The work-entry operations the Today and Log screens consume. Every call is
+/// scoped to the signed-in account by the service.
 abstract class EntryApi {
-  Future<List<WorkEntry>> listEntries({
+  Future<EntryListing> listEntries({
     String localDate = '',
     bool today = false,
     DateTime? from,
     DateTime? to,
+    String fromDate = '',
+    String toDate = '',
     String categoryId = '',
     String subcategoryId = '',
     String person = '',
@@ -37,6 +56,9 @@ abstract class EntryApi {
   Future<WorkEntry> updateEntry(WorkEntry entry);
 
   Future<void> deleteEntry(String id);
+
+  /// Splits an entry into two contiguous blocks at [atMinutes] after its start.
+  Future<SplitHalves> splitEntry(String id, int atMinutes);
 }
 
 /// The narrow generated-client surface, separated so field mapping and error
@@ -56,6 +78,10 @@ abstract class EntryRpc {
 
   Future<generated.DeleteEntryResponse> deleteEntry(
     generated.DeleteEntryRequest request,
+  );
+
+  Future<generated.SplitEntryResponse> splitEntry(
+    generated.SplitEntryRequest request,
   );
 }
 
@@ -92,6 +118,11 @@ class GrpcEntryRpc implements EntryRpc {
   Future<generated.DeleteEntryResponse> deleteEntry(
     generated.DeleteEntryRequest request,
   ) => _client.deleteEntry(request);
+
+  @override
+  Future<generated.SplitEntryResponse> splitEntry(
+    generated.SplitEntryRequest request,
+  ) => _client.splitEntry(request);
 }
 
 /// Work entries over Connect/gRPC-Web.
@@ -103,37 +134,46 @@ class GrpcEntryApi implements EntryApi {
   final EntryRpc _rpc;
 
   @override
-  Future<List<WorkEntry>> listEntries({
+  Future<EntryListing> listEntries({
     String localDate = '',
     bool today = false,
     DateTime? from,
     DateTime? to,
+    String fromDate = '',
+    String toDate = '',
     String categoryId = '',
     String subcategoryId = '',
     String person = '',
     String query = '',
   }) async {
     try {
-      return [
-        for (final response in await _pages(
-          (token) => _rpc.listEntries(
-            generated.ListEntriesRequest(
-              localDate: localDate,
-              today: today,
-              from: from == null ? null : Timestamp.fromDateTime(from.toUtc()),
-              to: to == null ? null : Timestamp.fromDateTime(to.toUtc()),
-              categoryId: categoryId,
-              subcategoryId: subcategoryId,
-              person: person,
-              query: query,
-              pageSize: _pageSize,
-              pageToken: token,
-            ),
+      final pages = await _pages(
+        (token) => _rpc.listEntries(
+          generated.ListEntriesRequest(
+            localDate: localDate,
+            today: today,
+            from: from == null ? null : Timestamp.fromDateTime(from.toUtc()),
+            to: to == null ? null : Timestamp.fromDateTime(to.toUtc()),
+            fromDate: fromDate,
+            toDate: toDate,
+            categoryId: categoryId,
+            subcategoryId: subcategoryId,
+            person: person,
+            query: query,
+            pageSize: _pageSize,
+            pageToken: token,
           ),
-          (response) => response.nextPageToken,
-        ))
-          ...response.entries.map(entryFromProto),
-      ];
+        ),
+        (response) => response.nextPageToken,
+      );
+      return EntryListing(
+        entries: [
+          for (final response in pages) ...response.entries.map(entryFromProto),
+        ],
+        overlappingIds: {
+          for (final response in pages) ...response.overlappingEntryIds,
+        },
+      );
     } on GrpcError catch (error) {
       throw _failure(error);
     }
@@ -206,6 +246,21 @@ class GrpcEntryApi implements EntryApi {
   Future<void> deleteEntry(String id) async {
     try {
       await _rpc.deleteEntry(generated.DeleteEntryRequest(id: id));
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<SplitHalves> splitEntry(String id, int atMinutes) async {
+    try {
+      final response = await _rpc.splitEntry(
+        generated.SplitEntryRequest(id: id, at: _minutesDuration(atMinutes)),
+      );
+      return SplitHalves(
+        first: entryFromProto(response.first),
+        second: entryFromProto(response.second),
+      );
     } on GrpcError catch (error) {
       throw _failure(error);
     }

@@ -145,12 +145,13 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 - [ ] Add `milestones.proto` and `notes.proto`; implement `MilestoneService` and
       `NoteService`.
-- [ ] Wire Log: filters (today, this week, last 7 days, this month, since last
+- [x] Wire Log: filters (today, this week, last 7 days, this month, since last
       manager check-in, custom), category and subcategory filters, inline edit,
-      and the overlap marker.
+      split, delete, and the overlap marker.
 - [ ] Wire Initiatives: role-filtered portfolio; project detail with Timeline,
       Notes, Milestones, and Report (from `GetPeriodReport`).
-- [ ] Tests: filters, inline edit, overlap flag, milestone and note CRUD.
+- [x] Tests: log filters, inline edit, split, delete and overlap flag.
+- [ ] Tests: milestone and note CRUD.
 
 **Acceptance:** a quarter of historical data can be entered and corrected.
 

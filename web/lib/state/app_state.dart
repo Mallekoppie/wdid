@@ -95,6 +95,26 @@ class StoppedTimer {
   final bool discarded;
 }
 
+/// One Log listing request. The Log screen rebuilds it whenever a filter
+/// changes, and mutations reload through it so overlap flags stay current.
+class LogQuery {
+  const LogQuery({
+    required this.fromDate,
+    required this.toDate,
+    this.categoryId = '',
+    this.subcategoryId = '',
+    this.query = '',
+  });
+
+  /// Inclusive local calendar dates; the service resolves their boundaries in
+  /// the configured timezone.
+  final String fromDate;
+  final String toDate;
+  final String categoryId;
+  final String subcategoryId;
+  final String query;
+}
+
 class AppState extends ChangeNotifier {
   AppState(
     this.repository, {
@@ -135,6 +155,14 @@ class AppState extends ChangeNotifier {
   List<WorkEntry> entries = const [];
   bool entriesLoading = false;
   String? entriesError;
+
+  /// The entries for the Log's current filter, newest first.
+  List<WorkEntry> logEntries = const [];
+  Set<String> logOverlappingIds = const {};
+  bool logLoading = false;
+  String? logError;
+  LogQuery? _logQuery;
+  int _logRequest = 0;
 
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
@@ -255,7 +283,7 @@ class AppState extends ChangeNotifier {
     _notify();
     try {
       final loaded = await api.listEntries(today: true);
-      entries = _newestFirst(loaded);
+      entries = _newestFirst(loaded.entries);
       // Prefill the capture selector from the most recent entry, so a reload
       // keeps the last used pair without adding a preference field.
       if (entries.isNotEmpty) {
@@ -755,6 +783,46 @@ class AppState extends ChangeNotifier {
     return api;
   }
 
+  /// Loads the Log's entries for one filter. Stale responses are dropped, so a
+  /// fast sequence of filter changes always leaves the latest one on screen.
+  Future<void> loadLog(LogQuery query) async {
+    final api = entryApi;
+    if (api == null) return;
+
+    _logQuery = query;
+    final request = ++_logRequest;
+    logLoading = true;
+    logError = null;
+    _notify();
+    try {
+      final listing = await api.listEntries(
+        fromDate: query.fromDate,
+        toDate: query.toDate,
+        categoryId: query.categoryId,
+        subcategoryId: query.subcategoryId,
+        query: query.query,
+      );
+      if (request != _logRequest) return;
+      logEntries = _newestFirst(listing.entries);
+      logOverlappingIds = listing.overlappingIds;
+    } catch (error) {
+      if (request != _logRequest) return;
+      logError = error.toString();
+    } finally {
+      if (request == _logRequest) {
+        logLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Reloads whatever filter the Log last asked for, after a mutation.
+  Future<void> refreshLog() async {
+    final query = _logQuery;
+    if (query == null) return;
+    await loadLog(query);
+  }
+
   /// Captures one line of work against a category and optional subcategory.
   /// The pair is remembered for the next capture.
   Future<WorkEntry> quickCapture({
@@ -764,9 +832,9 @@ class AppState extends ChangeNotifier {
     required int minutes,
     String outcome = '',
     String person = '',
-  }) async {
+  }) {
     final now = DateTime.now();
-    final entry = await _entryApi().createEntry(
+    return createWorkEntry(
       EntryDraft(
         categoryId: categoryId,
         subcategoryId: subcategoryId,
@@ -778,20 +846,24 @@ class AppState extends ChangeNotifier {
         source: EntrySource.manual,
       ),
     );
+  }
 
-    entries = _newestFirst([entry, ...entries]);
-    lastCategoryId = categoryId;
-    lastSubcategoryId = subcategoryId;
+  /// Creates an entry with an explicit start, used by the Log's add form.
+  Future<WorkEntry> createWorkEntry(EntryDraft draft) async {
+    final entry = await _entryApi().createEntry(draft);
+    if (entry.localDate == todayIso) {
+      entries = _newestFirst([entry, ...entries]);
+    }
+    lastCategoryId = draft.categoryId;
+    lastSubcategoryId = draft.subcategoryId;
     _notify();
     return entry;
   }
 
   Future<WorkEntry> updateWorkEntry(WorkEntry entry) async {
     final updated = await _entryApi().updateEntry(entry);
-    entries = _newestFirst([
-      for (final existing in entries)
-        if (existing.id == updated.id) updated else existing,
-    ]);
+    entries = _replaceEntry(entries, updated);
+    logEntries = _replaceEntry(logEntries, updated);
     _notify();
     return updated;
   }
@@ -799,7 +871,40 @@ class AppState extends ChangeNotifier {
   Future<void> deleteWorkEntry(String id) async {
     await _entryApi().deleteEntry(id);
     entries = entries.where((entry) => entry.id != id).toList();
+    logEntries = logEntries.where((entry) => entry.id != id).toList();
     _notify();
+  }
+
+  /// Splits one entry into two contiguous halves. The original identity stays
+  /// with the first half, so open editors and selections follow it.
+  Future<SplitHalves> splitEntry(String id, int atMinutes) async {
+    final halves = await _entryApi().splitEntry(id, atMinutes);
+    entries = _replaceWithHalves(entries, id, halves);
+    logEntries = _replaceWithHalves(logEntries, id, halves);
+    _notify();
+    return halves;
+  }
+
+  List<WorkEntry> _replaceEntry(List<WorkEntry> source, WorkEntry updated) {
+    if (!source.any((entry) => entry.id == updated.id)) return source;
+    return _newestFirst([
+      for (final existing in source)
+        if (existing.id == updated.id) updated else existing,
+    ]);
+  }
+
+  List<WorkEntry> _replaceWithHalves(
+    List<WorkEntry> source,
+    String id,
+    SplitHalves halves,
+  ) {
+    if (!source.any((entry) => entry.id == id)) return source;
+    return _newestFirst([
+      for (final existing in source)
+        if (existing.id != id) existing,
+      halves.first,
+      halves.second,
+    ]);
   }
 
   Future<WorkItem> updateEntry(WorkItem item) async {

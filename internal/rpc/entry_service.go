@@ -57,16 +57,47 @@ func (s *EntryService) ListEntries(ctx context.Context, request *connect.Request
 		Person:        request.Msg.GetPerson(),
 		Query:         request.Msg.GetQuery(),
 	}
-	if request.Msg.GetFrom() != nil {
-		filter.From = request.Msg.GetFrom().AsTime()
-	}
-	if request.Msg.GetTo() != nil {
-		filter.To = request.Msg.GetTo().AsTime()
+	if request.Msg.GetFromDate() != "" || request.Msg.GetToDate() != "" {
+		// An explicit local date is resolved in the user's configured timezone,
+		// so the device clock cannot move the day boundary.
+		filter.From, filter.To, err = s.store.LocalDayRange(
+			userID,
+			request.Msg.GetFromDate(),
+			request.Msg.GetToDate(),
+		)
+		if err != nil {
+			return nil, toConnectError(err)
+		}
+	} else {
+		if request.Msg.GetFrom() != nil {
+			filter.From = request.Msg.GetFrom().AsTime()
+		}
+		if request.Msg.GetTo() != nil {
+			filter.To = request.Msg.GetTo().AsTime()
+		}
 	}
 
 	entries, err := s.store.WorkEntries(userID, filter)
 	if err != nil {
 		return nil, toConnectError(err)
+	}
+
+	// Overlaps are detected against every entry the user owns, so filtering
+	// one side of an intersecting pair does not hide the marker. Only the
+	// filtered entries are reported.
+	allEntries, err := s.store.WorkEntries(userID, store.WorkEntryFilter{})
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	matching := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		matching[entry.ID] = struct{}{}
+	}
+	overlapping := make([]string, 0)
+	for _, id := range domain.OverlappingEntryIDs(allEntries) {
+		if _, ok := matching[id]; ok {
+			overlapping = append(overlapping, id)
+		}
 	}
 
 	page, nextPageToken, err := paginate(entries, request.Msg.GetPageSize(), request.Msg.GetPageToken())
@@ -75,8 +106,9 @@ func (s *EntryService) ListEntries(ctx context.Context, request *connect.Request
 	}
 
 	response := &wdidv1.ListEntriesResponse{
-		Entries:       make([]*wdidv1.WorkEntry, 0, len(page)),
-		NextPageToken: nextPageToken,
+		Entries:             make([]*wdidv1.WorkEntry, 0, len(page)),
+		NextPageToken:       nextPageToken,
+		OverlappingEntryIds: overlapping,
 	}
 	for _, entry := range page {
 		response.Entries = append(response.Entries, toProtoWorkEntry(entry))
@@ -226,6 +258,24 @@ func (s *EntryService) DeleteEntry(ctx context.Context, request *connect.Request
 		return nil, toConnectError(err)
 	}
 	return connect.NewResponse(&wdidv1.DeleteEntryResponse{}), nil
+}
+
+// SplitEntry divides one of the caller's entries into two contiguous blocks at
+// the requested minute offset.
+func (s *EntryService) SplitEntry(ctx context.Context, request *connect.Request[wdidv1.SplitEntryRequest]) (*connect.Response[wdidv1.SplitEntryResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	first, second, err := s.store.SplitWorkEntry(userID, request.Msg.GetId(), durationMinutes(request.Msg.GetAt()))
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	return connect.NewResponse(&wdidv1.SplitEntryResponse{
+		First:  toProtoWorkEntry(first),
+		Second: toProtoWorkEntry(second),
+	}), nil
 }
 
 // entryConnectError keeps a missing referenced category or subcategory on the

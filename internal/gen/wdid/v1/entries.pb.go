@@ -253,7 +253,12 @@ type ListEntriesRequest struct {
 	PageToken     string                 `protobuf:"bytes,9,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Selects today in the user's configured timezone. When set, local_date is
 	// ignored, so the client never has to reproduce the server's day boundary.
-	Today         bool `protobuf:"varint,10,opt,name=today,proto3" json:"today,omitempty"`
+	Today bool `protobuf:"varint,10,opt,name=today,proto3" json:"today,omitempty"`
+	// Inclusive local calendar dates (YYYY-MM-DD) resolved in the user's
+	// configured timezone. When either is set, the from/to instants are ignored
+	// and the server owns the day boundary.
+	FromDate      string `protobuf:"bytes,11,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
+	ToDate        string `protobuf:"bytes,12,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -358,12 +363,32 @@ func (x *ListEntriesRequest) GetToday() bool {
 	return false
 }
 
+func (x *ListEntriesRequest) GetFromDate() string {
+	if x != nil {
+		return x.FromDate
+	}
+	return ""
+}
+
+func (x *ListEntriesRequest) GetToDate() string {
+	if x != nil {
+		return x.ToDate
+	}
+	return ""
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*WorkEntry           `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
 	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// IDs of entries in the filtered result whose time span intersects another
+	// entry owned by the same user, even one outside the filter. Overlapping
+	// manual entries are allowed; the Log marks them instead of rejecting the
+	// capture. The list covers the whole filter result, not only the returned
+	// page, so a pair is flagged on both sides.
+	OverlappingEntryIds []string `protobuf:"bytes,3,rep,name=overlapping_entry_ids,json=overlappingEntryIds,proto3" json:"overlapping_entry_ids,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *ListEntriesResponse) Reset() {
@@ -408,6 +433,13 @@ func (x *ListEntriesResponse) GetNextPageToken() string {
 		return x.NextPageToken
 	}
 	return ""
+}
+
+func (x *ListEntriesResponse) GetOverlappingEntryIds() []string {
+	if x != nil {
+		return x.OverlappingEntryIds
+	}
+	return nil
 }
 
 type GetEntryRequest struct {
@@ -934,6 +966,115 @@ func (*DeleteEntryResponse) Descriptor() ([]byte, []int) {
 	return file_entries_proto_rawDescGZIP(), []int{10}
 }
 
+// SplitEntryRequest divides one entry into two contiguous blocks. The first
+// keeps the original identity and starts at the original start; the second
+// begins where the first ends and carries the remaining minutes.
+type SplitEntryRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Offset from the entry's start at which the second block begins. Both
+	// halves must be at least one minute long.
+	At            *durationpb.Duration `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SplitEntryRequest) Reset() {
+	*x = SplitEntryRequest{}
+	mi := &file_entries_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SplitEntryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SplitEntryRequest) ProtoMessage() {}
+
+func (x *SplitEntryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_entries_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SplitEntryRequest.ProtoReflect.Descriptor instead.
+func (*SplitEntryRequest) Descriptor() ([]byte, []int) {
+	return file_entries_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SplitEntryRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SplitEntryRequest) GetAt() *durationpb.Duration {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+type SplitEntryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	First         *WorkEntry             `protobuf:"bytes,1,opt,name=first,proto3" json:"first,omitempty"`
+	Second        *WorkEntry             `protobuf:"bytes,2,opt,name=second,proto3" json:"second,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SplitEntryResponse) Reset() {
+	*x = SplitEntryResponse{}
+	mi := &file_entries_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SplitEntryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SplitEntryResponse) ProtoMessage() {}
+
+func (x *SplitEntryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_entries_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SplitEntryResponse.ProtoReflect.Descriptor instead.
+func (*SplitEntryResponse) Descriptor() ([]byte, []int) {
+	return file_entries_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SplitEntryResponse) GetFirst() *WorkEntry {
+	if x != nil {
+		return x.First
+	}
+	return nil
+}
+
+func (x *SplitEntryResponse) GetSecond() *WorkEntry {
+	if x != nil {
+		return x.Second
+	}
+	return nil
+}
+
 var File_entries_proto protoreflect.FileDescriptor
 
 const file_entries_proto_rawDesc = "" +
@@ -961,7 +1102,7 @@ const file_entries_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd7\x02\n" +
+	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x8d\x03\n" +
 	"\x12ListEntriesRequest\x12\x1d\n" +
 	"\n" +
 	"local_date\x18\x01 \x01(\tR\tlocalDate\x12.\n" +
@@ -976,10 +1117,13 @@ const file_entries_proto_rawDesc = "" +
 	"\n" +
 	"page_token\x18\t \x01(\tR\tpageToken\x12\x14\n" +
 	"\x05today\x18\n" +
-	" \x01(\bR\x05today\"k\n" +
+	" \x01(\bR\x05today\x12\x1b\n" +
+	"\tfrom_date\x18\v \x01(\tR\bfromDate\x12\x17\n" +
+	"\ato_date\x18\f \x01(\tR\x06toDate\"\x9f\x01\n" +
 	"\x13ListEntriesResponse\x12,\n" +
 	"\aentries\x18\x01 \x03(\v2\x12.wdid.v1.WorkEntryR\aentries\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"!\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x122\n" +
+	"\x15overlapping_entry_ids\x18\x03 \x03(\tR\x13overlappingEntryIds\"!\n" +
 	"\x0fGetEntryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"<\n" +
 	"\x10GetEntryResponse\x12(\n" +
@@ -1022,17 +1166,25 @@ const file_entries_proto_rawDesc = "" +
 	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"$\n" +
 	"\x12DeleteEntryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x15\n" +
-	"\x13DeleteEntryResponse*\\\n" +
+	"\x13DeleteEntryResponse\"N\n" +
+	"\x11SplitEntryRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12)\n" +
+	"\x02at\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x02at\"j\n" +
+	"\x12SplitEntryResponse\x12(\n" +
+	"\x05first\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05first\x12*\n" +
+	"\x06second\x18\x02 \x01(\v2\x12.wdid.v1.WorkEntryR\x06second*\\\n" +
 	"\vEntrySource\x12\x1c\n" +
 	"\x18ENTRY_SOURCE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ENTRY_SOURCE_MANUAL\x10\x01\x12\x16\n" +
-	"\x12ENTRY_SOURCE_TIMER\x10\x022\xf7\x02\n" +
+	"\x12ENTRY_SOURCE_TIMER\x10\x022\xbe\x03\n" +
 	"\fEntryService\x12H\n" +
 	"\vListEntries\x12\x1b.wdid.v1.ListEntriesRequest\x1a\x1c.wdid.v1.ListEntriesResponse\x12?\n" +
 	"\bGetEntry\x12\x18.wdid.v1.GetEntryRequest\x1a\x19.wdid.v1.GetEntryResponse\x12H\n" +
 	"\vCreateEntry\x12\x1b.wdid.v1.CreateEntryRequest\x1a\x1c.wdid.v1.CreateEntryResponse\x12H\n" +
 	"\vUpdateEntry\x12\x1b.wdid.v1.UpdateEntryRequest\x1a\x1c.wdid.v1.UpdateEntryResponse\x12H\n" +
-	"\vDeleteEntry\x12\x1b.wdid.v1.DeleteEntryRequest\x1a\x1c.wdid.v1.DeleteEntryResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
+	"\vDeleteEntry\x12\x1b.wdid.v1.DeleteEntryRequest\x1a\x1c.wdid.v1.DeleteEntryResponse\x12E\n" +
+	"\n" +
+	"SplitEntry\x12\x1a.wdid.v1.SplitEntryRequest\x1a\x1b.wdid.v1.SplitEntryResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
 
 var (
 	file_entries_proto_rawDescOnce sync.Once
@@ -1047,7 +1199,7 @@ func file_entries_proto_rawDescGZIP() []byte {
 }
 
 var file_entries_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_entries_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_entries_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_entries_proto_goTypes = []any{
 	(EntrySource)(0),              // 0: wdid.v1.EntrySource
 	(*WorkEntry)(nil),             // 1: wdid.v1.WorkEntry
@@ -1061,48 +1213,55 @@ var file_entries_proto_goTypes = []any{
 	(*UpdateEntryResponse)(nil),   // 9: wdid.v1.UpdateEntryResponse
 	(*DeleteEntryRequest)(nil),    // 10: wdid.v1.DeleteEntryRequest
 	(*DeleteEntryResponse)(nil),   // 11: wdid.v1.DeleteEntryResponse
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 13: google.protobuf.Duration
-	(*Link)(nil),                  // 14: wdid.v1.Link
+	(*SplitEntryRequest)(nil),     // 12: wdid.v1.SplitEntryRequest
+	(*SplitEntryResponse)(nil),    // 13: wdid.v1.SplitEntryResponse
+	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 15: google.protobuf.Duration
+	(*Link)(nil),                  // 16: wdid.v1.Link
 }
 var file_entries_proto_depIdxs = []int32{
-	12, // 0: wdid.v1.WorkEntry.started_at:type_name -> google.protobuf.Timestamp
-	12, // 1: wdid.v1.WorkEntry.ended_at:type_name -> google.protobuf.Timestamp
-	13, // 2: wdid.v1.WorkEntry.duration:type_name -> google.protobuf.Duration
-	14, // 3: wdid.v1.WorkEntry.links:type_name -> wdid.v1.Link
+	14, // 0: wdid.v1.WorkEntry.started_at:type_name -> google.protobuf.Timestamp
+	14, // 1: wdid.v1.WorkEntry.ended_at:type_name -> google.protobuf.Timestamp
+	15, // 2: wdid.v1.WorkEntry.duration:type_name -> google.protobuf.Duration
+	16, // 3: wdid.v1.WorkEntry.links:type_name -> wdid.v1.Link
 	0,  // 4: wdid.v1.WorkEntry.source:type_name -> wdid.v1.EntrySource
-	12, // 5: wdid.v1.WorkEntry.created_at:type_name -> google.protobuf.Timestamp
-	12, // 6: wdid.v1.WorkEntry.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 7: wdid.v1.ListEntriesRequest.from:type_name -> google.protobuf.Timestamp
-	12, // 8: wdid.v1.ListEntriesRequest.to:type_name -> google.protobuf.Timestamp
+	14, // 5: wdid.v1.WorkEntry.created_at:type_name -> google.protobuf.Timestamp
+	14, // 6: wdid.v1.WorkEntry.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 7: wdid.v1.ListEntriesRequest.from:type_name -> google.protobuf.Timestamp
+	14, // 8: wdid.v1.ListEntriesRequest.to:type_name -> google.protobuf.Timestamp
 	1,  // 9: wdid.v1.ListEntriesResponse.entries:type_name -> wdid.v1.WorkEntry
 	1,  // 10: wdid.v1.GetEntryResponse.entry:type_name -> wdid.v1.WorkEntry
-	12, // 11: wdid.v1.CreateEntryRequest.started_at:type_name -> google.protobuf.Timestamp
-	12, // 12: wdid.v1.CreateEntryRequest.ended_at:type_name -> google.protobuf.Timestamp
-	13, // 13: wdid.v1.CreateEntryRequest.duration:type_name -> google.protobuf.Duration
-	14, // 14: wdid.v1.CreateEntryRequest.links:type_name -> wdid.v1.Link
+	14, // 11: wdid.v1.CreateEntryRequest.started_at:type_name -> google.protobuf.Timestamp
+	14, // 12: wdid.v1.CreateEntryRequest.ended_at:type_name -> google.protobuf.Timestamp
+	15, // 13: wdid.v1.CreateEntryRequest.duration:type_name -> google.protobuf.Duration
+	16, // 14: wdid.v1.CreateEntryRequest.links:type_name -> wdid.v1.Link
 	0,  // 15: wdid.v1.CreateEntryRequest.source:type_name -> wdid.v1.EntrySource
 	1,  // 16: wdid.v1.CreateEntryResponse.entry:type_name -> wdid.v1.WorkEntry
-	12, // 17: wdid.v1.UpdateEntryRequest.started_at:type_name -> google.protobuf.Timestamp
-	12, // 18: wdid.v1.UpdateEntryRequest.ended_at:type_name -> google.protobuf.Timestamp
-	13, // 19: wdid.v1.UpdateEntryRequest.duration:type_name -> google.protobuf.Duration
-	14, // 20: wdid.v1.UpdateEntryRequest.links:type_name -> wdid.v1.Link
+	14, // 17: wdid.v1.UpdateEntryRequest.started_at:type_name -> google.protobuf.Timestamp
+	14, // 18: wdid.v1.UpdateEntryRequest.ended_at:type_name -> google.protobuf.Timestamp
+	15, // 19: wdid.v1.UpdateEntryRequest.duration:type_name -> google.protobuf.Duration
+	16, // 20: wdid.v1.UpdateEntryRequest.links:type_name -> wdid.v1.Link
 	1,  // 21: wdid.v1.UpdateEntryResponse.entry:type_name -> wdid.v1.WorkEntry
-	2,  // 22: wdid.v1.EntryService.ListEntries:input_type -> wdid.v1.ListEntriesRequest
-	4,  // 23: wdid.v1.EntryService.GetEntry:input_type -> wdid.v1.GetEntryRequest
-	6,  // 24: wdid.v1.EntryService.CreateEntry:input_type -> wdid.v1.CreateEntryRequest
-	8,  // 25: wdid.v1.EntryService.UpdateEntry:input_type -> wdid.v1.UpdateEntryRequest
-	10, // 26: wdid.v1.EntryService.DeleteEntry:input_type -> wdid.v1.DeleteEntryRequest
-	3,  // 27: wdid.v1.EntryService.ListEntries:output_type -> wdid.v1.ListEntriesResponse
-	5,  // 28: wdid.v1.EntryService.GetEntry:output_type -> wdid.v1.GetEntryResponse
-	7,  // 29: wdid.v1.EntryService.CreateEntry:output_type -> wdid.v1.CreateEntryResponse
-	9,  // 30: wdid.v1.EntryService.UpdateEntry:output_type -> wdid.v1.UpdateEntryResponse
-	11, // 31: wdid.v1.EntryService.DeleteEntry:output_type -> wdid.v1.DeleteEntryResponse
-	27, // [27:32] is the sub-list for method output_type
-	22, // [22:27] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	15, // 22: wdid.v1.SplitEntryRequest.at:type_name -> google.protobuf.Duration
+	1,  // 23: wdid.v1.SplitEntryResponse.first:type_name -> wdid.v1.WorkEntry
+	1,  // 24: wdid.v1.SplitEntryResponse.second:type_name -> wdid.v1.WorkEntry
+	2,  // 25: wdid.v1.EntryService.ListEntries:input_type -> wdid.v1.ListEntriesRequest
+	4,  // 26: wdid.v1.EntryService.GetEntry:input_type -> wdid.v1.GetEntryRequest
+	6,  // 27: wdid.v1.EntryService.CreateEntry:input_type -> wdid.v1.CreateEntryRequest
+	8,  // 28: wdid.v1.EntryService.UpdateEntry:input_type -> wdid.v1.UpdateEntryRequest
+	10, // 29: wdid.v1.EntryService.DeleteEntry:input_type -> wdid.v1.DeleteEntryRequest
+	12, // 30: wdid.v1.EntryService.SplitEntry:input_type -> wdid.v1.SplitEntryRequest
+	3,  // 31: wdid.v1.EntryService.ListEntries:output_type -> wdid.v1.ListEntriesResponse
+	5,  // 32: wdid.v1.EntryService.GetEntry:output_type -> wdid.v1.GetEntryResponse
+	7,  // 33: wdid.v1.EntryService.CreateEntry:output_type -> wdid.v1.CreateEntryResponse
+	9,  // 34: wdid.v1.EntryService.UpdateEntry:output_type -> wdid.v1.UpdateEntryResponse
+	11, // 35: wdid.v1.EntryService.DeleteEntry:output_type -> wdid.v1.DeleteEntryResponse
+	13, // 36: wdid.v1.EntryService.SplitEntry:output_type -> wdid.v1.SplitEntryResponse
+	31, // [31:37] is the sub-list for method output_type
+	25, // [25:31] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_entries_proto_init() }
@@ -1117,7 +1276,7 @@ func file_entries_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_entries_proto_rawDesc), len(file_entries_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

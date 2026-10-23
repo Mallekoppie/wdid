@@ -47,6 +47,8 @@ const (
 	// EntryServiceDeleteEntryProcedure is the fully-qualified name of the EntryService's DeleteEntry
 	// RPC.
 	EntryServiceDeleteEntryProcedure = "/wdid.v1.EntryService/DeleteEntry"
+	// EntryServiceSplitEntryProcedure is the fully-qualified name of the EntryService's SplitEntry RPC.
+	EntryServiceSplitEntryProcedure = "/wdid.v1.EntryService/SplitEntry"
 )
 
 // EntryServiceClient is a client for the wdid.v1.EntryService service.
@@ -56,6 +58,7 @@ type EntryServiceClient interface {
 	CreateEntry(context.Context, *connect.Request[v1.CreateEntryRequest]) (*connect.Response[v1.CreateEntryResponse], error)
 	UpdateEntry(context.Context, *connect.Request[v1.UpdateEntryRequest]) (*connect.Response[v1.UpdateEntryResponse], error)
 	DeleteEntry(context.Context, *connect.Request[v1.DeleteEntryRequest]) (*connect.Response[v1.DeleteEntryResponse], error)
+	SplitEntry(context.Context, *connect.Request[v1.SplitEntryRequest]) (*connect.Response[v1.SplitEntryResponse], error)
 }
 
 // NewEntryServiceClient constructs a client for the wdid.v1.EntryService service. By default, it
@@ -99,6 +102,12 @@ func NewEntryServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(entryServiceMethods.ByName("DeleteEntry")),
 			connect.WithClientOptions(opts...),
 		),
+		splitEntry: connect.NewClient[v1.SplitEntryRequest, v1.SplitEntryResponse](
+			httpClient,
+			baseURL+EntryServiceSplitEntryProcedure,
+			connect.WithSchema(entryServiceMethods.ByName("SplitEntry")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -109,6 +118,7 @@ type entryServiceClient struct {
 	createEntry *connect.Client[v1.CreateEntryRequest, v1.CreateEntryResponse]
 	updateEntry *connect.Client[v1.UpdateEntryRequest, v1.UpdateEntryResponse]
 	deleteEntry *connect.Client[v1.DeleteEntryRequest, v1.DeleteEntryResponse]
+	splitEntry  *connect.Client[v1.SplitEntryRequest, v1.SplitEntryResponse]
 }
 
 // ListEntries calls wdid.v1.EntryService.ListEntries.
@@ -136,6 +146,11 @@ func (c *entryServiceClient) DeleteEntry(ctx context.Context, req *connect.Reque
 	return c.deleteEntry.CallUnary(ctx, req)
 }
 
+// SplitEntry calls wdid.v1.EntryService.SplitEntry.
+func (c *entryServiceClient) SplitEntry(ctx context.Context, req *connect.Request[v1.SplitEntryRequest]) (*connect.Response[v1.SplitEntryResponse], error) {
+	return c.splitEntry.CallUnary(ctx, req)
+}
+
 // EntryServiceHandler is an implementation of the wdid.v1.EntryService service.
 type EntryServiceHandler interface {
 	ListEntries(context.Context, *connect.Request[v1.ListEntriesRequest]) (*connect.Response[v1.ListEntriesResponse], error)
@@ -143,6 +158,7 @@ type EntryServiceHandler interface {
 	CreateEntry(context.Context, *connect.Request[v1.CreateEntryRequest]) (*connect.Response[v1.CreateEntryResponse], error)
 	UpdateEntry(context.Context, *connect.Request[v1.UpdateEntryRequest]) (*connect.Response[v1.UpdateEntryResponse], error)
 	DeleteEntry(context.Context, *connect.Request[v1.DeleteEntryRequest]) (*connect.Response[v1.DeleteEntryResponse], error)
+	SplitEntry(context.Context, *connect.Request[v1.SplitEntryRequest]) (*connect.Response[v1.SplitEntryResponse], error)
 }
 
 // NewEntryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -182,6 +198,12 @@ func NewEntryServiceHandler(svc EntryServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(entryServiceMethods.ByName("DeleteEntry")),
 		connect.WithHandlerOptions(opts...),
 	)
+	entryServiceSplitEntryHandler := connect.NewUnaryHandler(
+		EntryServiceSplitEntryProcedure,
+		svc.SplitEntry,
+		connect.WithSchema(entryServiceMethods.ByName("SplitEntry")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wdid.v1.EntryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case EntryServiceListEntriesProcedure:
@@ -194,6 +216,8 @@ func NewEntryServiceHandler(svc EntryServiceHandler, opts ...connect.HandlerOpti
 			entryServiceUpdateEntryHandler.ServeHTTP(w, r)
 		case EntryServiceDeleteEntryProcedure:
 			entryServiceDeleteEntryHandler.ServeHTTP(w, r)
+		case EntryServiceSplitEntryProcedure:
+			entryServiceSplitEntryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -221,4 +245,8 @@ func (UnimplementedEntryServiceHandler) UpdateEntry(context.Context, *connect.Re
 
 func (UnimplementedEntryServiceHandler) DeleteEntry(context.Context, *connect.Request[v1.DeleteEntryRequest]) (*connect.Response[v1.DeleteEntryResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.EntryService.DeleteEntry is not implemented"))
+}
+
+func (UnimplementedEntryServiceHandler) SplitEntry(context.Context, *connect.Request[v1.SplitEntryRequest]) (*connect.Response[v1.SplitEntryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.EntryService.SplitEntry is not implemented"))
 }

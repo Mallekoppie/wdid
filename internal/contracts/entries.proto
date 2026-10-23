@@ -50,11 +50,22 @@ message ListEntriesRequest {
   // Selects today in the user's configured timezone. When set, local_date is
   // ignored, so the client never has to reproduce the server's day boundary.
   bool today = 10;
+  // Inclusive local calendar dates (YYYY-MM-DD) resolved in the user's
+  // configured timezone. When either is set, the from/to instants are ignored
+  // and the server owns the day boundary.
+  string from_date = 11;
+  string to_date = 12;
 }
 
 message ListEntriesResponse {
   repeated WorkEntry entries = 1;
   string next_page_token = 2;
+  // IDs of entries in the filtered result whose time span intersects another
+  // entry owned by the same user, even one outside the filter. Overlapping
+  // manual entries are allowed; the Log marks them instead of rejecting the
+  // capture. The list covers the whole filter result, not only the returned
+  // page, so a pair is flagged on both sides.
+  repeated string overlapping_entry_ids = 3;
 }
 
 message GetEntryRequest {
@@ -113,6 +124,21 @@ message DeleteEntryRequest {
 
 message DeleteEntryResponse {}
 
+// SplitEntryRequest divides one entry into two contiguous blocks. The first
+// keeps the original identity and starts at the original start; the second
+// begins where the first ends and carries the remaining minutes.
+message SplitEntryRequest {
+  string id = 1;
+  // Offset from the entry's start at which the second block begins. Both
+  // halves must be at least one minute long.
+  google.protobuf.Duration at = 2;
+}
+
+message SplitEntryResponse {
+  WorkEntry first = 1;
+  WorkEntry second = 2;
+}
+
 // EntryService owns work entries. Every RPC requires a bearer token; the
 // account is derived from that token, never from a request field.
 service EntryService {
@@ -121,4 +147,5 @@ service EntryService {
   rpc CreateEntry(CreateEntryRequest) returns (CreateEntryResponse);
   rpc UpdateEntry(UpdateEntryRequest) returns (UpdateEntryResponse);
   rpc DeleteEntry(DeleteEntryRequest) returns (DeleteEntryResponse);
+  rpc SplitEntry(SplitEntryRequest) returns (SplitEntryResponse);
 }
