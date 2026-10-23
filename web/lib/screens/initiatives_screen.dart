@@ -259,6 +259,8 @@ class _ProjectsViewState extends State<_ProjectsView> {
                         for (final project in archived)
                           _ArchivedProjectRow(
                             project: project,
+                            onOpen: () =>
+                                context.go('/initiatives/${project.id}'),
                             onRestore: () => unawaited(
                               _setArchived(context, project, archived: false),
                             ),
@@ -293,6 +295,7 @@ class _ProjectCard extends StatelessWidget {
     final lastActivity = _lastActivityLabel(allocation);
 
     return Panel(
+      onTap: () => context.go('/initiatives/${project.id}'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -430,9 +433,14 @@ class _ProjectCard extends StatelessWidget {
 }
 
 class _ArchivedProjectRow extends StatelessWidget {
-  const _ArchivedProjectRow({required this.project, required this.onRestore});
+  const _ArchivedProjectRow({
+    required this.project,
+    required this.onOpen,
+    required this.onRestore,
+  });
 
   final Subcategory project;
+  final VoidCallback onOpen;
   final VoidCallback onRestore;
 
   @override
@@ -441,32 +449,35 @@ class _ArchivedProjectRow extends StatelessWidget {
     final scheme = theme.colorScheme;
     final state = AppStateScope.of(context);
     final category = state.categoryById(project.categoryId);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: 8,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(project.name, style: theme.textTheme.bodyMedium),
-                if (category != null)
-                  Text(
-                    category.name,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
+    return InkWell(
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: 8,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(project.name, style: theme.textTheme.bodyMedium),
+                  if (category != null)
+                    Text(
+                      category.name,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          StatusBadge(label: 'Archived', color: scheme.outline),
-          const SizedBox(width: AppSpacing.md),
-          TextButton(onPressed: onRestore, child: const Text('Restore')),
-        ],
+            StatusBadge(label: 'Archived', color: scheme.outline),
+            const SizedBox(width: AppSpacing.md),
+            TextButton(onPressed: onRestore, child: const Text('Restore')),
+          ],
+        ),
       ),
     );
   }

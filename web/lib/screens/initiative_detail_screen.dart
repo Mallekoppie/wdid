@@ -21,8 +21,12 @@ import '../widgets/forms/note_dialog.dart';
 import '../widgets/forms/support_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
+import '../widgets/stat_tile.dart';
 import '../widgets/status_badge.dart';
 
+/// The demo adapter's initiative detail. The service-backed project detail
+/// lives in `project_detail_screen.dart`; screens without a service contract
+/// still render this older Initiative record.
 class InitiativeDetailScreen extends StatefulWidget {
   const InitiativeDetailScreen({super.key, required this.initiativeId});
 
@@ -54,12 +58,14 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
     final saved = await showEntryDialog(
       context,
       state: state,
-      initialChoice: AttributionChoice.initiative(initiative.id, initiative.name),
+      initialChoice: AttributionChoice.initiative(
+        initiative.id,
+        initiative.name,
+      ),
     );
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry saved')));
     }
   }
 
@@ -72,9 +78,8 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
       subtitle: initiative.name,
     );
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Note added')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Note added')));
     }
   }
 
@@ -85,9 +90,8 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
       existing: initiative,
     );
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Initiative updated')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Initiative updated')));
     }
   }
 
@@ -96,9 +100,8 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
         ? await showSupportDialog(context, state: state, existing: item)
         : await showEntryDialog(context, state: state, existing: item);
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry updated')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry updated')));
     }
   }
 
@@ -106,9 +109,8 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
     try {
       await state.deleteEntry(item.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry deleted')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry deleted')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -125,9 +127,9 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
     try {
       await state.setInitiativeStatus(initiative, status);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Status set to ${status.label}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Status set to ${status.label}')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -261,7 +263,11 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.inventory_2_outlined, size: 18, color: scheme.error),
+                    Icon(
+                      Icons.inventory_2_outlined,
+                      size: 18,
+                      color: scheme.error,
+                    ),
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Text(
@@ -271,7 +277,11 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
                     ),
                     TextButton(
                       onPressed: () => unawaited(
-                        _changeStatus(state, initiative, InitiativeStatus.active),
+                        _changeStatus(
+                          state,
+                          initiative,
+                          InitiativeStatus.active,
+                        ),
                       ),
                       child: const Text('Restore'),
                     ),
@@ -284,28 +294,28 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
               spacing: AppSpacing.xl,
               runSpacing: AppSpacing.md,
               children: [
-                _Stat(
+                StatTile(
                   label: 'This quarter',
                   value: formatDuration(quarterMinutes),
                   icon: Icons.schedule,
                 ),
-                _Stat(
+                StatTile(
                   label: 'Entries',
                   value: '${entries.length}',
                   icon: Icons.list_alt,
                 ),
-                _Stat(
+                StatTile(
                   label: 'Progress',
                   value: '${initiative.progress}%',
                   icon: Icons.trending_up,
                 ),
-                _Stat(
+                StatTile(
                   label: 'Last activity',
                   value: last == null ? '—' : formatRelativeDay(last),
                   icon: Icons.history,
                 ),
                 if (initiative.targetDate != null)
-                  _Stat(
+                  StatTile(
                     label: 'Target date',
                     value: formatShortDate(initiative.targetDate!),
                     icon: Icons.event_outlined,
@@ -363,7 +373,8 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
           ? EmptyState(
               icon: Icons.timeline,
               title: 'No time logged yet',
-              message: 'Log a block against this initiative to start the timeline.',
+              message:
+                  'Log a block against this initiative to start the timeline.',
               action: initiative.isArchived
                   ? null
                   : FilledButton.icon(
@@ -546,44 +557,6 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
           ),
         ],
       ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value, required this.icon});
-
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 15, color: scheme.onSurfaceVariant),
-        const SizedBox(width: 7),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            Text(
-              value,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontFeatures: tabularFigures,
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

@@ -7,6 +7,7 @@ import '../screens/initiative_detail_screen.dart';
 import '../screens/initiatives_screen.dart';
 import '../screens/log_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/project_detail_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/support_screen.dart';
 import '../screens/today_screen.dart';
@@ -24,10 +25,7 @@ GoRouter buildRouter(
     routes: [
       ShellRoute(
         builder: (context, routerState, child) {
-          return AppShell(
-            currentPath: routerState.uri.path,
-            child: child,
-          );
+          return AppShell(currentPath: routerState.uri.path, child: child);
         },
         routes: [
           GoRoute(
@@ -44,9 +42,12 @@ GoRouter buildRouter(
             routes: [
               GoRoute(
                 path: ':id',
-                builder: (context, routerState) => InitiativeDetailScreen(
-                  initiativeId: routerState.pathParameters['id']!,
-                ),
+                builder: (context, routerState) {
+                  final id = routerState.pathParameters['id']!;
+                  return state.hasTaxonomyService
+                      ? ProjectDetailScreen(projectId: id)
+                      : InitiativeDetailScreen(initiativeId: id);
+                },
               ),
             ],
           ),

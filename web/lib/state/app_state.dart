@@ -176,6 +176,14 @@ class AppState extends ChangeNotifier {
   String? initiativesError;
   bool _initiativesLoaded = false;
 
+  /// The project detail's timeline, newest first, and the project it belongs
+  /// to. The id guard stops a previous project's entries from flashing while
+  /// the next project loads.
+  List<WorkEntry> projectEntries = const [];
+  String? projectEntriesProjectId;
+  bool projectEntriesLoading = false;
+  String? projectEntriesError;
+
   /// The entries for the Log's current filter, newest first.
   List<WorkEntry> logEntries = const [];
   Set<String> logOverlappingIds = const {};
@@ -185,6 +193,7 @@ class AppState extends ChangeNotifier {
   int _logRequest = 0;
   int _weekRequest = 0;
   int _initiativesRequest = 0;
+  int _projectEntriesRequest = 0;
 
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
@@ -372,6 +381,43 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Loads one project's full work-entry timeline. EntryService filters by
+  /// subcategory, so the detail never sifts through unrelated entries.
+  Future<void> loadProjectEntries(String subcategoryId) async {
+    final api = entryApi;
+    if (api == null) return;
+
+    final request = ++_projectEntriesRequest;
+    if (projectEntriesProjectId != subcategoryId) {
+      projectEntries = const [];
+      projectEntriesProjectId = subcategoryId;
+    }
+    projectEntriesLoading = true;
+    projectEntriesError = null;
+    _notify();
+    try {
+      final listing = await api.listEntries(subcategoryId: subcategoryId);
+      if (request != _projectEntriesRequest) return;
+      projectEntries = _newestFirst(listing.entries);
+    } catch (error) {
+      if (request != _projectEntriesRequest) return;
+      projectEntriesError = error.toString();
+    } finally {
+      if (request == _projectEntriesRequest) {
+        projectEntriesLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Reloads the open project's timeline only when [subcategoryId] is that
+  /// project, so unrelated mutations do not clear what the user is reading.
+  void _refreshProjectIfOpen(String subcategoryId) {
+    final openId = projectEntriesProjectId;
+    if (openId == null || openId != subcategoryId) return;
+    unawaited(loadProjectEntries(openId));
+  }
+
   void _refreshReports() {
     if (summaryApi == null) return;
     unawaited(loadWeekReport());
@@ -423,6 +469,16 @@ class AppState extends ChangeNotifier {
       if (subcategory.id == id) return subcategory;
     }
     return null;
+  }
+
+  /// A project is the subcategory under an initiative-role category, so the
+  /// detail route addresses the same record the portfolio lists.
+  Subcategory? projectById(String id) {
+    final subcategory = subcategoryById(id);
+    if (subcategory == null) return null;
+    return categoryById(subcategory.categoryId)?.role == CategoryRole.initiative
+        ? subcategory
+        : null;
   }
 
   bool get hasEntryService => entryApi != null;
@@ -777,6 +833,7 @@ class AppState extends ChangeNotifier {
       }
       _refreshTicker();
       _refreshReports();
+      if (entry != null) _refreshProjectIfOpen(entry.subcategoryId);
       _notify();
       return StoppedTimer(
         minutes: entry?.minutes ?? 0,
@@ -1016,6 +1073,7 @@ class AppState extends ChangeNotifier {
     }
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
+    _refreshProjectIfOpen(entry.subcategoryId);
     _refreshReports();
     _notify();
     return entry;
@@ -1025,6 +1083,12 @@ class AppState extends ChangeNotifier {
     final updated = await _entryApi().updateEntry(entry);
     entries = _replaceEntry(entries, updated);
     logEntries = _replaceEntry(logEntries, updated);
+    // The entry may have moved into or out of the open project.
+    if (projectEntries.any((existing) => existing.id == updated.id)) {
+      _refreshProjectIfOpen(projectEntriesProjectId!);
+    } else {
+      _refreshProjectIfOpen(updated.subcategoryId);
+    }
     _refreshReports();
     _notify();
     return updated;
@@ -1032,6 +1096,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteWorkEntry(String id) async {
     await _entryApi().deleteEntry(id);
+    if (projectEntries.any((entry) => entry.id == id)) {
+      _refreshProjectIfOpen(projectEntriesProjectId!);
+    }
     entries = entries.where((entry) => entry.id != id).toList();
     logEntries = logEntries.where((entry) => entry.id != id).toList();
     _refreshReports();
@@ -1042,6 +1109,9 @@ class AppState extends ChangeNotifier {
   /// with the first half, so open editors and selections follow it.
   Future<SplitHalves> splitEntry(String id, int atMinutes) async {
     final halves = await _entryApi().splitEntry(id, atMinutes);
+    if (projectEntries.any((entry) => entry.id == id)) {
+      _refreshProjectIfOpen(projectEntriesProjectId!);
+    }
     entries = _replaceWithHalves(entries, id, halves);
     logEntries = _replaceWithHalves(logEntries, id, halves);
     _refreshReports();

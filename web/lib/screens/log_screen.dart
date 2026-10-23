@@ -13,6 +13,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/analytics.dart';
+import '../utils/entry_grouping.dart';
 import '../utils/time_utils.dart';
 import '../widgets/app_dropdown.dart';
 import '../widgets/entry_row.dart';
@@ -311,17 +312,11 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final range = _range(state);
-    final grouped = <String, List<WorkEntry>>{};
-    for (final entry in state.logEntries) {
-      final key = entry.localDate.isNotEmpty
-          ? entry.localDate
-          : isoDate(entry.startedLocal);
-      grouped.putIfAbsent(key, () => []).add(entry);
-    }
+    final grouped = groupEntriesByLocalDay(state.logEntries);
     for (final day in grouped.values) {
       day.sort((a, b) => a.startedAt.compareTo(b.startedAt));
     }
-    final days = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+    final days = grouped.keys.toList();
     final total = grouped.values
         .expand((day) => day)
         .fold<int>(0, (sum, entry) => sum + entry.minutes);
