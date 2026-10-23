@@ -7,7 +7,11 @@ abstract final class AppTheme {
   /// Deep Teal seed from the visual design system.
   static const Color seed = Color(0xFF00696D);
 
-  static ThemeData build(ThemePreference preference, {Brightness system = Brightness.light}) {
+  static ThemeData build(
+    ThemePreference preference, {
+    Brightness system = Brightness.light,
+    DensityPreference density = DensityPreference.comfortable,
+  }) {
     final brightness = switch (preference) {
       ThemePreference.system => system,
       ThemePreference.light => Brightness.light,
@@ -15,6 +19,7 @@ abstract final class AppTheme {
       ThemePreference.highContrast => Brightness.light,
     };
     final highContrast = preference == ThemePreference.highContrast;
+    final compact = density == DensityPreference.compact;
     final scheme = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
@@ -79,7 +84,11 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: scaffold,
       canvasColor: scaffold,
       textTheme: textTheme,
-      visualDensity: VisualDensity.standard,
+      visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
+      listTileTheme: ListTileThemeData(
+        dense: compact,
+        minVerticalPadding: compact ? 2 : 6,
+      ),
       splashFactory: InkSparkle.splashFactory,
       dividerTheme: DividerThemeData(color: outline, thickness: 1, space: 1),
       cardTheme: CardThemeData(
@@ -96,8 +105,13 @@ abstract final class AppTheme {
         isDense: true,
         filled: true,
         fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.28),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        hintStyle: TextStyle(color: scheme.onSurfaceVariant.withValues(alpha: 0.75)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        hintStyle: TextStyle(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+        ),
         labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
         floatingLabelStyle: TextStyle(color: scheme.primary, fontSize: 12.5),
         border: OutlineInputBorder(
@@ -189,7 +203,9 @@ abstract final class AppTheme {
       ),
       tooltipTheme: TooltipThemeData(
         waitDuration: const Duration(milliseconds: 450),
-        textStyle: textTheme.bodySmall?.copyWith(color: scheme.onInverseSurface),
+        textStyle: textTheme.bodySmall?.copyWith(
+          color: scheme.onInverseSurface,
+        ),
         decoration: BoxDecoration(
           color: scheme.inverseSurface,
           borderRadius: BorderRadius.circular(6),
@@ -236,8 +252,6 @@ abstract final class AppTheme {
     );
   }
 
-  static TextStyle tabular(TextStyle? style) =>
-      (style ?? const TextStyle()).copyWith(
-        fontFeatures: const [FontFeature.tabularFigures()],
-      );
+  static TextStyle tabular(TextStyle? style) => (style ?? const TextStyle())
+      .copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
 }

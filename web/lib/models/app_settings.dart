@@ -13,22 +13,45 @@ enum ThemePreference {
   }
 
   String get label => switch (this) {
-        ThemePreference.system => 'System',
-        ThemePreference.light => 'Light',
-        ThemePreference.dark => 'Dark',
-        ThemePreference.highContrast => 'High contrast',
-      };
+    ThemePreference.system => 'System',
+    ThemePreference.light => 'Light',
+    ThemePreference.dark => 'Dark',
+    ThemePreference.highContrast => 'High contrast',
+  };
 }
 
 enum DensityPreference {
   comfortable,
   compact;
 
-  static DensityPreference parse(Object? value) => value?.toString() == 'compact'
+  static DensityPreference parse(Object? value) =>
+      value?.toString() == 'compact'
       ? DensityPreference.compact
       : DensityPreference.comfortable;
 
-  String get label => this == DensityPreference.compact ? 'Compact' : 'Comfortable';
+  String get label =>
+      this == DensityPreference.compact ? 'Compact' : 'Comfortable';
+}
+
+/// Controls the personal-review prompt.
+enum ReviewCadence {
+  weekly,
+  monthly,
+  off;
+
+  static ReviewCadence parse(Object? value) {
+    final normalized = value?.toString().toLowerCase();
+    return ReviewCadence.values.firstWhere(
+      (cadence) => cadence.name == normalized,
+      orElse: () => ReviewCadence.off,
+    );
+  }
+
+  String get label => switch (this) {
+    ReviewCadence.weekly => 'Weekly',
+    ReviewCadence.monthly => 'Monthly',
+    ReviewCadence.off => 'Off',
+  };
 }
 
 class AppSettings {
@@ -36,9 +59,10 @@ class AppSettings {
     this.timezone = 'UTC',
     this.weekStart = 1,
     this.dailyTargetHours = 7.5,
-    this.rounding = 'none',
-    this.longTimerHours = 4,
+    this.longTimerMinutes = 240,
     this.defaultDurationMinutes = 30,
+    this.reviewCadence = ReviewCadence.off,
+    this.journalStartDate = '',
     this.theme = ThemePreference.system,
     this.density = DensityPreference.comfortable,
     this.dataDir = '/var/lib/wdid/data',
@@ -63,9 +87,10 @@ class AppSettings {
   /// 1 = Monday, 7 = Sunday.
   final int weekStart;
   final double dailyTargetHours;
-  final String rounding;
-  final int longTimerHours;
+  final int longTimerMinutes;
   final int defaultDurationMinutes;
+  final ReviewCadence reviewCadence;
+  final String journalStartDate;
   final ThemePreference theme;
   final DensityPreference density;
 
@@ -92,9 +117,10 @@ class AppSettings {
     String? timezone,
     int? weekStart,
     double? dailyTargetHours,
-    String? rounding,
-    int? longTimerHours,
+    int? longTimerMinutes,
     int? defaultDurationMinutes,
+    ReviewCadence? reviewCadence,
+    String? journalStartDate,
     ThemePreference? theme,
     DensityPreference? density,
     String? dataDir,
@@ -109,15 +135,19 @@ class AppSettings {
     bool? redactUrls,
     DateTime? lastBackupAt,
     int? lastBackupBytes,
+    String? version,
+    int? schemaVersion,
+    String? license,
   }) {
     return AppSettings(
       timezone: timezone ?? this.timezone,
       weekStart: weekStart ?? this.weekStart,
       dailyTargetHours: dailyTargetHours ?? this.dailyTargetHours,
-      rounding: rounding ?? this.rounding,
-      longTimerHours: longTimerHours ?? this.longTimerHours,
+      longTimerMinutes: longTimerMinutes ?? this.longTimerMinutes,
       defaultDurationMinutes:
           defaultDurationMinutes ?? this.defaultDurationMinutes,
+      reviewCadence: reviewCadence ?? this.reviewCadence,
+      journalStartDate: journalStartDate ?? this.journalStartDate,
       theme: theme ?? this.theme,
       density: density ?? this.density,
       dataDir: dataDir ?? this.dataDir,
@@ -132,66 +162,63 @@ class AppSettings {
       redactUrls: redactUrls ?? this.redactUrls,
       lastBackupAt: lastBackupAt ?? this.lastBackupAt,
       lastBackupBytes: lastBackupBytes ?? this.lastBackupBytes,
-      version: version,
-      schemaVersion: schemaVersion,
-      license: license,
+      version: version ?? this.version,
+      schemaVersion: schemaVersion ?? this.schemaVersion,
+      license: license ?? this.license,
     );
   }
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-        timezone: json['timezone']?.toString() ?? 'UTC',
-        weekStart: (json['weekStart'] as num?)?.round() ?? 1,
-        dailyTargetHours:
-            (json['dailyTargetHours'] as num?)?.toDouble() ?? 7.5,
-        rounding: json['rounding']?.toString() ?? 'none',
-        longTimerHours: (json['longTimerHours'] as num?)?.round() ?? 4,
-        defaultDurationMinutes:
-            (json['defaultDurationMinutes'] as num?)?.round() ?? 30,
-        theme: ThemePreference.parse(json['theme']),
-        density: DensityPreference.parse(json['density']),
-        dataDir: json['dataDir']?.toString() ?? '/var/lib/wdid/data',
-        databasePath: json['databasePath']?.toString() ??
-            '/var/lib/wdid/data/wdid.db',
-        backupDir: json['backupDir']?.toString() ?? '/var/lib/wdid/backups',
-        backupIntervalHours:
-            (json['backupIntervalHours'] as num?)?.round() ?? 6,
-        retentionCount: (json['retentionCount'] as num?)?.round() ?? 30,
-        aiProvider: json['aiProvider']?.toString() ?? 'OpenAI-compatible',
-        aiBaseUrl:
-            json['aiBaseUrl']?.toString() ?? 'https://api.openai.com/v1',
-        aiModel: json['aiModel']?.toString() ?? 'gpt-4.1-mini',
-        aiKeySource: json['aiKeySource']?.toString() ?? 'environment',
-        redactUrls: json['redactUrls'] == true,
-        lastBackupAt: DateTime.tryParse(json['lastBackupAt']?.toString() ?? ''),
-        lastBackupBytes: (json['lastBackupBytes'] as num?)?.round() ?? 0,
-        version: json['version']?.toString() ?? '0.1.0',
-        schemaVersion: (json['schemaVersion'] as num?)?.round() ?? 1,
-        license: json['license']?.toString() ?? 'MIT',
-      );
+    timezone: json['timezone']?.toString() ?? 'UTC',
+    weekStart: (json['weekStart'] as num?)?.round() ?? 1,
+    dailyTargetHours: (json['dailyTargetHours'] as num?)?.toDouble() ?? 7.5,
+    longTimerMinutes: (json['longTimerMinutes'] as num?)?.round() ?? 240,
+    defaultDurationMinutes:
+        (json['defaultDurationMinutes'] as num?)?.round() ?? 30,
+    reviewCadence: ReviewCadence.parse(json['reviewCadence']),
+    theme: ThemePreference.parse(json['theme']),
+    density: DensityPreference.parse(json['density']),
+    dataDir: json['dataDir']?.toString() ?? '/var/lib/wdid/data',
+    databasePath:
+        json['databasePath']?.toString() ?? '/var/lib/wdid/data/wdid.db',
+    backupDir: json['backupDir']?.toString() ?? '/var/lib/wdid/backups',
+    backupIntervalHours: (json['backupIntervalHours'] as num?)?.round() ?? 6,
+    retentionCount: (json['retentionCount'] as num?)?.round() ?? 30,
+    aiProvider: json['aiProvider']?.toString() ?? 'OpenAI-compatible',
+    aiBaseUrl: json['aiBaseUrl']?.toString() ?? 'https://api.openai.com/v1',
+    aiModel: json['aiModel']?.toString() ?? 'gpt-4.1-mini',
+    aiKeySource: json['aiKeySource']?.toString() ?? 'environment',
+    redactUrls: json['redactUrls'] == true,
+    lastBackupAt: DateTime.tryParse(json['lastBackupAt']?.toString() ?? ''),
+    lastBackupBytes: (json['lastBackupBytes'] as num?)?.round() ?? 0,
+    version: json['version']?.toString() ?? '0.1.0',
+    schemaVersion: (json['schemaVersion'] as num?)?.round() ?? 1,
+    license: json['license']?.toString() ?? 'MIT',
+  );
 
   Map<String, dynamic> toJson() => {
-        'timezone': timezone,
-        'weekStart': weekStart,
-        'dailyTargetHours': dailyTargetHours,
-        'rounding': rounding,
-        'longTimerHours': longTimerHours,
-        'defaultDurationMinutes': defaultDurationMinutes,
-        'theme': theme.name,
-        'density': density.name,
-        'dataDir': dataDir,
-        'databasePath': databasePath,
-        'backupDir': backupDir,
-        'backupIntervalHours': backupIntervalHours,
-        'retentionCount': retentionCount,
-        'aiProvider': aiProvider,
-        'aiBaseUrl': aiBaseUrl,
-        'aiModel': aiModel,
-        'aiKeySource': aiKeySource,
-        'redactUrls': redactUrls,
-        'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
-        'lastBackupBytes': lastBackupBytes,
-        'version': version,
-        'schemaVersion': schemaVersion,
-        'license': license,
-      };
+    'timezone': timezone,
+    'weekStart': weekStart,
+    'dailyTargetHours': dailyTargetHours,
+    'longTimerMinutes': longTimerMinutes,
+    'defaultDurationMinutes': defaultDurationMinutes,
+    'reviewCadence': reviewCadence.name,
+    'theme': theme.name,
+    'density': density.name,
+    'dataDir': dataDir,
+    'databasePath': databasePath,
+    'backupDir': backupDir,
+    'backupIntervalHours': backupIntervalHours,
+    'retentionCount': retentionCount,
+    'aiProvider': aiProvider,
+    'aiBaseUrl': aiBaseUrl,
+    'aiModel': aiModel,
+    'aiKeySource': aiKeySource,
+    'redactUrls': redactUrls,
+    'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
+    'lastBackupBytes': lastBackupBytes,
+    'version': version,
+    'schemaVersion': schemaVersion,
+    'license': license,
+  };
 }

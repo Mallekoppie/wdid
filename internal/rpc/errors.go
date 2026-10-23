@@ -30,8 +30,15 @@ func toConnectError(err error) error {
 			connectErr.AddDetail(detail)
 		}
 		return connectErr
-	case errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound),
+		errors.Is(err, store.ErrCategoryNotFound),
+		errors.Is(err, store.ErrSubcategoryNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, store.ErrCategoryRoleImmutable),
+		errors.Is(err, store.ErrCategoryInUse),
+		errors.Is(err, store.ErrSubcategoryInUse),
+		errors.Is(err, store.ErrSubcategoryReparent):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, store.ErrEmailExists):
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, auth.ErrInvalidBootstrapSecret),

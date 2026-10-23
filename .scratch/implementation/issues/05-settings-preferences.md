@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Time settings persist: timezone, week start, daily target, default duration, long-timer threshold, and review cadence.
-- [ ] Appearance settings persist and apply immediately: theme and density.
-- [ ] About shows version, schema version, and license.
-- [ ] Invalid enum values and out-of-range numbers are rejected with field errors.
-- [ ] Settings are per user and survive a service restart.
-- [ ] Connect and gRPC-Web tests cover get, update, validation, and isolation.
+- [x] Time settings persist: timezone, week start, daily target, default duration, long-timer threshold, and review cadence.
+- [x] Appearance settings persist and apply immediately: theme and density.
+- [x] About shows version, schema version, and license.
+- [x] Invalid enum values and out-of-range numbers are rejected with field errors.
+- [x] Settings are per user and survive a service restart.
+- [x] Connect and gRPC-Web tests cover get, update, validation, and isolation.

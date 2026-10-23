@@ -1,6 +1,7 @@
 import 'package:grpc/grpc_or_grpcweb.dart';
 
 import '../src/generated/auth.pbgrpc.dart' as generated;
+import 'grpc_channel.dart';
 
 /// Login capabilities reported by the service before anyone signs in.
 class AuthConfig {
@@ -94,21 +95,9 @@ abstract class AuthRpc {
 /// default.
 class GrpcAuthRpc implements AuthRpc {
   GrpcAuthRpc({generated.AuthServiceClient? client})
-      : _client = client ?? generated.AuthServiceClient(_openChannel());
+      : _client = client ?? generated.AuthServiceClient(openAppChannel());
 
   final generated.AuthServiceClient _client;
-
-  static GrpcOrGrpcWebClientChannel _openChannel() {
-    const configured = String.fromEnvironment('WDID_API_BASE_URL');
-    final base = configured.isEmpty ? Uri.base : Uri.parse(configured);
-    final port = base.hasPort ? base.port : (base.scheme == 'https' ? 443 : 80);
-
-    return GrpcOrGrpcWebClientChannel.toSingleEndpoint(
-      host: base.host,
-      port: port,
-      transportSecure: base.scheme == 'https',
-    );
-  }
 
   @override
   Future<generated.GetAuthConfigResponse> getAuthConfig() {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../state/app_state_scope.dart';
 import '../state/auth_state.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/panel.dart';
@@ -63,8 +64,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_registerEmail.text.trim().isEmpty ||
         _registerPassword.text.isEmpty ||
         _inviteCode.text.trim().isEmpty) {
-      setState(() => _formError =
-          'Enter your email, password, and the invite code from your administrator.');
+      setState(
+        () => _formError = 'Enter your email, password, and the invite code from your administrator.',
+      );
       return;
     }
     setState(() => _formError = null);
@@ -81,8 +83,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_registerEmail.text.trim().isEmpty ||
         _registerPassword.text.isEmpty ||
         _bootstrapSecret.text.isEmpty) {
-      setState(() => _formError =
-          'Enter the admin email, password, and the deployment bootstrap secret.');
+      setState(
+        () => _formError = 'Enter the admin email, password, and the deployment bootstrap secret.',
+      );
       return;
     }
     setState(() => _formError = null);
@@ -96,7 +99,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _enterApp(bool ok) {
-    if (ok && mounted) context.go('/today');
+    if (!ok || !mounted) return;
+    // The settings and taxonomy clients read the bearer token lazily, so a
+    // reload after sign-in picks up this account's data.
+    AppStateScope.read(context).reload();
+    context.go('/today');
   }
 
   void _oidcPending() {
@@ -110,8 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  String? get _activeError =>
-      _formError ?? widget.auth.error;
+  String? get _activeError => _formError ?? widget.auth.error;
 
   @override
   Widget build(BuildContext context) {
@@ -233,9 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            bootstrap
-                                ? 'Set up the first account'
-                                : 'Sign in',
+                            bootstrap ? 'Set up the first account' : 'Sign in',
                             style: theme.textTheme.headlineSmall,
                           ),
                           const SizedBox(height: 4),
@@ -257,8 +261,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             Text(
                               _activeError!,
                               key: const Key('auth-error'),
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: scheme.error),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.error,
+                              ),
                             ),
                           ],
                           if (auth.config == null) ...[

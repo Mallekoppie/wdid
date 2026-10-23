@@ -94,19 +94,21 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ### Contracts and RPC
 
-- [ ] Add `categories.proto` (`CategoryService`) and `settings.proto`
+- [x] Add `categories.proto` (`CategoryService`) and `settings.proto`
       (`GetSettings`, `UpdateSettings`; backup methods arrive in M7).
-- [ ] Implement `CategoryService` in `internal/rpc/`.
-- [ ] Regenerate Go and Dart stubs; run `make proto-check`.
-- [ ] Tests: Connect unary and gRPC-Web, auth strategy, and Connect error
-      mapping.
+- [x] Implement `CategoryService` and `SettingsService` in `internal/rpc/`.
+- [x] Regenerate Go and Dart stubs; run `make proto-check`.
+- [x] Tests: Connect unary and gRPC-Web, auth strategy, per-user isolation,
+      and Connect error mapping.
 
 ### UI
 
 - [x] Replace demo auth with generated `AuthService` clients; login and
       invite-code registration.
-- [ ] Wire Settings → Categories to `CategoryService` (list, create, rename,
+- [x] Wire Settings → Categories to `CategoryService` (list, create, rename,
       archive, subcategories, role selection).
+- [x] Wire Settings → Time, Appearance, and About to `SettingsService`; live
+      categories feed the entry selectors.
 - [ ] Keep the demo adapter for screens without a service yet.
 
 ### Acceptance

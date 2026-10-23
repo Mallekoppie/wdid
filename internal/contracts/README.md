@@ -122,7 +122,8 @@ condition that has a specific code. Attach validation details with
   - Protected: `/wdid.v1.AuthService/GetCurrentUser`.
   - `GetCurrentUser` derives the account from goslow's verified auth context; it
     never trusts a user id in the request.
-- The Flutter client uses `GrpcWebClientChannel.xhr` with generated stubs. It
+- The Flutter client opens one `GrpcOrGrpcWebClientChannel` in
+  `web/lib/data/grpc_channel.dart` and calls generated stubs over gRPC-Web. It
   must not hand-write JSON or call REST endpoints for capabilities that have
   RPCs.
 

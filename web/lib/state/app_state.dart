@@ -1,15 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 
+import '../data/category_api.dart';
 import '../data/demo_repository.dart';
 import '../data/repository.dart';
+import '../data/settings_api.dart';
 import '../models/app_settings.dart';
 import '../models/check_in.dart';
 import '../models/drafts.dart';
 import '../models/enums.dart';
 import '../models/initiative.dart';
 import '../models/note.dart';
+import '../models/taxonomy.dart';
 import '../models/work_item.dart';
 import '../utils/analytics.dart';
 import '../utils/attribution.dart';
@@ -40,9 +43,14 @@ class ActiveTimer {
 }
 
 class AppState extends ChangeNotifier {
-  AppState(this.repository);
+  AppState(this.repository, {this.categoryApi, this.settingsApi});
 
   final WdidRepository repository;
+
+  /// Service-backed taxonomy and preferences. Null keeps the demo adapter,
+  /// which is how screens without a service contract still run.
+  final CategoryApi? categoryApi;
+  final SettingsApi? settingsApi;
 
   AppStatus status = AppStatus.loading;
   String? loadError;
@@ -52,6 +60,15 @@ class AppState extends ChangeNotifier {
   List<CheckIn> checkIns = const [];
   List<Note> notes = const [];
   AppSettings settings = const AppSettings();
+
+  List<Category> categories = const [];
+  List<Subcategory> subcategories = const [];
+  bool taxonomyLoading = false;
+  String? taxonomyError;
+  bool preferencesLoading = false;
+  String? preferencesError;
+  AboutInfo? about;
+  bool _taxonomyLoaded = false;
 
   ActiveTimer? activeTimer;
   AttributionChoice? lastAttribution;
@@ -84,6 +101,9 @@ class AppState extends ChangeNotifier {
       notes = List<Note>.from(results[2] as List<Note>);
       checkIns = List<CheckIn>.from(results[3] as List<CheckIn>);
       settings = results[4] as AppSettings;
+      if (categoryApi != null || settingsApi != null) {
+        await Future.wait([loadTaxonomy(), loadPreferences()]);
+      }
       _ensureAttribution();
       status = AppStatus.ready;
     } catch (error) {
@@ -95,9 +115,77 @@ class AppState extends ChangeNotifier {
 
   Future<void> reload() => load();
 
-  /// Presentation-only choices for capture forms.
-  List<AttributionChoice> get attributionChoices =>
-      AttributionChoice.forInitiatives(initiatives);
+  /// Loads the service-backed taxonomy. Failures stay local to the Categories
+  /// panel instead of taking down the whole journal.
+  Future<void> loadTaxonomy() async {
+    final api = categoryApi;
+    if (api == null) return;
+
+    taxonomyLoading = true;
+    taxonomyError = null;
+    _notify();
+    try {
+      final results = await Future.wait<dynamic>([
+        api.listCategories(),
+        api.listSubcategories(),
+      ]);
+      categories = List<Category>.from(results[0] as List<Category>);
+      subcategories = List<Subcategory>.from(results[1] as List<Subcategory>);
+      _taxonomyLoaded = true;
+    } catch (error) {
+      taxonomyError = error.toString();
+    } finally {
+      taxonomyLoading = false;
+      _ensureAttribution();
+      _notify();
+    }
+  }
+
+  /// Loads the per-user preferences and About information.
+  Future<void> loadPreferences() async {
+    final api = settingsApi;
+    if (api == null) return;
+
+    preferencesLoading = true;
+    preferencesError = null;
+    _notify();
+    try {
+      final snapshot = await api.getSettings();
+      about = snapshot.about;
+      settings = snapshot.settings.copyWith(
+        version: snapshot.about.version,
+        schemaVersion: snapshot.about.schemaVersion,
+        license: snapshot.about.license,
+      );
+    } catch (error) {
+      preferencesError = error.toString();
+    } finally {
+      preferencesLoading = false;
+      _notify();
+    }
+  }
+
+  /// Presentation-only choices for capture forms. Once a live taxonomy is
+  /// loaded it is the source, so a newly created or renamed category appears
+  /// in every entry selector immediately.
+  List<AttributionChoice> get attributionChoices {
+    if (categoryApi != null && _taxonomyLoaded) {
+      return [
+        for (final category in categories)
+          if (!category.archived)
+            AttributionChoice.category(
+              category.id,
+              category.name,
+              categoryLabel: category.name,
+            ),
+      ];
+    }
+    return AttributionChoice.forInitiatives(initiatives);
+  }
+
+  List<Subcategory> subcategoriesFor(String categoryId) => subcategories
+      .where((subcategory) => subcategory.categoryId == categoryId)
+      .toList();
 
   Initiative? initiativeById(String? id) {
     if (id == null) return null;
@@ -118,13 +206,13 @@ class AppState extends ChangeNotifier {
   int get todayMinutes => totalMinutes(todayItems);
 
   int get weekMinutes => totalMinutes(
-        entriesForWeek(workItems, today, weekStart: settings.weekStart),
-      );
+    entriesForWeek(workItems, today, weekStart: settings.weekStart),
+  );
 
   List<AllocationSlice> get weekAllocation => allocationFor(
-        entriesForWeek(workItems, today, weekStart: settings.weekStart),
-        initiatives,
-      );
+    entriesForWeek(workItems, today, weekStart: settings.weekStart),
+    initiatives,
+  );
 
   List<Initiative> get openInitiatives =>
       initiatives.where((initiative) => !initiative.isArchived).toList();
@@ -162,15 +250,13 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  List<Note> notesForInitiative(String initiativeId) => notes
-      .where((note) => note.initiativeId == initiativeId)
-      .toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<Note> notesForInitiative(String initiativeId) =>
+      notes.where((note) => note.initiativeId == initiativeId).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  List<WorkItem> itemsForInitiative(String initiativeId) => workItems
-      .where((item) => item.initiativeId == initiativeId)
-      .toList()
-    ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+  List<WorkItem> itemsForInitiative(String initiativeId) =>
+      workItems.where((item) => item.initiativeId == initiativeId).toList()
+        ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 
   int minutesForInitiative(String initiativeId) =>
       initiativeMinutesIn(workItems, initiativeId);
@@ -186,12 +272,16 @@ class AppState extends ChangeNotifier {
     if (activeTimer != null) return;
     final choice = attribution ?? lastAttribution ?? _firstChoice();
     if (choice == null) {
-      throw StateError('Create an initiative or category before starting a timer.');
+      throw StateError(
+        'Create an initiative or category before starting a timer.',
+      );
     }
     lastAttribution = choice;
     activeTimer = ActiveTimer(
       attribution: choice,
-      description: description.trim().isEmpty ? 'Focus block' : description.trim(),
+      description: description.trim().isEmpty
+          ? 'Focus block'
+          : description.trim(),
       startedAt: DateTime.now(),
     );
     _startTicker();
@@ -344,7 +434,8 @@ class AppState extends ChangeNotifier {
         initiativeId: initiativeId,
         category: mode.name,
         categoryLabel: mode.label,
-        startedAt: startedAt ?? DateTime.now().subtract(Duration(minutes: minutes)),
+        startedAt:
+            startedAt ?? DateTime.now().subtract(Duration(minutes: minutes)),
         minutes: minutes,
         summary: summary,
         outcome: outcome,
@@ -381,7 +472,10 @@ class AppState extends ChangeNotifier {
     return updateInitiative(initiative.copyWith(status: status));
   }
 
-  Future<Initiative> setInitiativeProgress(Initiative initiative, int progress) {
+  Future<Initiative> setInitiativeProgress(
+    Initiative initiative,
+    int progress,
+  ) {
     return updateInitiative(
       initiative.copyWith(progress: progress.clamp(0, 100)),
     );
@@ -471,27 +565,147 @@ class AppState extends ChangeNotifier {
   Future<ExportBundle> buildExport(DateTime start, DateTime end) =>
       repository.buildExport(start, end);
 
+  // --- Categories --------------------------------------------------------
+
+  CategoryApi _categoryApi() {
+    final api = categoryApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CategoryService',
+        'Settings → Categories needs the service contract.',
+      );
+    }
+    return api;
+  }
+
+  Future<Category> createCategory({
+    required String name,
+    required CategoryRole role,
+    String color = '',
+  }) async {
+    final category = await _categoryApi().createCategory(
+      name: name,
+      role: role,
+      color: color,
+      sortOrder: categories.length,
+    );
+    categories = [...categories, category];
+    _notify();
+    return category;
+  }
+
+  Future<Category> saveCategory(Category category) async {
+    final updated = await _categoryApi().updateCategory(category);
+    _replaceCategory(updated);
+    _notify();
+    return updated;
+  }
+
+  Future<Category> renameCategory(Category category, String name) =>
+      saveCategory(category.copyWith(name: name.trim()));
+
+  Future<Category> archiveCategory(
+    Category category, {
+    bool archived = true,
+  }) async {
+    final updated = await _categoryApi().archiveCategory(
+      category.id,
+      archived: archived,
+    );
+    _replaceCategory(updated);
+    _notify();
+    return updated;
+  }
+
+  Future<void> deleteCategory(Category category) async {
+    await _categoryApi().deleteCategory(category.id);
+    categories = categories
+        .where((existing) => existing.id != category.id)
+        .toList();
+    subcategories = subcategories
+        .where((existing) => existing.categoryId != category.id)
+        .toList();
+    _notify();
+  }
+
+  Future<Subcategory> createSubcategory({
+    required Category category,
+    required String name,
+    SubcategoryStatus status = SubcategoryStatus.active,
+  }) async {
+    final subcategory = await _categoryApi().createSubcategory(
+      categoryId: category.id,
+      name: name,
+      status: status,
+      sortOrder: subcategoriesFor(category.id).length,
+    );
+    subcategories = [...subcategories, subcategory];
+    _notify();
+    return subcategory;
+  }
+
+  Future<Subcategory> saveSubcategory(Subcategory subcategory) async {
+    final updated = await _categoryApi().updateSubcategory(subcategory);
+    _replaceSubcategory(updated);
+    _notify();
+    return updated;
+  }
+
+  Future<Subcategory> renameSubcategory(Subcategory subcategory, String name) {
+    return saveSubcategory(subcategory.copyWith(name: name.trim()));
+  }
+
+  Future<Subcategory> archiveSubcategory(
+    Subcategory subcategory, {
+    bool archived = true,
+  }) async {
+    final updated = await _categoryApi().archiveSubcategory(
+      subcategory.id,
+      archived: archived,
+    );
+    _replaceSubcategory(updated);
+    _notify();
+    return updated;
+  }
+
+  Future<void> deleteSubcategory(Subcategory subcategory) async {
+    await _categoryApi().deleteSubcategory(subcategory.id);
+    subcategories = subcategories
+        .where((existing) => existing.id != subcategory.id)
+        .toList();
+    _notify();
+  }
+
   // --- Settings ----------------------------------------------------------
 
   Future<AppSettings> saveSettings(AppSettings updated) async {
+    final previous = settings;
     settings = updated;
     _notify();
-    final saved = await repository.updateSettings(updated);
-    settings = saved;
-    _notify();
-    return saved;
+    try {
+      final saved = settingsApi != null
+          ? await settingsApi!.updateSettings(updated)
+          : await repository.updateSettings(updated);
+      settings = saved.copyWith(
+        version: about?.version,
+        schemaVersion: about?.schemaVersion,
+        license: about?.license,
+      );
+      _notify();
+      return settings;
+    } catch (error) {
+      settings = previous;
+      _notify();
+      rethrow;
+    }
   }
 
-  Future<void> setTheme(ThemePreference theme) async {
-    settings = settings.copyWith(theme: theme);
-    _notify();
-    await repository.updateSettings(settings);
+  Future<void> setTheme(ThemePreference theme) {
+    return saveSettings(settings.copyWith(theme: theme));
   }
 
-  Future<void> setDensity(DensityPreference density) async {
-    settings = settings.copyWith(density: density);
-    _notify();
-    await repository.updateSettings(settings);
+  Future<void> setDensity(DensityPreference density) {
+    return saveSettings(settings.copyWith(density: density));
   }
 
   Future<BackupStatus> backupNow() async {
@@ -506,6 +720,20 @@ class AppState extends ChangeNotifier {
 
   void requestSearchFocus() {
     searchFocusRequest.value++;
+  }
+
+  void _replaceCategory(Category updated) {
+    categories = [
+      for (final existing in categories)
+        if (existing.id == updated.id) updated else existing,
+    ];
+  }
+
+  void _replaceSubcategory(Subcategory updated) {
+    subcategories = [
+      for (final existing in subcategories)
+        if (existing.id == updated.id) updated else existing,
+    ];
   }
 
   AttributionChoice? _firstChoice() {

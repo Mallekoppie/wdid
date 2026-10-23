@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// CategoryRole is what a category means for reporting and validation. It is
+// chosen when the category is created and cannot be changed afterwards.
+enum CategoryRole {
+  CATEGORY_ROLE_UNSPECIFIED = 0;
+  CATEGORY_ROLE_INITIATIVE = 1;
+  CATEGORY_ROLE_SUPPORT = 2;
+  CATEGORY_ROLE_OTHER = 3;
+}
+
+// SubcategoryStatus describes where a subcategory sits in its lifecycle.
+enum SubcategoryStatus {
+  SUBCATEGORY_STATUS_UNSPECIFIED = 0;
+  SUBCATEGORY_STATUS_PLANNED = 1;
+  SUBCATEGORY_STATUS_ACTIVE = 2;
+  SUBCATEGORY_STATUS_BLOCKED = 3;
+  SUBCATEGORY_STATUS_DONE = 4;
+  SUBCATEGORY_STATUS_ARCHIVED = 5;
+}
+
+// Link is a labelled external reference attached to a subcategory.
+message Link {
+  string label = 1;
+  string url = 2;
+}
+
+// Category is a user-defined top-level grouping of work with one immutable
+// reporting role.
+message Category {
+  string id = 1;
+  string name = 2;
+  CategoryRole role = 3;
+  string color = 4;
+  int32 sort_order = 5;
+  bool archived = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// Subcategory is the optional second level under a category.
+message Subcategory {
+  string id = 1;
+  string category_id = 2;
+  string name = 3;
+  string description = 4;
+  SubcategoryStatus status = 5;
+  int32 progress = 6;
+  string target_outcome = 7;
+  string target_date = 8;
+  repeated Link links = 9;
+  int32 sort_order = 10;
+  bool archived = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message ListCategoriesRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListCategoriesResponse {
+  repeated Category categories = 1;
+  string next_page_token = 2;
+}
+
+message CreateCategoryRequest {
+  string name = 1;
+  CategoryRole role = 2;
+  string color = 3;
+  int32 sort_order = 4;
+}
+
+message CreateCategoryResponse {
+  Category category = 1;
+}
+
+// UpdateCategoryRequest changes the mutable fields. The reporting role is
+// deliberately absent: it is fixed at creation.
+message UpdateCategoryRequest {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  int32 sort_order = 4;
+}
+
+message UpdateCategoryResponse {
+  Category category = 1;
+}
+
+// ArchiveCategory sets the archived flag. Archived categories stay visible in
+// historical reporting but disappear from entry selectors.
+message ArchiveCategoryRequest {
+  string id = 1;
+  bool archived = 2;
+}
+
+message ArchiveCategoryResponse {
+  Category category = 1;
+}
+
+// DeleteCategory removes an unreferenced category and its unused
+// subcategories. Referenced categories must be archived instead.
+message DeleteCategoryRequest {
+  string id = 1;
+}
+
+message DeleteCategoryResponse {}
+
+message ListSubcategoriesRequest {
+  // Empty lists every subcategory owned by the caller.
+  string category_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListSubcategoriesResponse {
+  repeated Subcategory subcategories = 1;
+  string next_page_token = 2;
+}
+
+message CreateSubcategoryRequest {
+  string category_id = 1;
+  string name = 2;
+  string description = 3;
+  SubcategoryStatus status = 4;
+  int32 progress = 5;
+  string target_outcome = 6;
+  string target_date = 7;
+  repeated Link links = 8;
+  int32 sort_order = 9;
+}
+
+message CreateSubcategoryResponse {
+  Subcategory subcategory = 1;
+}
+
+message UpdateSubcategoryRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  SubcategoryStatus status = 4;
+  int32 progress = 5;
+  string target_outcome = 6;
+  string target_date = 7;
+  repeated Link links = 8;
+  int32 sort_order = 9;
+}
+
+message UpdateSubcategoryResponse {
+  Subcategory subcategory = 1;
+}
+
+message ArchiveSubcategoryRequest {
+  string id = 1;
+  bool archived = 2;
+}
+
+message ArchiveSubcategoryResponse {
+  Subcategory subcategory = 1;
+}
+
+// DeleteSubcategory removes an unreferenced subcategory. Referenced
+// subcategories must be archived instead.
+message DeleteSubcategoryRequest {
+  string id = 1;
+}
+
+message DeleteSubcategoryResponse {}
+
+// CategoryService owns the user's taxonomy. Every RPC requires a bearer token;
+// the account is derived from that token, never from a request field.
+service CategoryService {
+  rpc ListCategories(ListCategoriesRequest) returns (ListCategoriesResponse);
+  rpc CreateCategory(CreateCategoryRequest) returns (CreateCategoryResponse);
+  rpc UpdateCategory(UpdateCategoryRequest) returns (UpdateCategoryResponse);
+  rpc ArchiveCategory(ArchiveCategoryRequest) returns (ArchiveCategoryResponse);
+  rpc DeleteCategory(DeleteCategoryRequest) returns (DeleteCategoryResponse);
+  rpc ListSubcategories(ListSubcategoriesRequest) returns (ListSubcategoriesResponse);
+  rpc CreateSubcategory(CreateSubcategoryRequest) returns (CreateSubcategoryResponse);
+  rpc UpdateSubcategory(UpdateSubcategoryRequest) returns (UpdateSubcategoryResponse);
+  rpc ArchiveSubcategory(ArchiveSubcategoryRequest) returns (ArchiveSubcategoryResponse);
+  rpc DeleteSubcategory(DeleteSubcategoryRequest) returns (DeleteSubcategoryResponse);
+}

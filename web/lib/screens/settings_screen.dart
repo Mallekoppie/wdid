@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../data/settings_api.dart';
 import '../models/app_settings.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
@@ -11,6 +12,7 @@ import '../widgets/app_dropdown.dart';
 import '../widgets/forms/export_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
+import '../widgets/settings/categories_panel.dart';
 
 const _weekdayNames = [
   'Monday',
@@ -38,13 +40,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _model;
   late final TextEditingController _provider;
   late int _weekStart;
-  late String _rounding;
+  late ReviewCadence _reviewCadence;
   late String _keySource;
   late bool _redactUrls;
   bool _initialized = false;
   bool _backingUp = false;
   bool _savingTime = false;
   bool _savingAi = false;
+  String? _timeError;
+  String? _timeField;
 
   @override
   void didChangeDependencies() {
@@ -56,7 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _dailyTarget = TextEditingController(
       text: settings.dailyTargetHours.toString(),
     );
-    _longTimer = TextEditingController(text: '${settings.longTimerHours}');
+    _longTimer = TextEditingController(text: '${settings.longTimerMinutes}');
     _defaultDuration = TextEditingController(
       text: '${settings.defaultDurationMinutes}',
     );
@@ -64,7 +68,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _model = TextEditingController(text: settings.aiModel);
     _provider = TextEditingController(text: settings.aiProvider);
     _weekStart = settings.weekStart;
-    _rounding = settings.rounding;
+    _reviewCadence = settings.reviewCadence;
     _keySource = settings.aiKeySource;
     _redactUrls = settings.redactUrls;
   }
@@ -90,23 +94,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() => _backingUp = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Backup created · ${formatBytes(status.bytes)}',
-          ),
+          content: Text('Backup created · ${formatBytes(status.bytes)}'),
         ),
       );
     } catch (error) {
       if (!mounted) return;
       setState(() => _backingUp = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Backup failed: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Backup failed: $error')));
     }
   }
 
   Future<void> _saveTime() async {
     final state = AppStateScope.read(context);
-    setState(() => _savingTime = true);
+    setState(() {
+      _savingTime = true;
+      _timeError = null;
+      _timeField = null;
+    });
     try {
       await state.saveSettings(
         state.settings.copyWith(
@@ -116,26 +121,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           weekStart: _weekStart,
           dailyTargetHours:
               double.tryParse(_dailyTarget.text.trim()) ??
-                  state.settings.dailyTargetHours,
-          rounding: _rounding,
-          longTimerHours:
-              int.tryParse(_longTimer.text.trim()) ?? state.settings.longTimerHours,
+              state.settings.dailyTargetHours,
+          reviewCadence: _reviewCadence,
+          longTimerMinutes:
+              int.tryParse(_longTimer.text.trim()) ??
+              state.settings.longTimerMinutes,
           defaultDurationMinutes:
               int.tryParse(_defaultDuration.text.trim()) ??
-                  state.settings.defaultDurationMinutes,
+              state.settings.defaultDurationMinutes,
         ),
       );
       if (!mounted) return;
       setState(() => _savingTime = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Time settings saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Time settings saved')));
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _savingTime = false;
+        _timeField = failure.field;
+        _timeError = failure.message;
+      });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _savingTime = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save time settings: $error')),
-      );
+      setState(() {
+        _savingTime = false;
+        _timeError = error.toString();
+      });
     }
   }
 
@@ -154,9 +166,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       if (!mounted) return;
       setState(() => _savingAi = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI settings saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('AI settings saved')));
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingAi = false);
@@ -166,10 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _applyTheme(
-    AppState state,
-    ThemePreference preference,
-  ) async {
+  Future<void> _applyTheme(AppState state, ThemePreference preference) async {
     try {
       await state.setTheme(preference);
     } catch (error) {
@@ -180,10 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _applyDensity(
-    AppState state,
-    DensityPreference density,
-  ) async {
+  Future<void> _applyDensity(AppState state, DensityPreference density) async {
     try {
       await state.setDensity(density);
     } catch (error) {
@@ -237,6 +242,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
+            const CategoriesPanel(),
+            const SizedBox(height: AppSpacing.lg),
             Panel(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -249,7 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       settings.lastBackupAt == null
                           ? 'No backup yet'
                           : 'Last backup ${formatRelativeDay(settings.lastBackupAt!)} · '
-                              '${formatBytes(settings.lastBackupBytes)}',
+                                '${formatBytes(settings.lastBackupBytes)}',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: settings.lastBackupAt == null
                             ? scheme.error
@@ -259,11 +266,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  _ReadOnlyPath(label: 'Database', value: settings.databasePath),
+                  _ReadOnlyPath(
+                    label: 'Database',
+                    value: settings.databasePath,
+                  ),
                   const SizedBox(height: 6),
-                  _ReadOnlyPath(label: 'Data directory', value: settings.dataDir),
+                  _ReadOnlyPath(
+                    label: 'Data directory',
+                    value: settings.dataDir,
+                  ),
                   const SizedBox(height: 6),
-                  _ReadOnlyPath(label: 'Backup directory', value: settings.backupDir),
+                  _ReadOnlyPath(
+                    label: 'Backup directory',
+                    value: settings.backupDir,
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
                     'Every ${settings.backupIntervalHours}h · '
@@ -290,7 +306,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           start: DateTime(2000),
                           end: state.today,
                         ),
-                        icon: const Icon(Icons.file_download_outlined, size: 15),
+                        icon: const Icon(
+                          Icons.file_download_outlined,
+                          size: 15,
+                        ),
                         label: const Text('Export all data'),
                       ),
                       FilledButton.icon(
@@ -299,8 +318,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? const SizedBox(
                                 width: 13,
                                 height: 13,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.backup_outlined, size: 15),
                         label: const Text('Backup now'),
@@ -320,6 +340,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: 'Day grouping, targets, and timer rules',
                     icon: Icons.schedule,
                   ),
+                  if (state.preferencesLoading) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    const LinearProgressIndicator(minHeight: 2),
+                  ],
+                  if (state.preferencesError != null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      state.preferencesError!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
@@ -327,9 +360,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         flex: 2,
                         child: TextField(
                           controller: _timezone,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             labelText: 'Timezone',
                             hintText: 'Europe/Amsterdam',
+                            errorText: _timeField == 'timezone'
+                                ? _timeError
+                                : null,
                           ),
                         ),
                       ),
@@ -372,23 +408,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: AppDropdown<String>(
-                          value: _rounding,
-                          label: 'Rounding',
-                          items: const [
-                            DropdownMenuItem(value: 'none', child: Text('None')),
-                            DropdownMenuItem(
-                              value: '5',
-                              child: Text('5 minutes'),
-                            ),
-                            DropdownMenuItem(
-                              value: '15',
-                              child: Text('15 minutes'),
-                            ),
+                        child: AppDropdown<ReviewCadence>(
+                          value: _reviewCadence,
+                          label: 'Personal review',
+                          items: [
+                            for (final cadence in ReviewCadence.values)
+                              DropdownMenuItem(
+                                value: cadence,
+                                child: Text(cadence.label),
+                              ),
                           ],
                           onChanged: (value) {
                             if (value != null) {
-                              setState(() => _rounding = value);
+                              setState(() => _reviewCadence = value);
                             }
                           },
                         ),
@@ -400,7 +432,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
                             labelText: 'Long timer prompt',
-                            suffixText: 'h',
+                            suffixText: 'min',
                           ),
                         ),
                       ),
@@ -418,11 +450,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  if (_timeError != null && _timeField != 'timezone') ...[
+                    Text(
+                      _timeError!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          'Rounding defaults to none; the service remains authoritative.',
+                          'Time settings are stored per account and apply to new entries.',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
@@ -435,8 +476,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? const SizedBox(
                                 width: 14,
                                 height: 14,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Save time settings'),
                       ),
@@ -452,7 +494,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   const PanelHeader(
                     title: 'AI',
-                    subtitle: 'OpenAI-compatible provider for check-in synthesis',
+                    subtitle:
+                        'OpenAI-compatible provider for check-in synthesis',
                     icon: Icons.auto_awesome_outlined,
                   ),
                   const SizedBox(height: AppSpacing.md),
@@ -484,9 +527,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: TextField(
                           controller: _model,
-                          decoration: const InputDecoration(
-                            labelText: 'Model',
-                          ),
+                          decoration: const InputDecoration(labelText: 'Model'),
                         ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
@@ -583,8 +624,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ? const SizedBox(
                                 width: 14,
                                 height: 14,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Save AI settings'),
                       ),
@@ -647,7 +689,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Container(
-                    padding: const EdgeInsets.all(AppSpacing.md),
+                    height: settings.density == DensityPreference.compact
+                        ? 36
+                        : 48,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(AppRadius.input),
@@ -704,7 +751,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.info_outline,
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  _AboutRow(label: 'Application', value: 'wdid ${settings.version}'),
+                  _AboutRow(
+                    label: 'Application',
+                    value: 'wdid ${settings.version}',
+                  ),
                   _AboutRow(
                     label: 'Schema version',
                     value: '${settings.schemaVersion}',
@@ -796,9 +846,7 @@ class _AboutRow extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: Text(value, style: theme.textTheme.bodySmall),
-          ),
+          Expanded(child: Text(value, style: theme.textTheme.bodySmall)),
         ],
       ),
     );

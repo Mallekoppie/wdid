@@ -81,9 +81,15 @@ func run() error {
 	return platform.StartApplicationServerWithContext(ctx, platform.ApplicationServerOptions{
 		Services: []platform.ConnectService{
 			rpc.NewAuthService(database, authService, cfg),
+			rpc.NewCategoryService(database, authService),
+			rpc.NewSettingsService(database, authService),
 		},
-		ServiceNames: []string{config.AuthServiceName},
-		Routes:       nonRPCRoutes(),
+		ServiceNames: []string{
+			config.AuthServiceName,
+			config.CategoryServiceName,
+			config.SettingsServiceName,
+		},
+		Routes: nonRPCRoutes(),
 		SPA: &platform.SPAOptions{
 			Assets: assets,
 			Index:  "index.html",

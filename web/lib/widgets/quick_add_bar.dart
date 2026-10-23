@@ -33,8 +33,11 @@ class _QuickAddBarState extends State<QuickAddBar> {
     if (_initialized) return;
     _initialized = true;
     final state = AppStateScope.of(context);
-    _choice = state.lastAttribution ??
-        (state.attributionChoices.isEmpty ? null : state.attributionChoices.first);
+    _choice =
+        state.lastAttribution ??
+        (state.attributionChoices.isEmpty
+            ? null
+            : state.attributionChoices.first);
     _minutes = state.settings.defaultDurationMinutes;
     if (!const [15, 30, 45, 60].contains(_minutes)) _minutes = 30;
   }
@@ -78,9 +81,7 @@ class _QuickAddBarState extends State<QuickAddBar> {
       _focusNode.requestFocus();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Logged ${_minutes}m to ${choice.label}',
-          ),
+          content: Text('Logged ${_minutes}m to ${choice.label}'),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () async {
@@ -128,7 +129,9 @@ class _QuickAddBarState extends State<QuickAddBar> {
     );
 
     final attributionField = AppDropdown<AttributionChoice>(
-      value: _choice ?? choices.first,
+      value: choices.isEmpty ? null : (_choice ?? choices.first),
+      hint: choices.isEmpty ? 'Create a category first' : null,
+      enabled: choices.isNotEmpty,
       items: [
         for (final choice in choices)
           DropdownMenuItem(
@@ -137,9 +140,13 @@ class _QuickAddBarState extends State<QuickAddBar> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  choice.isInitiative ? Icons.flag_outlined : Icons.category_outlined,
+                  choice.isInitiative
+                      ? Icons.flag_outlined
+                      : Icons.category_outlined,
                   size: 14,
-                  color: choice.isInitiative ? scheme.primary : scheme.onSurfaceVariant,
+                  color: choice.isInitiative
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 6),
                 Flexible(

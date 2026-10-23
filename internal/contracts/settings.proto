@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// ReviewCadence controls the personal-review prompt.
+enum ReviewCadence {
+  REVIEW_CADENCE_UNSPECIFIED = 0;
+  REVIEW_CADENCE_WEEKLY = 1;
+  REVIEW_CADENCE_MONTHLY = 2;
+  REVIEW_CADENCE_OFF = 3;
+}
+
+// ThemePreference is the user's colour scheme preference.
+enum ThemePreference {
+  THEME_PREFERENCE_UNSPECIFIED = 0;
+  THEME_PREFERENCE_SYSTEM = 1;
+  THEME_PREFERENCE_LIGHT = 2;
+  THEME_PREFERENCE_DARK = 3;
+  THEME_PREFERENCE_HIGH_CONTRAST = 4;
+}
+
+// DensityPreference is the user's row-density preference.
+enum DensityPreference {
+  DENSITY_PREFERENCE_UNSPECIFIED = 0;
+  DENSITY_PREFERENCE_COMFORTABLE = 1;
+  DENSITY_PREFERENCE_COMPACT = 2;
+}
+
+// Settings is the single per-user behaviour and appearance record. The AI key
+// is never stored here; it comes from the environment.
+message Settings {
+  string timezone = 1;
+  // 1 is Monday and 7 is Sunday, matching the ISO week number.
+  int32 week_start = 2;
+  google.protobuf.Duration daily_target = 3;
+  ReviewCadence review_cadence = 4;
+  google.protobuf.Duration long_timer_threshold = 5;
+  google.protobuf.Duration default_entry_duration = 6;
+  string backup_directory = 7;
+  google.protobuf.Duration backup_interval = 8;
+  int32 backup_retention = 9;
+  string ai_base_url = 10;
+  string ai_model = 11;
+  bool ai_redact = 12;
+  ThemePreference theme = 13;
+  DensityPreference density = 14;
+  string journal_start_date = 15;
+  google.protobuf.Timestamp updated_at = 16;
+}
+
+// About describes the running build and database schema.
+message About {
+  string version = 1;
+  int32 schema_version = 2;
+  string license = 3;
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  Settings settings = 1;
+  About about = 2;
+}
+
+// UpdateSettings replaces the user's settings. Every preference is sent, so a
+// zero or unspecified enum value is rejected rather than silently ignored.
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+
+message UpdateSettingsResponse {
+  Settings settings = 1;
+}
+
+// SettingsService owns per-user behaviour and appearance. Every RPC requires a
+// bearer token; the account is derived from that token.
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+}

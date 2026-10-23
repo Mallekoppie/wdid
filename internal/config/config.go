@@ -21,9 +21,17 @@ const (
 	minBootstrapSecretLen      = 16
 	minJWTSecretLen            = 32
 
+	// ServiceVersion and ServiceLicense are reported in Settings → About.
+	ServiceVersion = "0.1.0"
+	ServiceLicense = "MIT"
+
 	// AuthServiceName is the fully qualified Connect service registered by the
 	// service process. It is also used for health and reflection reporting.
 	AuthServiceName = "wdid.v1.AuthService"
+	// CategoryServiceName owns the user's taxonomy.
+	CategoryServiceName = "wdid.v1.CategoryService"
+	// SettingsServiceName owns per-user behaviour and appearance.
+	SettingsServiceName = "wdid.v1.SettingsService"
 
 	// AuthRegisterAccountProcedure is public: a new account needs no token.
 	AuthRegisterAccountProcedure = "/wdid.v1.AuthService/RegisterAccount"
