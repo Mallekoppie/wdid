@@ -48,32 +48,6 @@ func (i *Invite) Normalize() {
 	i.Email = strings.ToLower(strings.TrimSpace(i.Email))
 }
 
-// ActiveTimer is the single running timer for a user.
-type ActiveTimer struct {
-	UserID             string     `json:"userId"`
-	CategoryID         string     `json:"categoryId"`
-	SubcategoryID      string     `json:"subcategoryId,omitempty"`
-	Description        string     `json:"description,omitempty"`
-	StartedAt          time.Time  `json:"startedAt"`
-	PausedAt           *time.Time `json:"pausedAt,omitempty"`
-	SegmentStartedAt   time.Time  `json:"segmentStartedAt"`
-	AccumulatedSeconds int64      `json:"accumulatedSeconds"`
-}
-
-// Paused reports whether the timer is currently paused.
-func (t ActiveTimer) Paused() bool {
-	return t.PausedAt != nil
-}
-
-// Elapsed returns the running total, excluding paused segments.
-func (t ActiveTimer) Elapsed(now time.Time) time.Duration {
-	total := time.Duration(t.AccumulatedSeconds) * time.Second
-	if t.PausedAt == nil && !t.SegmentStartedAt.IsZero() && now.After(t.SegmentStartedAt) {
-		total += now.Sub(t.SegmentStartedAt)
-	}
-	return total
-}
-
 // Normalize trims user input into its canonical form.
 func (u *User) Normalize() {
 	u.Email = strings.ToLower(strings.TrimSpace(u.Email))

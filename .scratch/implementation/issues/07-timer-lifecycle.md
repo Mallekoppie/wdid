@@ -6,11 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] A timer starts, pauses, resumes, and stops; a user has at most one active timer.
-- [ ] Paused time is excluded from elapsed time.
-- [ ] Stopping saves a work entry with the selected category and optional subcategory.
-- [ ] A stop under one minute is rejected unless the action is discard.
-- [ ] Above the block limit, stopping offers keep, trim, or discard.
-- [ ] The timer pill is visible on every screen and survives a refresh or second tab.
-- [ ] Timer state is server-owned; the client only renders it.
-- [ ] Connect and gRPC-Web tests cover the transitions, the one-minute rule, and the block limit.
+- [x] A timer starts, pauses, resumes, and stops; a user has at most one active timer.
+- [x] Paused time is excluded from elapsed time.
+- [x] Stopping saves a work entry with the selected category and optional subcategory.
+- [x] A stop under one minute is rejected unless the action is discard.
+- [x] Above the block limit, stopping offers keep, trim, or discard.
+- [x] The timer pill is visible on every screen and survives a refresh or second tab.
+- [x] Timer state is server-owned; the client only renders it.
+- [x] Connect and gRPC-Web tests cover the transitions, the one-minute rule, and the block limit.

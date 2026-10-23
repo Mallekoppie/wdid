@@ -43,6 +43,12 @@ var (
 	// ErrFinalCheckInReadOnly is returned when a final manager check-in is
 	// edited or deleted.
 	ErrFinalCheckInReadOnly = errors.New("a final manager check-in is read-only")
+	// ErrTimerRunning is returned when a start is attempted while a timer is
+	// already active for the user.
+	ErrTimerRunning = errors.New("a timer is already running")
+	// ErrTimerNotRunning is returned when a transition needs an active timer
+	// and the user has none.
+	ErrTimerNotRunning = errors.New("no timer is running")
 )
 
 const (
@@ -50,6 +56,7 @@ const (
 	sysUserEmailsBucket  = "sys:user_emails"
 	sysCredentialsBucket = "sys:user_credentials"
 	sysInvitesBucket     = "sys:invites"
+	timerBucket          = "timer"
 	timerKey             = "active"
 	settingsKey          = "app"
 )
@@ -287,7 +294,7 @@ func (s *Store) CreateInvitedUser(user domain.User, passwordHash, codeHash strin
 // ActiveTimer returns the user's running timer, if one exists.
 func (s *Store) ActiveTimer(userID string) (domain.ActiveTimer, bool, error) {
 	var timer domain.ActiveTimer
-	err := readObject(userBucket(userID, "timer"), timerKey, &timer)
+	err := readObject(userBucket(userID, timerBucket), timerKey, &timer)
 	if errors.Is(err, ErrNotFound) {
 		return domain.ActiveTimer{}, false, nil
 	}
@@ -297,14 +304,17 @@ func (s *Store) ActiveTimer(userID string) (domain.ActiveTimer, bool, error) {
 	return timer, true, nil
 }
 
-// SaveTimer stores the user's running timer.
+// SaveTimer stores the user's running timer. Lifecycle changes go through the
+// transition methods so the one-timer invariant holds; this is for seeding and
+// tests.
 func (s *Store) SaveTimer(timer domain.ActiveTimer) error {
-	return saveObject(userBucket(timer.UserID, "timer"), timerKey, timer)
+	timer.Normalize()
+	return saveObject(userBucket(timer.UserID, timerBucket), timerKey, timer)
 }
 
 // ClearTimer removes the user's running timer.
 func (s *Store) ClearTimer(userID string) error {
-	return platform.Database.BoltDb.RemoveObject(userBucket(userID, "timer"), timerKey)
+	return platform.Database.BoltDb.RemoveObject(userBucket(userID, timerBucket), timerKey)
 }
 
 // --- helpers -------------------------------------------------------------

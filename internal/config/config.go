@@ -32,6 +32,8 @@ const (
 	CategoryServiceName = "wdid.v1.CategoryService"
 	// EntryServiceName owns work entries.
 	EntryServiceName = "wdid.v1.EntryService"
+	// TimerServiceName owns the user's running timer.
+	TimerServiceName = "wdid.v1.TimerService"
 	// SettingsServiceName owns per-user behaviour and appearance.
 	SettingsServiceName = "wdid.v1.SettingsService"
 

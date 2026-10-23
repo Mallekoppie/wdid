@@ -45,50 +45,56 @@ func (s *Store) SaveWorkEntry(entry domain.WorkEntry) error {
 	}
 
 	return platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
-		var category domain.Category
-		err := readTxObject(tx, userBucket(entry.UserID, categoriesBucket), entry.CategoryID, &category)
+		return saveWorkEntryTx(tx, entry)
+	})
+}
+
+// saveWorkEntryTx validates and writes an entry in the caller's transaction.
+// Timer stops use it so the timer is cleared and the entry is saved atomically.
+func saveWorkEntryTx(tx *bbolt.Tx, entry domain.WorkEntry) error {
+	var category domain.Category
+	err := readTxObject(tx, userBucket(entry.UserID, categoriesBucket), entry.CategoryID, &category)
+	if errors.Is(err, ErrNotFound) {
+		return ErrCategoryNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	var subcategory *domain.Subcategory
+	if entry.SubcategoryID != "" {
+		var stored domain.Subcategory
+		err := readTxObject(tx, userBucket(entry.UserID, subcategoriesBucket), entry.SubcategoryID, &stored)
 		if errors.Is(err, ErrNotFound) {
-			return ErrCategoryNotFound
+			return ErrSubcategoryNotFound
 		}
 		if err != nil {
 			return err
 		}
+		subcategory = &stored
+	}
 
-		var subcategory *domain.Subcategory
-		if entry.SubcategoryID != "" {
-			var stored domain.Subcategory
-			err := readTxObject(tx, userBucket(entry.UserID, subcategoriesBucket), entry.SubcategoryID, &stored)
-			if errors.Is(err, ErrNotFound) {
-				return ErrSubcategoryNotFound
-			}
-			if err != nil {
-				return err
-			}
-			subcategory = &stored
-		}
+	entry.LocalDate = entryLocalDate(tx, entry.UserID, entry.StartedAt)
+	if err := domain.ValidateWorkEntry(entry, category, subcategory, 0); err != nil {
+		return err
+	}
 
-		entry.LocalDate = entryLocalDate(tx, entry.UserID, entry.StartedAt)
-		if err := domain.ValidateWorkEntry(entry, category, subcategory, 0); err != nil {
+	bucket := userBucket(entry.UserID, entriesBucket)
+	var previous domain.WorkEntry
+	err = readTxObject(tx, bucket, entry.ID, &previous)
+	switch {
+	case err == nil:
+		if err := removeEntryIndexes(tx, previous); err != nil {
 			return err
 		}
+	case !errors.Is(err, ErrNotFound):
+		return err
+	}
 
-		bucket := userBucket(entry.UserID, entriesBucket)
-		var previous domain.WorkEntry
-		err = readTxObject(tx, bucket, entry.ID, &previous)
-		switch {
-		case err == nil:
-			if err := removeEntryIndexes(tx, previous); err != nil {
-				return err
-			}
-		case !errors.Is(err, ErrNotFound):
-			return err
-		}
-
-		if err := putJSON(tx, bucket, entry.ID, entry); err != nil {
-			return err
-		}
-		return addEntryIndexes(tx, entry)
-	})
+	if err := putJSON(tx, bucket, entry.ID, entry); err != nil {
+		return err
+	}
+	return addEntryIndexes(tx, entry)
 }
 
 // LocalDate returns the user's calendar date for an instant in the timezone

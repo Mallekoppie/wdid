@@ -6,6 +6,7 @@ import 'data/category_api.dart';
 import 'data/demo_repository.dart';
 import 'data/entry_api.dart';
 import 'data/settings_api.dart';
+import 'data/timer_api.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,7 @@ void main() {
       settingsApiBuilder: (token) =>
           GrpcSettingsApi(rpc: GrpcSettingsRpc(token: token)),
       entryApiBuilder: (token) => GrpcEntryApi(rpc: GrpcEntryRpc(token: token)),
+      timerApiBuilder: (token) => GrpcTimerApi(rpc: GrpcTimerRpc(token: token)),
     ),
   );
 }

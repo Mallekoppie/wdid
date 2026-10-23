@@ -68,7 +68,21 @@ Finder descriptionField() => find.byWidgetPredicate(
       widget is TextField && widget.decoration?.hintText == 'What did you do?',
 );
 
-Finder dropdownAt(int index) => find.byType(DropdownButton<String>).at(index);
+/// Dropdowns inside the quick-capture bar, in category/subcategory order. The
+/// timer card also has selectors, so the bar is scoped explicitly.
+Finder dropdownAt(int index) => find
+    .descendant(
+      of: find.byType(QuickCaptureBar),
+      matching: find.byType(DropdownButton<String>),
+    )
+    .at(index);
+
+Finder personField() => find.descendant(
+  of: find.byType(QuickCaptureBar),
+  matching: find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.decoration?.labelText == 'Person',
+  ),
+);
 
 void main() {
   Future<void> pumpToday(
@@ -202,11 +216,7 @@ void main() {
     expect(find.text('Who did you support?'), findsWidgets);
     expect(entryApi.drafts, isEmpty);
 
-    final personField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField && widget.decoration?.labelText == 'Person',
-    );
-    await tester.enterText(personField, 'Priya');
+    await tester.enterText(personField(), 'Priya');
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
 

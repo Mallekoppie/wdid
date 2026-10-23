@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "entries.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// TimerStopAction is what to do with the elapsed time when a timer stops.
+// Above the block limit the server rejects the default save until the caller
+// chooses keep, trim or discard.
+enum TimerStopAction {
+  TIMER_STOP_ACTION_UNSPECIFIED = 0;
+  // Store the whole elapsed time.
+  TIMER_STOP_ACTION_KEEP = 1;
+  // Store only the block limit.
+  TIMER_STOP_ACTION_TRIM = 2;
+  // Stop without creating a work entry.
+  TIMER_STOP_ACTION_DISCARD = 3;
+}
+
+// ActiveTimer is the user's single running timer. The server owns the state;
+// the client renders a snapshot and asks the server for every transition.
+message ActiveTimer {
+  string category_id = 1;
+  string subcategory_id = 2;
+  string description = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp segment_started_at = 5;
+  google.protobuf.Timestamp paused_at = 6;
+  // Paused time accumulated before the current segment.
+  google.protobuf.Duration accumulated_paused = 7;
+  // Elapsed time at the moment the response was built, excluding pauses.
+  google.protobuf.Duration elapsed = 8;
+  bool paused = 9;
+  // Required when the category's reporting role is support, matching the
+  // work-entry rule.
+  string person = 10;
+}
+
+message StartTimerRequest {
+  string category_id = 1;
+  // Optional; must belong to the category.
+  string subcategory_id = 2;
+  string description = 3;
+  // Required when the category's reporting role is support.
+  string person = 4;
+}
+
+message StartTimerResponse {
+  ActiveTimer timer = 1;
+}
+
+message PauseTimerRequest {}
+
+message PauseTimerResponse {
+  ActiveTimer timer = 1;
+}
+
+message ResumeTimerRequest {}
+
+message ResumeTimerResponse {
+  ActiveTimer timer = 1;
+}
+
+message StopTimerRequest {
+  TimerStopAction action = 1;
+}
+
+message StopTimerResponse {
+  // Absent when the timer was discarded.
+  WorkEntry entry = 1;
+  bool discarded = 2;
+}
+
+message GetActiveTimerRequest {}
+
+message GetActiveTimerResponse {
+  // Absent when no timer is running.
+  ActiveTimer timer = 1;
+  // The user's long-timer threshold, so the client can prompt without
+  // reproducing the server's settings lookup.
+  google.protobuf.Duration block_limit = 2;
+}
+
+// TimerService owns the user's running timer. Every RPC requires a bearer
+// token; the account is derived from that token, never from a request field.
+service TimerService {
+  rpc StartTimer(StartTimerRequest) returns (StartTimerResponse);
+  rpc PauseTimer(PauseTimerRequest) returns (PauseTimerResponse);
+  rpc ResumeTimer(ResumeTimerRequest) returns (ResumeTimerResponse);
+  rpc StopTimer(StopTimerRequest) returns (StopTimerResponse);
+  rpc GetActiveTimer(GetActiveTimerRequest) returns (GetActiveTimerResponse);
+}

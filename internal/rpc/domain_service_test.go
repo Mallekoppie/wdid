@@ -29,6 +29,13 @@ import (
 // surface exactly as the browser does.
 func newDomainHandlerForConfig(t *testing.T, cfg config.Config) (http.Handler, *store.Store) {
 	t.Helper()
+	return newDomainHandlerWithTimerClock(t, cfg, nil)
+}
+
+// newDomainHandlerWithTimerClock lets a test control the timer's clock through
+// the public RPC surface.
+func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() time.Time) (http.Handler, *store.Store) {
+	t.Helper()
 
 	database, err := store.Open(cfg)
 	if err != nil {
@@ -38,18 +45,25 @@ func newDomainHandlerForConfig(t *testing.T, cfg config.Config) (http.Handler, *
 		_ = database.Close()
 	})
 
+	timerOptions := make([]rpc.TimerServiceOption, 0, 1)
+	if now != nil {
+		timerOptions = append(timerOptions, rpc.WithTimerClock(now))
+	}
+
 	authService := auth.NewService(database, cfg)
 	application, err := platform.NewApplicationHandler(platform.ApplicationServerOptions{
 		Services: []platform.ConnectService{
 			rpc.NewAuthService(database, authService, cfg),
 			rpc.NewCategoryService(database, authService),
 			rpc.NewEntryService(database, authService),
+			rpc.NewTimerService(database, authService, timerOptions...),
 			rpc.NewSettingsService(database, authService),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
 			config.CategoryServiceName,
 			config.EntryServiceName,
+			config.TimerServiceName,
 			config.SettingsServiceName,
 		},
 	})
@@ -68,6 +82,15 @@ func newDomainServerWithConfig(t *testing.T, cfg config.Config) (*httptest.Serve
 	t.Helper()
 
 	handler, database := newDomainHandlerForConfig(t, cfg)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, database
+}
+
+func newDomainServerWithClock(t *testing.T, now func() time.Time) (*httptest.Server, *store.Store) {
+	t.Helper()
+
+	handler, database := newDomainHandlerWithTimerClock(t, testConfig(t), now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return server, database

@@ -124,18 +124,18 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ## M2 — Capture
 
-- [ ] Add `entries.proto` and `timer.proto`; implement `EntryService` and
+- [x] Add `entries.proto` and `timer.proto`; implement `EntryService` and
       `TimerService`.
 - [ ] Add `summaries.proto` with `GetPeriodReport` — the only aggregation
       source.
-- [ ] Timer lifecycle: start, pause, resume, stop; paused time excluded; stops
+- [x] Timer lifecycle: start, pause, resume, stop; paused time excluded; stops
       under one minute rejected unless `discard`; block limit returns keep/trim/
       discard.
 - [ ] Wire Today: timer card, quick add, today list, and week bars from
       `GetPeriodReport`.
 - [ ] Use settings for default duration, long-timer threshold, timezone, and week
       start.
-- [ ] Tests: timer transitions, block limit, entry validation, gRPC-Web.
+- [x] Tests: timer transitions, block limit, entry validation, gRPC-Web.
 
 **Acceptance:** a full day can be logged and corrected without touching BoltDB.
 

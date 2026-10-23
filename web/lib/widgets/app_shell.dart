@@ -5,12 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
-import '../utils/time_utils.dart';
 import 'app_header.dart';
 import 'forms/entry_dialog.dart';
 import 'forms/shortcuts_dialog.dart';
 import 'forms/support_dialog.dart';
 import 'nav_rail.dart';
+import 'timer_actions.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.currentPath, required this.child});
@@ -51,31 +51,26 @@ class _AppShellState extends State<AppShell> {
     final state = AppStateScope.read(context);
     try {
       if (state.activeTimer == null) {
-        state.startTimer();
+        await state.startTimer();
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Timer started · ${state.activeTimer?.attribution.label}'),
-          ),
-        );
-      } else {
-        final item = await state.stopTimer();
-        if (!mounted) return;
+        final timer = state.activeTimer;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              item == null
-                  ? 'Timer stopped'
-                  : 'Saved ${formatDuration(item.minutes)} · ${item.summary}',
+              'Timer started · ${timer == null ? 'timer' : state.timerLabel(timer)}',
             ),
           ),
         );
+      } else {
+        final result = await stopTimerWithDecision(context, state: state);
+        if (!mounted || result == null) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
       }
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -83,9 +78,8 @@ class _AppShellState extends State<AppShell> {
     final state = AppStateScope.read(context);
     final item = await showEntryDialog(context, state: state);
     if (item != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry saved')));
     }
   }
 
@@ -93,9 +87,8 @@ class _AppShellState extends State<AppShell> {
     final state = AppStateScope.read(context);
     final item = await showSupportDialog(context, state: state);
     if (item != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Support entry saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Support entry saved')));
     }
   }
 

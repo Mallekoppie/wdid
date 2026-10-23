@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/time_utils.dart';
+import 'timer_actions.dart';
 
 class TimerPill extends StatefulWidget {
   const TimerPill({super.key});
@@ -18,16 +21,31 @@ class _TimerPillState extends State<TimerPill> {
   Future<void> _start() async {
     final state = AppStateScope.read(context);
     try {
-      state.startTimer();
+      await state.startTimer();
       if (!mounted) return;
-      final initiative = state.activeTimer?.attribution.label ?? 'timer';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Timer started · $initiative')),
-      );
+      final timer = state.activeTimer;
+      final label = timer == null ? 'timer' : state.timerLabel(timer);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Timer started · $label')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _togglePause(bool paused) async {
+    final state = AppStateScope.read(context);
+    try {
+      if (paused) {
+        await state.resumeTimer();
+      } else {
+        await state.pauseTimer();
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
+        SnackBar(content: Text('Could not change the timer: $error')),
       );
     }
   }
@@ -36,24 +54,18 @@ class _TimerPillState extends State<TimerPill> {
     final state = AppStateScope.read(context);
     setState(() => _stopping = true);
     try {
-      final item = await state.stopTimer();
+      final result = await stopTimerWithDecision(context, state: state);
       if (!mounted) return;
       setState(() => _stopping = false);
-      if (item != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Saved ${formatDuration(item.minutes)} · ${item.summary}',
-            ),
-          ),
-        );
+      if (result != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
       }
     } catch (error) {
       if (!mounted) return;
       setState(() => _stopping = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not stop the timer: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -72,22 +84,22 @@ class _TimerPillState extends State<TimerPill> {
           icon: Icon(Icons.play_arrow, size: 17, color: scheme.primary),
           label: Text(
             'Start timer',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: theme.textTheme.labelMedium?.copyWith(color: scheme.primary),
           ),
         ),
       );
     }
 
     final elapsed = timer.elapsedAt(DateTime.now());
-    final initiative = state.initiativeById(timer.attribution.initiativeId);
+    final initiative = state.initiativeById(state.timerInitiativeId(timer));
     return Container(
       height: 34,
       padding: const EdgeInsets.only(left: 10, right: 4),
       decoration: BoxDecoration(
         color: Color.alphaBlend(
-          scheme.primaryContainer.withValues(alpha: timer.isPaused ? 0.18 : 0.5),
+          scheme.primaryContainer.withValues(
+            alpha: timer.isPaused ? 0.18 : 0.5,
+          ),
           scheme.surface,
         ),
         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -106,16 +118,21 @@ class _TimerPillState extends State<TimerPill> {
             color: timer.isPaused ? scheme.onSurfaceVariant : scheme.primary,
           ),
           const SizedBox(width: 7),
-          InkWell(
-            onTap: initiative == null
-                ? null
-                : () => context.go('/initiatives/${initiative.id}'),
-            borderRadius: BorderRadius.circular(4),
-            child: Text(
-              timer.attribution.label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: InkWell(
+              onTap: initiative == null
+                  ? null
+                  : () => context.go('/initiatives/${initiative.id}'),
+              borderRadius: BorderRadius.circular(4),
+              child: Text(
+                state.timerLabel(timer),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
               ),
             ),
           ),
@@ -139,7 +156,7 @@ class _TimerPillState extends State<TimerPill> {
           ],
           IconButton(
             tooltip: timer.isPaused ? 'Resume' : 'Pause',
-            onPressed: timer.isPaused ? state.resumeTimer : state.pauseTimer,
+            onPressed: () => unawaited(_togglePause(timer.isPaused)),
             icon: Icon(
               timer.isPaused ? Icons.play_arrow : Icons.pause,
               size: 16,

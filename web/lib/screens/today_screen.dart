@@ -19,6 +19,8 @@ import '../widgets/panel.dart';
 import '../widgets/quick_add_bar.dart';
 import '../widgets/quick_capture_bar.dart';
 import '../widgets/screen_states.dart';
+import '../widgets/service_timer_card.dart';
+import '../widgets/timer_actions.dart';
 import '../widgets/work_entry_row.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -237,8 +239,11 @@ class _TodayScreenState extends State<TodayScreen> {
               const _TimerCard(),
               const SizedBox(height: AppSpacing.md),
               QuickAddBar(onOpenFullForm: _openEntryForm),
-            ] else
+            ] else ...[
+              const ServiceTimerCard(),
+              const SizedBox(height: AppSpacing.md),
               const QuickCaptureBar(),
+            ],
             const SizedBox(height: AppSpacing.xl),
             Row(
               children: [
@@ -436,14 +441,15 @@ class _TimerCardState extends State<_TimerCard> {
     final state = AppStateScope.read(context);
     setState(() => _busy = true);
     try {
-      state.startTimer(description: _description.text);
+      await state.startTimer(description: _description.text);
       if (!mounted) return;
       setState(() => _busy = false);
       _description.clear();
+      final timer = state.activeTimer;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Timer started · ${state.activeTimer?.attribution.label}',
+            'Timer started · ${timer == null ? 'timer' : state.timerLabel(timer)}',
           ),
         ),
       );
@@ -455,28 +461,38 @@ class _TimerCardState extends State<_TimerCard> {
     }
   }
 
+  Future<void> _togglePause(bool paused) async {
+    final state = AppStateScope.read(context);
+    try {
+      if (paused) {
+        await state.resumeTimer();
+      } else {
+        await state.pauseTimer();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change the timer: $error')),
+      );
+    }
+  }
+
   Future<void> _stop() async {
     final state = AppStateScope.read(context);
     setState(() => _busy = true);
     try {
-      final item = await state.stopTimer();
+      final result = await stopTimerWithDecision(context, state: state);
       if (!mounted) return;
       setState(() => _busy = false);
-      if (item != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Saved ${formatDuration(item.minutes)} · ${item.summary}',
-            ),
-          ),
-        );
+      if (result != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
       }
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not stop the timer: $error')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -587,7 +603,7 @@ class _TimerCardState extends State<_TimerCard> {
                 Row(
                   children: [
                     Icon(
-                      timer.attribution.isInitiative
+                      state.timerIsInitiative(timer)
                           ? Icons.flag_outlined
                           : Icons.category_outlined,
                       size: 15,
@@ -595,7 +611,7 @@ class _TimerCardState extends State<_TimerCard> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      timer.attribution.label,
+                      state.timerLabel(timer),
                       style: theme.textTheme.labelMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -618,9 +634,7 @@ class _TimerCardState extends State<_TimerCard> {
                   runSpacing: AppSpacing.sm,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: timer.isPaused
-                          ? state.resumeTimer
-                          : state.pauseTimer,
+                      onPressed: () => unawaited(_togglePause(timer.isPaused)),
                       icon: Icon(
                         timer.isPaused ? Icons.play_arrow : Icons.pause,
                         size: 16,
@@ -638,10 +652,10 @@ class _TimerCardState extends State<_TimerCard> {
                           : const Icon(Icons.stop, size: 16),
                       label: const Text('Stop & save'),
                     ),
-                    if (timer.attribution.initiativeId != null)
+                    if (state.timerInitiativeId(timer) != null)
                       TextButton.icon(
                         onPressed: () => context.go(
-                          '/initiatives/${timer.attribution.initiativeId}',
+                          '/initiatives/${state.timerInitiativeId(timer)}',
                         ),
                         icon: const Icon(Icons.arrow_outward, size: 15),
                         label: const Text('Open initiative'),

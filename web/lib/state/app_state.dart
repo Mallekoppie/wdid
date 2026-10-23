@@ -7,6 +7,7 @@ import '../data/demo_repository.dart';
 import '../data/entry_api.dart';
 import '../data/repository.dart';
 import '../data/settings_api.dart';
+import '../data/timer_api.dart';
 import '../models/app_settings.dart';
 import '../models/check_in.dart';
 import '../models/drafts.dart';
@@ -22,26 +23,76 @@ import '../utils/time_utils.dart';
 
 enum AppStatus { loading, ready, error }
 
+/// The timer as the UI renders it. In service mode it is a snapshot of the
+/// server-owned timer; the client never advances the lifecycle by itself.
 class ActiveTimer {
   ActiveTimer({
-    required this.attribution,
+    required this.categoryId,
+    this.subcategoryId = '',
+    this.initiativeId,
+    this.attribution,
+    this.person = '',
     required this.description,
     required this.startedAt,
+    required this.segmentStartedAt,
+    this.accumulatedPaused = Duration.zero,
+    this.pausedAt,
+    this.baseElapsed,
+    this.observedAt,
   });
 
-  final AttributionChoice attribution;
+  final String categoryId;
+  final String subcategoryId;
+  final String? initiativeId;
+
+  /// Elapsed time at the moment the server built the snapshot, paired with
+  /// [observedAt] so the UI ticks from server time instead of trusting the
+  /// device clock.
+  final Duration? baseElapsed;
+  final DateTime? observedAt;
+
+  /// Demo attribution, kept so the demo adapter can build a WorkItemDraft.
+  final AttributionChoice? attribution;
+
+  /// Required for support-role categories.
+  final String person;
   String description;
   final DateTime startedAt;
-  Duration pausedAccumulated = Duration.zero;
+  DateTime segmentStartedAt;
+  Duration accumulatedPaused;
   DateTime? pausedAt;
 
   bool get isPaused => pausedAt != null;
 
   Duration elapsedAt(DateTime now) {
-    final end = pausedAt ?? now;
-    final elapsed = end.difference(startedAt) - pausedAccumulated;
-    return elapsed.isNegative ? Duration.zero : elapsed;
+    if (pausedAt != null) return accumulatedPaused;
+
+    final base = baseElapsed;
+    final observed = observedAt;
+    if (base != null && observed != null) {
+      final delta = now.isAfter(observed)
+          ? now.difference(observed)
+          : Duration.zero;
+      return base + delta;
+    }
+
+    final end = now.isAfter(segmentStartedAt) ? now : segmentStartedAt;
+    return accumulatedPaused + end.difference(segmentStartedAt);
   }
+}
+
+/// What a stopped timer produced. A discarded timer has neither an entry nor
+/// any minutes.
+class StoppedTimer {
+  const StoppedTimer({
+    this.minutes = 0,
+    this.summary = '',
+    this.discarded = false,
+  });
+
+  final int minutes;
+  final String summary;
+  final bool discarded;
 }
 
 class AppState extends ChangeNotifier {
@@ -50,6 +101,7 @@ class AppState extends ChangeNotifier {
     this.categoryApi,
     this.settingsApi,
     this.entryApi,
+    this.timerApi,
   });
 
   final WdidRepository repository;
@@ -59,6 +111,7 @@ class AppState extends ChangeNotifier {
   final CategoryApi? categoryApi;
   final SettingsApi? settingsApi;
   final EntryApi? entryApi;
+  final TimerApi? timerApi;
 
   AppStatus status = AppStatus.loading;
   String? loadError;
@@ -88,6 +141,9 @@ class AppState extends ChangeNotifier {
   String? lastSubcategoryId;
 
   ActiveTimer? activeTimer;
+
+  /// The block limit reported by the service, used by the stop prompt.
+  int blockLimitMinutes = 240;
   AttributionChoice? lastAttribution;
 
   /// Screens listen to this to focus their search field on `/`.
@@ -120,6 +176,10 @@ class AppState extends ChangeNotifier {
       settings = results[4] as AppSettings;
       if (categoryApi != null || settingsApi != null) {
         await Future.wait([loadTaxonomy(), loadPreferences()]);
+      }
+      if (timerApi != null) {
+        await syncTimer();
+        _startTicker();
       }
       _ensureAttribution();
       status = AppStatus.ready;
@@ -347,8 +407,91 @@ class AppState extends ChangeNotifier {
     _notify();
   }
 
-  void startTimer({AttributionChoice? attribution, String description = ''}) {
-    if (activeTimer != null) return;
+  /// The timer's display label, resolved from the live taxonomy. Demo timers
+  /// carry their attribution label directly.
+  String timerLabel(ActiveTimer timer) {
+    final attribution = timer.attribution;
+    if (attribution != null) return attribution.label;
+
+    final category = categoryById(timer.categoryId);
+    final subcategory = timer.subcategoryId.isEmpty
+        ? null
+        : subcategoryById(timer.subcategoryId);
+    return [
+      if (category != null)
+        category.name
+      else if (timer.categoryId.isNotEmpty)
+        timer.categoryId,
+      if (subcategory != null) subcategory.name,
+    ].join(' · ');
+  }
+
+  bool timerIsInitiative(ActiveTimer timer) =>
+      timer.attribution?.isInitiative ??
+      categoryById(timer.categoryId)?.role == CategoryRole.initiative;
+
+  String? timerInitiativeId(ActiveTimer timer) =>
+      timer.attribution?.initiativeId;
+
+  Future<void> startTimer({
+    AttributionChoice? attribution,
+    String description = '',
+    String categoryId = '',
+    String subcategoryId = '',
+    String person = '',
+  }) async {
+    final api = timerApi;
+    if (activeTimer != null) {
+      // The snapshot may lag another tab by one poll. Ask the server before
+      // refusing, otherwise a stopped timer blocks a legitimate start.
+      if (api != null) await syncTimer();
+      if (activeTimer != null) {
+        throw const TimerFailure('A timer is already running.');
+      }
+    }
+
+    if (api != null) {
+      final resolvedCategory = categoryId.isNotEmpty
+          ? categoryId
+          : (lastCategoryId ?? '');
+      var resolvedSubcategory = categoryId.isNotEmpty
+          ? subcategoryId
+          : (lastSubcategoryId ?? '');
+      if (resolvedSubcategory.isNotEmpty &&
+          subcategoryById(resolvedSubcategory)?.categoryId !=
+              resolvedCategory) {
+        resolvedSubcategory = '';
+      }
+      if (resolvedCategory.isEmpty) {
+        throw const TimerFailure(
+          'Choose a category on Today before starting the timer.',
+        );
+      }
+      if (categoryById(resolvedCategory)?.role == CategoryRole.support &&
+          person.trim().isEmpty) {
+        throw const TimerFailure('Who are you supporting? Add a person first.');
+      }
+      try {
+        _applySnapshot(
+          await api.startTimer(
+            categoryId: resolvedCategory,
+            subcategoryId: resolvedSubcategory,
+            description: description.trim(),
+            person: person.trim(),
+          ),
+        );
+      } catch (_) {
+        // A second tab may have started or stopped a timer; align first.
+        await syncTimer();
+        rethrow;
+      }
+      lastCategoryId = resolvedCategory;
+      lastSubcategoryId = resolvedSubcategory;
+      _startTicker();
+      _notify();
+      return;
+    }
+
     final choice = attribution ?? lastAttribution ?? _firstChoice();
     if (choice == null) {
       throw StateError(
@@ -356,12 +499,16 @@ class AppState extends ChangeNotifier {
       );
     }
     lastAttribution = choice;
+    final now = DateTime.now();
     activeTimer = ActiveTimer(
+      categoryId: choice.category ?? choice.initiativeId ?? '',
+      initiativeId: choice.initiativeId,
       attribution: choice,
       description: description.trim().isEmpty
           ? 'Focus block'
           : description.trim(),
-      startedAt: DateTime.now(),
+      startedAt: now,
+      segmentStartedAt: now,
     );
     _startTicker();
     _notify();
@@ -374,35 +521,92 @@ class AppState extends ChangeNotifier {
     _notify();
   }
 
-  void pauseTimer() {
+  Future<void> pauseTimer() async {
     final timer = activeTimer;
     if (timer == null || timer.isPaused) return;
-    timer.pausedAt = DateTime.now();
-    _stopTicker();
+
+    final api = timerApi;
+    if (api != null) {
+      try {
+        _applySnapshot(await api.pauseTimer());
+      } catch (_) {
+        await syncTimer();
+        rethrow;
+      }
+    } else {
+      timer.accumulatedPaused += DateTime.now().difference(
+        timer.segmentStartedAt,
+      );
+      timer.pausedAt = DateTime.now();
+    }
+    _refreshTicker();
     _notify();
   }
 
-  void resumeTimer() {
+  Future<void> resumeTimer() async {
     final timer = activeTimer;
     if (timer == null || !timer.isPaused) return;
-    final pausedAt = timer.pausedAt!;
-    timer.pausedAccumulated += DateTime.now().difference(pausedAt);
-    timer.pausedAt = null;
-    _startTicker();
+
+    final api = timerApi;
+    if (api != null) {
+      try {
+        _applySnapshot(await api.resumeTimer());
+      } catch (_) {
+        await syncTimer();
+        rethrow;
+      }
+    } else {
+      timer.pausedAt = null;
+      timer.segmentStartedAt = DateTime.now();
+    }
+    _refreshTicker();
     _notify();
   }
 
-  Future<WorkItem?> stopTimer() async {
+  Future<StoppedTimer?> stopTimer({
+    TimerStopAction action = TimerStopAction.save,
+  }) async {
     final timer = activeTimer;
     if (timer == null) return null;
+
+    final api = timerApi;
+    if (api != null) {
+      final StopTimerResult result;
+      try {
+        result = await api.stopTimer(action: action);
+      } on TimerConflict {
+        // The timer is still running; the caller asks the user what to do.
+        rethrow;
+      } catch (_) {
+        await syncTimer();
+        rethrow;
+      }
+
+      activeTimer = null;
+      final entry = result.entry;
+      if (entry != null) {
+        entries = _newestFirst([entry, ...entries]);
+        lastCategoryId = entry.categoryId;
+        lastSubcategoryId = entry.subcategoryId;
+      }
+      _refreshTicker();
+      _notify();
+      return StoppedTimer(
+        minutes: entry?.minutes ?? 0,
+        summary: entry?.description ?? '',
+        discarded: result.discarded,
+      );
+    }
+
     final now = DateTime.now();
     final elapsed = timer.elapsedAt(now);
     final minutes = elapsed.inMinutes < 1 ? 1 : elapsed.inMinutes;
+    final attribution = timer.attribution;
     final draft = WorkItemDraft(
-      type: timer.attribution.type,
-      initiativeId: timer.attribution.initiativeId,
-      category: timer.attribution.category,
-      categoryLabel: timer.attribution.categoryLabel,
+      type: attribution?.type ?? WorkType.category,
+      initiativeId: attribution?.initiativeId,
+      category: attribution?.category ?? timer.categoryId,
+      categoryLabel: attribution?.categoryLabel ?? timer.categoryId,
       startedAt: timer.startedAt,
       minutes: minutes,
       summary: timer.description,
@@ -411,25 +615,82 @@ class AppState extends ChangeNotifier {
     final item = await repository.createWorkItem(draft);
     activeTimer = null;
     _stopTicker();
-    lastAttribution = timer.attribution;
+    lastAttribution = attribution ?? lastAttribution;
     workItems = [...workItems, item]
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     _notify();
-    return item;
+    return StoppedTimer(minutes: item.minutes, summary: item.summary);
   }
 
   Future<void> toggleTimer() async {
     if (activeTimer != null) {
       await stopTimer();
     } else {
-      startTimer();
+      await startTimer();
+    }
+  }
+
+  /// Reads the server's timer snapshot. The client polls this so a refresh or
+  /// a second tab follows the same timer instead of keeping its own state.
+  Future<void> syncTimer() async {
+    final api = timerApi;
+    if (api == null) return;
+
+    try {
+      final status = await api.getActiveTimer();
+      if (status.blockLimitMinutes > 0) {
+        blockLimitMinutes = status.blockLimitMinutes;
+      }
+      final snapshot = status.timer;
+      if (snapshot == null) {
+        if (activeTimer == null) return;
+        activeTimer = null;
+        // Another tab stopped the timer; its saved entry belongs in Today.
+        unawaited(loadEntries());
+      } else {
+        _applySnapshot(snapshot);
+      }
+      _notify();
+    } catch (_) {
+      // A transient poll failure keeps the last server snapshot. Mutations
+      // surface their own errors.
+    }
+  }
+
+  void _applySnapshot(TimerSnapshot snapshot) {
+    activeTimer = ActiveTimer(
+      categoryId: snapshot.categoryId,
+      subcategoryId: snapshot.subcategoryId,
+      description: snapshot.description,
+      person: snapshot.person,
+      startedAt: snapshot.startedAt,
+      segmentStartedAt: snapshot.segmentStartedAt,
+      accumulatedPaused: snapshot.accumulatedPaused,
+      pausedAt: snapshot.pausedAt ?? (snapshot.paused ? DateTime.now() : null),
+      baseElapsed: snapshot.elapsed,
+      observedAt: DateTime.now(),
+    );
+  }
+
+  void _refreshTicker() {
+    if (timerApi != null) {
+      _startTicker();
+      return;
+    }
+    if (activeTimer != null && !activeTimer!.isPaused) {
+      _startTicker();
+    } else {
+      _stopTicker();
     }
   }
 
   void _startTicker() {
     _stopTicker();
+    var ticks = 0;
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      ticks++;
       if (activeTimer != null && !activeTimer!.isPaused) _notify();
+      if (timerApi != null && ticks % 15 == 0) unawaited(syncTimer());
     });
   }
 
