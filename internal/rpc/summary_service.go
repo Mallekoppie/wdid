@@ -108,11 +108,13 @@ func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 	}
 	for _, total := range report.Subcategories {
 		response.Subcategories = append(response.Subcategories, &wdidv1.SubcategoryAllocation{
-			SubcategoryId: total.SubcategoryID,
-			CategoryId:    total.CategoryID,
-			Name:          total.Name,
-			Duration:      minutesDuration(total.Minutes),
-			EntryCount:    int32(total.EntryCount),
+			SubcategoryId:           total.SubcategoryID,
+			CategoryId:              total.CategoryID,
+			Name:                    total.Name,
+			Duration:                minutesDuration(total.Minutes),
+			EntryCount:              int32(total.EntryCount),
+			LastActivityDate:        total.LastActivityDate,
+			LastActivityDescription: total.LastActivityDescription,
 		})
 	}
 	for _, total := range report.SupportPeople {

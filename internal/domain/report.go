@@ -32,12 +32,18 @@ type CategoryTotal struct {
 }
 
 // SubcategoryTotal is the time attributed to one subcategory in the period.
+// LastActivityDate and LastActivityDescription identify the latest entry in the
+// period, so a portfolio card can show recency without scanning entries.
 type SubcategoryTotal struct {
-	SubcategoryID string
-	CategoryID    string
-	Name          string
-	Minutes       int
-	EntryCount    int
+	SubcategoryID           string
+	CategoryID              string
+	Name                    string
+	Minutes                 int
+	EntryCount              int
+	LastActivityDate        string
+	LastActivityDescription string
+
+	lastActivityStartedAt time.Time
 }
 
 // SupportPersonTotal is the support time and interaction count for one person.
@@ -167,6 +173,13 @@ func BuildPeriodReport(
 			}
 			subtotal.Minutes += minutes
 			subtotal.EntryCount++
+			if localDate > subtotal.LastActivityDate ||
+				(localDate == subtotal.LastActivityDate &&
+					entry.StartedAt.After(subtotal.lastActivityStartedAt)) {
+				subtotal.LastActivityDate = localDate
+				subtotal.LastActivityDescription = entry.Description
+				subtotal.lastActivityStartedAt = entry.StartedAt
+			}
 		}
 
 		if category.Role == CategoryRoleSupport {

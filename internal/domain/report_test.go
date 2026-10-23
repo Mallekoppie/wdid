@@ -120,6 +120,58 @@ func TestBuildPeriodReportAggregatesThePeriod(t *testing.T) {
 	}
 }
 
+func TestBuildPeriodReportReportsLastActivityPerSubcategory(t *testing.T) {
+	const userID = "user-report"
+	categories := []domain.Category{
+		reportCategory(userID, "cat-init", "Initiatives", domain.CategoryRoleInitiative),
+	}
+	subcategories := []domain.Subcategory{
+		reportSubcategory(userID, "sub-billing", "cat-init", "Billing migration"),
+		reportSubcategory(userID, "sub-platform", "cat-init", "Platform hardening"),
+	}
+
+	described := func(entry domain.WorkEntry, description string) domain.WorkEntry {
+		entry.Description = description
+		return entry
+	}
+	day := func(dayOfMonth, hour int) time.Time {
+		return time.Date(2026, 10, dayOfMonth, hour, 0, 0, 0, time.UTC)
+	}
+
+	entries := []domain.WorkEntry{
+		described(reportEntry(userID, "cat-init", "sub-billing", day(19, 9), 30, ""), "Backfill skeleton"),
+		described(reportEntry(userID, "cat-init", "sub-billing", day(20, 9), 30, ""), "Migration plan"),
+		// An earlier entry on the latest day must not replace the later one.
+		described(reportEntry(userID, "cat-init", "sub-billing", day(20, 8), 30, ""), "Stand-up"),
+		described(reportEntry(userID, "cat-init", "sub-platform", day(19, 11), 30, ""), "Dependency spike"),
+	}
+
+	report, err := domain.BuildPeriodReport(
+		"2026-10-19",
+		"2026-10-20",
+		time.UTC,
+		int(time.Monday),
+		entries,
+		categories,
+		subcategories,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+
+	lastActivity := make(map[string]string, len(report.Subcategories))
+	for _, total := range report.Subcategories {
+		lastActivity[total.SubcategoryID] = total.LastActivityDate + "/" + total.LastActivityDescription
+	}
+	if got := lastActivity["sub-billing"]; got != "2026-10-20/Migration plan" {
+		t.Fatalf("billing last activity = %q, want the latest entry on its last day", got)
+	}
+	if got := lastActivity["sub-platform"]; got != "2026-10-19/Dependency spike" {
+		t.Fatalf("platform last activity = %q, want the only entry", got)
+	}
+}
+
 func TestBuildPeriodReportReturnsZeroTotalsForAnEmptyPeriod(t *testing.T) {
 	report, err := domain.BuildPeriodReport(
 		"2026-10-19",

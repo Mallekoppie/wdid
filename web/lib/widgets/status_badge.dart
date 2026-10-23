@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/enums.dart';
+import '../models/taxonomy.dart';
 import '../theme/app_tokens.dart';
 
 class StatusBadge extends StatelessWidget {
@@ -67,6 +68,25 @@ class InitiativeStatusBadge extends StatelessWidget {
       InitiativeStatus.blocked => scheme.error,
       InitiativeStatus.done => scheme.tertiary,
       InitiativeStatus.archived => scheme.outline,
+    };
+    return StatusBadge(label: status.label, color: color);
+  }
+}
+
+class SubcategoryStatusBadge extends StatelessWidget {
+  const SubcategoryStatusBadge({super.key, required this.status});
+
+  final SubcategoryStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = switch (status) {
+      SubcategoryStatus.planned => scheme.onSurfaceVariant,
+      SubcategoryStatus.active => scheme.primary,
+      SubcategoryStatus.blocked => scheme.error,
+      SubcategoryStatus.done => scheme.tertiary,
+      SubcategoryStatus.archived => scheme.outline,
     };
     return StatusBadge(label: status.label, color: color);
   }

@@ -54,6 +54,8 @@ class SubcategoryAllocation {
     required this.name,
     required this.minutes,
     required this.entryCount,
+    this.lastActivityDate = '',
+    this.lastActivityDescription = '',
   });
 
   final String subcategoryId;
@@ -61,6 +63,12 @@ class SubcategoryAllocation {
   final String name;
   final int minutes;
   final int entryCount;
+
+  /// Local date of the latest entry in the period, empty when there is none.
+  final String lastActivityDate;
+
+  /// Description of that latest entry, empty when it had none.
+  final String lastActivityDescription;
 }
 
 /// Support time and interaction count for one person.

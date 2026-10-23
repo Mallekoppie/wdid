@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:wdid_web/data/category_api.dart';
 import 'package:wdid_web/data/settings_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
@@ -18,6 +20,9 @@ class FakeCategoryApi implements CategoryApi {
   int listCalls = 0;
   int _sequence = 0;
 
+  /// When set, listing waits for it so tests can observe the loading state.
+  Completer<void>? gate;
+
   String _id() {
     _sequence++;
     return 'category-$_sequence';
@@ -30,6 +35,7 @@ class FakeCategoryApi implements CategoryApi {
   @override
   Future<List<Category>> listCategories() async {
     listCalls++;
+    if (gate != null) await gate!.future;
     _maybeFail();
     return List.unmodifiable(categories);
   }
@@ -117,6 +123,7 @@ class FakeCategoryApi implements CategoryApi {
       progress: progress,
       targetOutcome: targetOutcome,
       targetDate: targetDate,
+      links: links,
       sortOrder: sortOrder,
       createdAt: now,
       updatedAt: now,

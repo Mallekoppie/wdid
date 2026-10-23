@@ -24,6 +24,10 @@ message SubcategoryAllocation {
   string name = 3;
   google.protobuf.Duration duration = 4;
   int32 entry_count = 5;
+  // Local date of the latest entry in the period, empty when there is none.
+  string last_activity_date = 6;
+  // Description of that latest entry, empty when it had none.
+  string last_activity_description = 7;
 }
 
 // SupportPersonAllocation is the support time and interaction count for one

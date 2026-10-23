@@ -108,8 +108,12 @@ type SubcategoryAllocation struct {
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Duration      *durationpb.Duration   `protobuf:"bytes,4,opt,name=duration,proto3" json:"duration,omitempty"`
 	EntryCount    int32                  `protobuf:"varint,5,opt,name=entry_count,json=entryCount,proto3" json:"entry_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Local date of the latest entry in the period, empty when there is none.
+	LastActivityDate string `protobuf:"bytes,6,opt,name=last_activity_date,json=lastActivityDate,proto3" json:"last_activity_date,omitempty"`
+	// Description of that latest entry, empty when it had none.
+	LastActivityDescription string `protobuf:"bytes,7,opt,name=last_activity_description,json=lastActivityDescription,proto3" json:"last_activity_description,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *SubcategoryAllocation) Reset() {
@@ -175,6 +179,20 @@ func (x *SubcategoryAllocation) GetEntryCount() int32 {
 		return x.EntryCount
 	}
 	return 0
+}
+
+func (x *SubcategoryAllocation) GetLastActivityDate() string {
+	if x != nil {
+		return x.LastActivityDate
+	}
+	return ""
+}
+
+func (x *SubcategoryAllocation) GetLastActivityDescription() string {
+	if x != nil {
+		return x.LastActivityDescription
+	}
+	return ""
 }
 
 // SupportPersonAllocation is the support time and interaction count for one
@@ -698,7 +716,7 @@ const file_summaries_proto_rawDesc = "" +
 	"\x04role\x18\x03 \x01(\x0e2\x15.wdid.v1.CategoryRoleR\x04role\x125\n" +
 	"\bduration\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x1f\n" +
 	"\ventry_count\x18\x05 \x01(\x05R\n" +
-	"entryCount\"\xcb\x01\n" +
+	"entryCount\"\xb5\x02\n" +
 	"\x15SubcategoryAllocation\x12%\n" +
 	"\x0esubcategory_id\x18\x01 \x01(\tR\rsubcategoryId\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\tR\n" +
@@ -706,7 +724,9 @@ const file_summaries_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x125\n" +
 	"\bduration\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x1f\n" +
 	"\ventry_count\x18\x05 \x01(\x05R\n" +
-	"entryCount\"\x8c\x01\n" +
+	"entryCount\x12,\n" +
+	"\x12last_activity_date\x18\x06 \x01(\tR\x10lastActivityDate\x12:\n" +
+	"\x19last_activity_description\x18\a \x01(\tR\x17lastActivityDescription\"\x8c\x01\n" +
 	"\x17SupportPersonAllocation\x12\x16\n" +
 	"\x06person\x18\x01 \x01(\tR\x06person\x125\n" +
 	"\bduration\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\"\n" +

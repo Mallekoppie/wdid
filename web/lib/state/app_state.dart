@@ -168,6 +168,14 @@ class AppState extends ChangeNotifier {
   PeriodReport? weekReport;
   String? weekReportError;
 
+  /// The authoritative report for the current quarter. The Initiatives
+  /// portfolio renders project time and last activity from it rather than
+  /// composing either from entry listings.
+  PeriodReport? initiativesReport;
+  bool initiativesLoading = false;
+  String? initiativesError;
+  bool _initiativesLoaded = false;
+
   /// The entries for the Log's current filter, newest first.
   List<WorkEntry> logEntries = const [];
   Set<String> logOverlappingIds = const {};
@@ -176,6 +184,7 @@ class AppState extends ChangeNotifier {
   LogQuery? _logQuery;
   int _logRequest = 0;
   int _weekRequest = 0;
+  int _initiativesRequest = 0;
 
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
@@ -334,8 +343,40 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _refreshWeekReport() {
-    if (summaryApi != null) unawaited(loadWeekReport());
+  /// Loads the authoritative report for the current quarter, which owns the
+  /// Initiatives portfolio's project time and last activity.
+  Future<void> loadInitiativesReport() async {
+    final api = summaryApi;
+    if (api == null) return;
+
+    final request = ++_initiativesRequest;
+    initiativesLoading = true;
+    initiativesError = null;
+    _notify();
+    try {
+      final report = await api.getPeriodReport(
+        fromDate: isoDate(startOfQuarter(today)),
+        toDate: todayIso,
+      );
+      if (request != _initiativesRequest) return;
+      initiativesReport = report;
+      _initiativesLoaded = true;
+    } catch (error) {
+      if (request != _initiativesRequest) return;
+      initiativesError = error.toString();
+    } finally {
+      if (request == _initiativesRequest) {
+        initiativesLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  void _refreshReports() {
+    if (summaryApi == null) return;
+    unawaited(loadWeekReport());
+    // The portfolio only refreshes once a screen has asked for its report.
+    if (_initiativesLoaded) unawaited(loadInitiativesReport());
   }
 
   /// Presentation-only choices for capture forms. Once a live taxonomy is
@@ -440,6 +481,69 @@ class AppState extends ChangeNotifier {
 
   List<Initiative> get archivedInitiatives =>
       initiatives.where((initiative) => initiative.isArchived).toList();
+
+  /// True when screens must read the live taxonomy instead of the demo seed.
+  bool get hasTaxonomyService => categoryApi != null;
+
+  /// Categories whose reporting role makes their subcategories projects.
+  /// Archived categories stay here so their historical projects remain
+  /// visible; archiving only removes the category from creation selectors.
+  List<Category> get initiativeCategories => [
+    for (final category in categories)
+      if (category.role == CategoryRole.initiative) category,
+  ];
+
+  /// Initiative categories a new project can be filed under.
+  List<Category> get selectableInitiativeCategories => [
+    for (final category in initiativeCategories)
+      if (!category.archived) category,
+  ];
+
+  bool _isInitiativeProject(Subcategory subcategory) =>
+      categoryById(subcategory.categoryId)?.role == CategoryRole.initiative;
+
+  List<Subcategory> get openProjects => [
+    for (final subcategory in subcategories)
+      if (!subcategory.archived && _isInitiativeProject(subcategory))
+        subcategory,
+  ]..sort(_byProjectOrder);
+
+  List<Subcategory> get archivedProjects => [
+    for (final subcategory in subcategories)
+      if (subcategory.archived && _isInitiativeProject(subcategory))
+        subcategory,
+  ]..sort(_byProjectOrder);
+
+  static int _byProjectOrder(Subcategory first, Subcategory second) {
+    if (first.sortOrder != second.sortOrder) {
+      return first.sortOrder.compareTo(second.sortOrder);
+    }
+    return first.name.toLowerCase().compareTo(second.name.toLowerCase());
+  }
+
+  /// The report's allocation for one project. Its time and last activity are
+  /// authoritative, so the screen never adds entries itself.
+  SubcategoryAllocation? allocationForProject(String subcategoryId) {
+    for (final allocation
+        in initiativesReport?.subcategories ??
+            const <SubcategoryAllocation>[]) {
+      if (allocation.subcategoryId == subcategoryId) return allocation;
+    }
+    return null;
+  }
+
+  /// Time the report attributes to initiative-role categories. It never
+  /// includes support or other work, so it matches the portfolio's cards.
+  int get initiativeMinutes {
+    var minutes = 0;
+    for (final category
+        in initiativesReport?.categories ?? const <CategoryAllocation>[]) {
+      if (category.role == CategoryRole.initiative) {
+        minutes += category.minutes;
+      }
+    }
+    return minutes;
+  }
 
   CheckIn? get latestCheckIn {
     CheckIn? latest;
@@ -672,7 +776,7 @@ class AppState extends ChangeNotifier {
         lastSubcategoryId = entry.subcategoryId;
       }
       _refreshTicker();
-      _refreshWeekReport();
+      _refreshReports();
       _notify();
       return StoppedTimer(
         minutes: entry?.minutes ?? 0,
@@ -730,7 +834,7 @@ class AppState extends ChangeNotifier {
         activeTimer = null;
         // Another tab stopped the timer; its saved entry belongs in Today.
         unawaited(loadEntries());
-        _refreshWeekReport();
+        _refreshReports();
       } else {
         _applySnapshot(snapshot);
       }
@@ -912,7 +1016,7 @@ class AppState extends ChangeNotifier {
     }
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
-    _refreshWeekReport();
+    _refreshReports();
     _notify();
     return entry;
   }
@@ -921,7 +1025,7 @@ class AppState extends ChangeNotifier {
     final updated = await _entryApi().updateEntry(entry);
     entries = _replaceEntry(entries, updated);
     logEntries = _replaceEntry(logEntries, updated);
-    _refreshWeekReport();
+    _refreshReports();
     _notify();
     return updated;
   }
@@ -930,7 +1034,7 @@ class AppState extends ChangeNotifier {
     await _entryApi().deleteEntry(id);
     entries = entries.where((entry) => entry.id != id).toList();
     logEntries = logEntries.where((entry) => entry.id != id).toList();
-    _refreshWeekReport();
+    _refreshReports();
     _notify();
   }
 
@@ -940,7 +1044,7 @@ class AppState extends ChangeNotifier {
     final halves = await _entryApi().splitEntry(id, atMinutes);
     entries = _replaceWithHalves(entries, id, halves);
     logEntries = _replaceWithHalves(logEntries, id, halves);
-    _refreshWeekReport();
+    _refreshReports();
     _notify();
     return halves;
   }
@@ -1209,6 +1313,34 @@ class AppState extends ChangeNotifier {
     return subcategory;
   }
 
+  /// Creates a project: a subcategory under an initiative-role category with
+  /// the project fields the portfolio surfaces.
+  Future<Subcategory> createProject({
+    required Category category,
+    required String name,
+    String description = '',
+    SubcategoryStatus status = SubcategoryStatus.active,
+    int progress = 0,
+    String targetOutcome = '',
+    String targetDate = '',
+    List<LinkRef> links = const [],
+  }) async {
+    final subcategory = await _categoryApi().createSubcategory(
+      categoryId: category.id,
+      name: name,
+      description: description,
+      status: status,
+      progress: progress.clamp(0, 100),
+      targetOutcome: targetOutcome,
+      targetDate: targetDate,
+      links: links,
+      sortOrder: subcategoriesFor(category.id).length,
+    );
+    subcategories = [...subcategories, subcategory];
+    _notify();
+    return subcategory;
+  }
+
   Future<Subcategory> saveSubcategory(Subcategory subcategory) async {
     final updated = await _categoryApi().updateSubcategory(subcategory);
     _replaceSubcategory(updated);
@@ -1257,7 +1389,7 @@ class AppState extends ChangeNotifier {
         license: about?.license,
       );
       // Week start and timezone both move the period boundaries.
-      _refreshWeekReport();
+      _refreshReports();
       _notify();
       return settings;
     } catch (error) {

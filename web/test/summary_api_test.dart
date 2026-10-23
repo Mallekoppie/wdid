@@ -59,6 +59,8 @@ generated.PeriodReport protoReport() {
         name: 'Billing migration',
         duration: minutes(60),
         entryCount: 1,
+        lastActivityDate: '2026-10-19',
+        lastActivityDescription: 'Backfill skeleton',
       ),
     ],
     supportPeople: [
@@ -119,6 +121,11 @@ void main() {
       expect(report.categories.first.entryCount, 1);
       expect(report.categories.last.role, CategoryRole.support);
       expect(report.subcategories.single.name, 'Billing migration');
+      expect(report.subcategories.single.lastActivityDate, '2026-10-19');
+      expect(
+        report.subcategories.single.lastActivityDescription,
+        'Backfill skeleton',
+      );
       expect(report.supportPeople.single.person, 'Priya');
       expect(report.supportPeople.single.minutes, 30);
       expect(report.supportPeople.single.interactions, 1);

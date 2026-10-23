@@ -167,6 +167,11 @@ func TestSummaryServiceGetPeriodReportAggregates(t *testing.T) {
 		subcategories[1].GetName() != "Unblock" || subcategories[1].GetDuration().AsDuration() != 30*time.Minute {
 		t.Fatalf("subcategories = %+v, want Billing migration then Unblock", subcategories)
 	}
+	if subcategories[0].GetLastActivityDate() != "2026-10-19" ||
+		subcategories[0].GetLastActivityDescription() != "Backfill script" {
+		t.Fatalf("billing last activity = %q/%q, want the latest entry",
+			subcategories[0].GetLastActivityDate(), subcategories[0].GetLastActivityDescription())
+	}
 
 	people := report.GetSupportPeople()
 	if len(people) != 1 || people[0].GetPerson() != "Priya" ||

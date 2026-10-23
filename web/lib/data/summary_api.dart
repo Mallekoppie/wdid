@@ -115,6 +115,8 @@ PeriodReport periodReportFromProto(generated.PeriodReport report) {
           name: subcategory.name,
           minutes: _minutes(subcategory.duration),
           entryCount: subcategory.entryCount,
+          lastActivityDate: subcategory.lastActivityDate,
+          lastActivityDescription: subcategory.lastActivityDescription,
         ),
     ],
     supportPeople: [
