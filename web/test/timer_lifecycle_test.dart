@@ -7,6 +7,7 @@ import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/state/app_state.dart';
+import 'package:wdid_web/widgets/searchable_dropdown.dart';
 import 'package:wdid_web/widgets/service_timer_card.dart';
 
 import 'fake_auth_api.dart';
@@ -78,11 +79,21 @@ void main() {
   Future<void> startTimer(WidgetTester tester) async {
     final dropdowns = find.descendant(
       of: find.byType(ServiceTimerCard),
-      matching: find.byType(DropdownButton<String>),
+      matching: find.byType(SearchableDropdown<String>),
     );
     await tester.tap(dropdowns.at(1));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Billing migration').last);
+    await tester.enterText(
+      find.descendant(of: dropdowns.at(1), matching: find.byType(TextField)),
+      'Bill',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .widgetWithText(MenuItemButton, 'Billing migration')
+          .hitTestable()
+          .last,
+    );
     await tester.pumpAndSettle();
 
     await tester.enterText(timerDescription(), 'Backfill script');

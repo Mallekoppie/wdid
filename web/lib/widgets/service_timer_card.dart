@@ -7,8 +7,8 @@ import '../models/taxonomy.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/time_utils.dart';
-import 'app_dropdown.dart';
 import 'panel.dart';
+import 'searchable_dropdown.dart';
 import 'timer_actions.dart';
 
 /// Today's timer card for service mode. The category and subcategory are
@@ -237,71 +237,61 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
           LayoutBuilder(
             builder: (context, constraints) {
               final narrow = constraints.maxWidth < 760;
-              final fields = [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _description,
-                    enabled: !_busy,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => unawaited(_start()),
-                    decoration: const InputDecoration(
-                      hintText: 'What are you working on?',
-                      prefixIcon: Icon(Icons.edit_note, size: 18),
+              final descriptionField = TextField(
+                controller: _description,
+                enabled: !_busy,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => unawaited(_start()),
+                decoration: const InputDecoration(
+                  hintText: 'What are you working on?',
+                  prefixIcon: Icon(Icons.edit_note, size: 18),
+                ),
+              );
+              final categoryField = SearchableDropdown<String>(
+                value: _categoryId,
+                label: 'Category',
+                hint: categories.isEmpty ? 'Create a category first' : null,
+                enabled: categories.isNotEmpty && !_busy,
+                options: [
+                  for (final category in categories)
+                    SearchableDropdownOption(
+                      value: category.id,
+                      label: category.name,
                     ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _categoryId = value;
+                    _subcategoryId = '';
+                    _error = null;
+                  });
+                },
+              );
+              final subcategoryField = SearchableDropdown<String>(
+                value: _subcategoryId,
+                label: 'Subcategory',
+                enabled: subcategories.isNotEmpty && !_busy,
+                options: [
+                  const SearchableDropdownOption(
+                    value: '',
+                    label: 'No subcategory',
+                    pinned: true,
                   ),
-                ),
-                SizedBox(
-                  width: 170,
-                  child: AppDropdown<String>(
-                    value: _categoryId,
-                    label: 'Category',
-                    hint: categories.isEmpty ? 'Create a category first' : null,
-                    enabled: categories.isNotEmpty && !_busy,
-                    items: [
-                      for (final category in categories)
-                        DropdownMenuItem(
-                          value: category.id,
-                          child: Text(category.name),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _categoryId = value;
-                        _subcategoryId = '';
-                        _error = null;
-                      });
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 170,
-                  child: AppDropdown<String>(
-                    value: _subcategoryId,
-                    label: 'Subcategory',
-                    enabled: subcategories.isNotEmpty && !_busy,
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('No subcategory'),
-                      ),
-                      for (final subcategory in subcategories)
-                        DropdownMenuItem(
-                          value: subcategory.id,
-                          child: Text(subcategory.name),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _subcategoryId = value;
-                        _error = null;
-                      });
-                    },
-                  ),
-                ),
-              ];
+                  for (final subcategory in subcategories)
+                    SearchableDropdownOption(
+                      value: subcategory.id,
+                      label: subcategory.name,
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _subcategoryId = value;
+                    _error = null;
+                  });
+                },
+              );
 
               final startButton = FilledButton.icon(
                 onPressed: _busy || categories.isEmpty ? null : _start,
@@ -313,22 +303,13 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    TextField(
-                      controller: _description,
-                      enabled: !_busy,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => unawaited(_start()),
-                      decoration: const InputDecoration(
-                        hintText: 'What are you working on?',
-                        prefixIcon: Icon(Icons.edit_note, size: 18),
-                      ),
-                    ),
+                    descriptionField,
                     const SizedBox(height: AppSpacing.sm),
                     Row(
                       children: [
-                        Expanded(child: fields[1]),
+                        Expanded(child: categoryField),
                         const SizedBox(width: AppSpacing.sm),
-                        Expanded(child: fields[2]),
+                        Expanded(child: subcategoryField),
                       ],
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -339,11 +320,11 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
 
               return Row(
                 children: [
-                  fields[0],
+                  Expanded(flex: 3, child: descriptionField),
                   const SizedBox(width: AppSpacing.sm),
-                  fields[1],
+                  SizedBox(width: 170, child: categoryField),
                   const SizedBox(width: AppSpacing.sm),
-                  fields[2],
+                  SizedBox(width: 170, child: subcategoryField),
                   const SizedBox(width: AppSpacing.sm),
                   startButton,
                 ],
