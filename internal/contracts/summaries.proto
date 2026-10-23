@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "categories.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// CategoryAllocation is the time attributed to one category in a period.
+message CategoryAllocation {
+  string category_id = 1;
+  string name = 2;
+  CategoryRole role = 3;
+  google.protobuf.Duration duration = 4;
+  int32 entry_count = 5;
+}
+
+// SubcategoryAllocation is the time attributed to one subcategory in a period.
+message SubcategoryAllocation {
+  string subcategory_id = 1;
+  string category_id = 2;
+  string name = 3;
+  google.protobuf.Duration duration = 4;
+  int32 entry_count = 5;
+}
+
+// SupportPersonAllocation is the support time and interaction count for one
+// person, grouped case-insensitively.
+message SupportPersonAllocation {
+  string person = 1;
+  google.protobuf.Duration duration = 2;
+  int32 interactions = 3;
+}
+
+// SupportModeAllocation is the support time and interaction count for one
+// mode, which is the entry's subcategory under a support-role category.
+message SupportModeAllocation {
+  string subcategory_id = 1;
+  string name = 2;
+  google.protobuf.Duration duration = 3;
+  int32 interactions = 4;
+}
+
+// WeekRhythm is one local week's logged time and where most of it went.
+// Week start dates follow the user's week_start setting.
+message WeekRhythm {
+  string week_start_date = 1;
+  google.protobuf.Duration duration = 2;
+  // Empty when the week has no logged time.
+  string top_category_id = 3;
+  string top_category_name = 4;
+}
+
+// PeriodNote is context that belongs to the period: a day note dated inside it
+// or a project note on a subcategory worked on during it.
+message PeriodNote {
+  string id = 1;
+  string date = 2;
+  string subcategory_id = 3;
+  string text = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// PeriodReport is the single authoritative aggregate for an inclusive range of
+// local calendar dates. Escaping the period is impossible: the service resolves
+// the day boundaries in the user's configured timezone.
+message PeriodReport {
+  string from_date = 1;
+  string to_date = 2;
+  google.protobuf.Duration total = 3;
+  int32 entry_count = 4;
+  repeated CategoryAllocation categories = 5;
+  repeated SubcategoryAllocation subcategories = 6;
+  repeated SupportPersonAllocation support_people = 7;
+  repeated SupportModeAllocation support_modes = 8;
+  repeated WeekRhythm weeks = 9;
+  repeated PeriodNote notes = 10;
+}
+
+message GetPeriodReportRequest {
+  // Inclusive local calendar dates in YYYY-MM-DD form, resolved in the user's
+  // configured timezone.
+  string from_date = 1;
+  string to_date = 2;
+  // When true, the service resolves the user's current local week from their
+  // timezone and week_start setting and ignores from_date and to_date. The
+  // client uses this so "this week" never depends on the device clock.
+  bool current_week = 3;
+}
+
+message GetPeriodReportResponse {
+  PeriodReport report = 1;
+}
+
+// SummaryService owns authoritative period aggregates. Today's week bars,
+// initiative time, support rollups and check-in detail all read the same
+// report; no client composes its own period totals.
+service SummaryService {
+  rpc GetPeriodReport(GetPeriodReportRequest) returns (GetPeriodReportResponse);
+}

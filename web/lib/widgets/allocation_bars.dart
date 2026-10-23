@@ -46,70 +46,77 @@ class AllocationBars extends StatelessWidget {
       children: [
         for (final (index, slice) in visible.indexed) ...[
           if (index > 0) const SizedBox(height: 7),
-          Row(
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: palette[index % palette.length],
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              SizedBox(
-                width: 132,
-                child: Text(
-                  slice.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: SizedBox(
-                    height: 6,
-                    child: ColoredBox(
-                      color: scheme.surfaceContainerHighest,
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: slice.shareOf(total).clamp(0.01, 1.0),
+          Builder(
+            builder: (context) {
+              final row = Row(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: palette[index % palette.length],
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(
+                    width: 132,
+                    child: Text(
+                      slice.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: SizedBox(
+                        height: 6,
                         child: ColoredBox(
-                          color: palette[index % palette.length],
+                          color: scheme.surfaceContainerHighest,
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: slice.shareOf(total).clamp(0.01, 1.0),
+                            child: ColoredBox(
+                              color: palette[index % palette.length],
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              if (showShare)
-                SizedBox(
-                  width: 40,
-                  child: Text(
-                    '${(slice.shareOf(total) * 100).round()}%',
-                    textAlign: TextAlign.right,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontFeatures: tabularFigures,
+                  const SizedBox(width: AppSpacing.sm),
+                  if (showShare)
+                    SizedBox(
+                      width: 40,
+                      child: Text(
+                        '${(slice.shareOf(total) * 100).round()}%',
+                        textAlign: TextAlign.right,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(
+                    width: 54,
+                    child: Text(
+                      formatDuration(slice.minutes),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontFeatures: tabularFigures,
+                      ),
                     ),
                   ),
-                ),
-              const SizedBox(width: AppSpacing.sm),
-              SizedBox(
-                width: 54,
-                child: Text(
-                  formatDuration(slice.minutes),
-                  textAlign: TextAlign.right,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: tabularFigures,
-                  ),
-                ),
-              ),
-            ],
+                ],
+              );
+              return slice.tooltip == null
+                  ? row
+                  : Tooltip(message: slice.tooltip!, child: row);
+            },
           ),
         ],
       ],

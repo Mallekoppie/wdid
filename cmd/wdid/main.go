@@ -85,6 +85,7 @@ func run() error {
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService),
 			rpc.NewSettingsService(database, authService),
+			rpc.NewSummaryService(database, authService),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
@@ -92,6 +93,7 @@ func run() error {
 			config.EntryServiceName,
 			config.TimerServiceName,
 			config.SettingsServiceName,
+			config.SummaryServiceName,
 		},
 		Routes: nonRPCRoutes(),
 		SPA: &platform.SPAOptions{

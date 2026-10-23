@@ -197,6 +197,13 @@ class _TodayScreenState extends State<TodayScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final serviceMode = state.hasEntryService;
+    final hasSummary = state.summaryApi != null;
+    final weekPending = hasSummary && state.weekReport == null;
+    final weekLabel = !weekPending
+        ? '${formatDuration(state.weekMinutes)} this week'
+        : state.weekReportError != null
+        ? 'This week unavailable'
+        : 'Loading this week…';
     final items = state.todayItems;
     final todayMinutes = serviceMode
         ? state.todayEntryMinutes
@@ -226,7 +233,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   ],
                 ),
                 Text(
-                  '${formatDuration(state.weekMinutes)} this week',
+                  weekLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                     fontFeatures: tabularFigures,
@@ -333,13 +340,26 @@ class _TodayScreenState extends State<TodayScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       PanelHeader(
-                        title: 'Week by attribution',
-                        subtitle:
-                            '${formatDuration(state.weekMinutes)} logged this week',
+                        title: 'Week by category',
+                        subtitle: weekPending
+                            ? state.weekReportError != null
+                                  ? 'Unavailable'
+                                  : 'Loading…'
+                            : '${formatDuration(state.weekMinutes)} logged this week',
                         icon: Icons.insights_outlined,
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      AllocationBars(slices: state.weekAllocation),
+                      if (hasSummary &&
+                          state.weekReportError != null &&
+                          state.weekReport == null)
+                        _WeekReportError(
+                          message: state.weekReportError!,
+                          onRetry: state.loadWeekReport,
+                        )
+                      else if (weekPending)
+                        const _WeekReportLoading()
+                      else
+                        AllocationBars(slices: state.weekAllocation),
                     ],
                   ),
                 );
@@ -366,6 +386,63 @@ class _TodayScreenState extends State<TodayScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WeekReportLoading extends StatelessWidget {
+  const _WeekReportLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          'Loading this week…',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekReportError extends StatelessWidget {
+  const _WeekReportError({required this.message, required this.onRetry});
+
+  final String message;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Text('Could not load this week', style: theme.textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        OutlinedButton.icon(
+          onPressed: () => unawaited(onRetry()),
+          icon: const Icon(Icons.refresh, size: 15),
+          label: const Text('Retry'),
+        ),
+      ],
     );
   }
 }

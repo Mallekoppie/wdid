@@ -1,5 +1,6 @@
 import '../models/enums.dart';
 import '../models/initiative.dart';
+import '../models/period_report.dart';
 import '../models/work_item.dart';
 import 'time_utils.dart';
 
@@ -12,11 +13,15 @@ class AllocationSlice {
     required this.key,
     required this.label,
     required this.minutes,
+    this.tooltip,
   });
 
   final String key;
   final String label;
   final int minutes;
+
+  /// Optional breakdown shown on hover, such as a category's subcategories.
+  final String? tooltip;
 
   double shareOf(int total) => total == 0 ? 0 : minutes / total;
 }
@@ -32,7 +37,11 @@ List<WorkItem> entriesInRange(
   final from = isoDate(start);
   final to = isoDate(end);
   return items
-      .where((item) => item.localDate.compareTo(from) >= 0 && item.localDate.compareTo(to) <= 0)
+      .where(
+        (item) =>
+            item.localDate.compareTo(from) >= 0 &&
+            item.localDate.compareTo(to) <= 0,
+      )
       .toList()
     ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
 }
@@ -87,23 +96,52 @@ List<AllocationSlice> allocationFor(
     totals[key] = (totals[key] ?? 0) + item.minutes;
   }
 
-  final slices = totals.entries
-      .map(
-        (entry) => AllocationSlice(
-          key: entry.key,
-          label: labels[entry.key] ?? entry.key,
-          minutes: entry.value,
-        ),
-      )
-      .toList()
-    ..sort((a, b) => b.minutes.compareTo(a.minutes));
+  final slices =
+      totals.entries
+          .map(
+            (entry) => AllocationSlice(
+              key: entry.key,
+              label: labels[entry.key] ?? entry.key,
+              minutes: entry.value,
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.minutes.compareTo(a.minutes));
   return slices;
 }
 
-int initiativeMinutesIn(Iterable<WorkItem> items, String initiativeId) =>
-    items
-        .where((item) => item.initiativeId == initiativeId)
-        .fold(0, (sum, item) => sum + item.minutes);
+/// Maps an authoritative period report onto the bars Today renders. The
+/// category's subcategory allocation becomes its hover breakdown.
+List<AllocationSlice> allocationForReport(PeriodReport report) {
+  final byCategory = <String, List<SubcategoryAllocation>>{};
+  for (final subcategory in report.subcategories) {
+    byCategory.putIfAbsent(subcategory.categoryId, () => []).add(subcategory);
+  }
+
+  return [
+    for (final category in report.categories)
+      AllocationSlice(
+        key: category.categoryId,
+        label: category.name,
+        minutes: category.minutes,
+        tooltip: _subcategoryBreakdown(byCategory[category.categoryId]),
+      ),
+  ];
+}
+
+String? _subcategoryBreakdown(List<SubcategoryAllocation>? subcategories) {
+  if (subcategories == null || subcategories.isEmpty) return null;
+  return subcategories
+      .map(
+        (subcategory) =>
+            '${subcategory.name} · ${formatDuration(subcategory.minutes)}',
+      )
+      .join('\n');
+}
+
+int initiativeMinutesIn(Iterable<WorkItem> items, String initiativeId) => items
+    .where((item) => item.initiativeId == initiativeId)
+    .fold(0, (sum, item) => sum + item.minutes);
 
 int supportMinutes(Iterable<WorkItem> items) => items
     .where((item) => item.isSupport)

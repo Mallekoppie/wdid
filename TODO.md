@@ -126,12 +126,12 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 - [x] Add `entries.proto` and `timer.proto`; implement `EntryService` and
       `TimerService`.
-- [ ] Add `summaries.proto` with `GetPeriodReport` — the only aggregation
+- [x] Add `summaries.proto` with `GetPeriodReport` — the only aggregation
       source.
 - [x] Timer lifecycle: start, pause, resume, stop; paused time excluded; stops
       under one minute rejected unless `discard`; block limit returns keep/trim/
       discard.
-- [ ] Wire Today: timer card, quick add, today list, and week bars from
+- [x] Wire Today: timer card, quick add, today list, and week bars from
       `GetPeriodReport`.
 - [ ] Use settings for default duration, long-timer threshold, timezone, and week
       start.

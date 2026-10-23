@@ -7,6 +7,7 @@ import '../data/demo_repository.dart';
 import '../data/entry_api.dart';
 import '../data/repository.dart';
 import '../data/settings_api.dart';
+import '../data/summary_api.dart';
 import '../data/timer_api.dart';
 import '../models/app_settings.dart';
 import '../models/check_in.dart';
@@ -14,6 +15,7 @@ import '../models/drafts.dart';
 import '../models/enums.dart';
 import '../models/initiative.dart';
 import '../models/note.dart';
+import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../models/work_item.dart';
@@ -122,6 +124,7 @@ class AppState extends ChangeNotifier {
     this.settingsApi,
     this.entryApi,
     this.timerApi,
+    this.summaryApi,
   });
 
   final WdidRepository repository;
@@ -132,6 +135,10 @@ class AppState extends ChangeNotifier {
   final SettingsApi? settingsApi;
   final EntryApi? entryApi;
   final TimerApi? timerApi;
+
+  /// Authoritative period aggregation. Null while a screen still runs on the
+  /// demo adapter; Today then falls back to the demo's local week rollup.
+  final SummaryApi? summaryApi;
 
   AppStatus status = AppStatus.loading;
   String? loadError;
@@ -156,6 +163,11 @@ class AppState extends ChangeNotifier {
   bool entriesLoading = false;
   String? entriesError;
 
+  /// The service's report for the current week, which owns the week bars and
+  /// the header's weekly total. It is reloaded after every entry mutation.
+  PeriodReport? weekReport;
+  String? weekReportError;
+
   /// The entries for the Log's current filter, newest first.
   List<WorkEntry> logEntries = const [];
   Set<String> logOverlappingIds = const {};
@@ -163,6 +175,7 @@ class AppState extends ChangeNotifier {
   String? logError;
   LogQuery? _logQuery;
   int _logRequest = 0;
+  int _weekRequest = 0;
 
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
@@ -213,6 +226,7 @@ class AppState extends ChangeNotifier {
       status = AppStatus.ready;
       _notify();
       unawaited(loadEntries());
+      unawaited(loadWeekReport());
     } catch (error) {
       status = AppStatus.error;
       loadError = error.toString();
@@ -298,6 +312,32 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Loads the service's authoritative report for the current week. The
+  /// service resolves "this week" from the user's timezone and week start, so
+  /// the device clock cannot shift the period.
+  Future<void> loadWeekReport() async {
+    final api = summaryApi;
+    if (api == null) return;
+
+    final request = ++_weekRequest;
+    weekReportError = null;
+    _notify();
+    try {
+      final report = await api.getPeriodReport(currentWeek: true);
+      if (request != _weekRequest) return;
+      weekReport = report;
+    } catch (error) {
+      if (request != _weekRequest) return;
+      weekReportError = error.toString();
+    } finally {
+      if (request == _weekRequest) _notify();
+    }
+  }
+
+  void _refreshWeekReport() {
+    if (summaryApi != null) unawaited(loadWeekReport());
+  }
+
   /// Presentation-only choices for capture forms. Once a live taxonomy is
   /// loaded it is the source, so a newly created or renamed category appears
   /// in every entry selector immediately.
@@ -372,14 +412,28 @@ class AppState extends ChangeNotifier {
 
   int get todayMinutes => totalMinutes(todayItems);
 
-  int get weekMinutes => totalMinutes(
-    entriesForWeek(workItems, today, weekStart: settings.weekStart),
-  );
+  /// The current week's total. In service mode this is only ever the report's
+  /// total: while the report is missing, the header shows zero rather than a
+  /// locally composed number. The demo adapter keeps its local rollup.
+  int get weekMinutes {
+    if (summaryApi != null) return weekReport?.totalMinutes ?? 0;
+    return totalMinutes(
+      entriesForWeek(workItems, today, weekStart: settings.weekStart),
+    );
+  }
 
-  List<AllocationSlice> get weekAllocation => allocationFor(
-    entriesForWeek(workItems, today, weekStart: settings.weekStart),
-    initiatives,
-  );
+  /// Week bars in the shape the AllocationBars widget renders. The categories
+  /// and minutes are the service's, never a recomputation from entries.
+  List<AllocationSlice> get weekAllocation {
+    if (summaryApi != null) {
+      final report = weekReport;
+      return report == null ? const [] : allocationForReport(report);
+    }
+    return allocationFor(
+      entriesForWeek(workItems, today, weekStart: settings.weekStart),
+      initiatives,
+    );
+  }
 
   List<Initiative> get openInitiatives =>
       initiatives.where((initiative) => !initiative.isArchived).toList();
@@ -618,6 +672,7 @@ class AppState extends ChangeNotifier {
         lastSubcategoryId = entry.subcategoryId;
       }
       _refreshTicker();
+      _refreshWeekReport();
       _notify();
       return StoppedTimer(
         minutes: entry?.minutes ?? 0,
@@ -675,6 +730,7 @@ class AppState extends ChangeNotifier {
         activeTimer = null;
         // Another tab stopped the timer; its saved entry belongs in Today.
         unawaited(loadEntries());
+        _refreshWeekReport();
       } else {
         _applySnapshot(snapshot);
       }
@@ -856,6 +912,7 @@ class AppState extends ChangeNotifier {
     }
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
+    _refreshWeekReport();
     _notify();
     return entry;
   }
@@ -864,6 +921,7 @@ class AppState extends ChangeNotifier {
     final updated = await _entryApi().updateEntry(entry);
     entries = _replaceEntry(entries, updated);
     logEntries = _replaceEntry(logEntries, updated);
+    _refreshWeekReport();
     _notify();
     return updated;
   }
@@ -872,6 +930,7 @@ class AppState extends ChangeNotifier {
     await _entryApi().deleteEntry(id);
     entries = entries.where((entry) => entry.id != id).toList();
     logEntries = logEntries.where((entry) => entry.id != id).toList();
+    _refreshWeekReport();
     _notify();
   }
 
@@ -881,6 +940,7 @@ class AppState extends ChangeNotifier {
     final halves = await _entryApi().splitEntry(id, atMinutes);
     entries = _replaceWithHalves(entries, id, halves);
     logEntries = _replaceWithHalves(logEntries, id, halves);
+    _refreshWeekReport();
     _notify();
     return halves;
   }
@@ -1196,6 +1256,8 @@ class AppState extends ChangeNotifier {
         schemaVersion: about?.schemaVersion,
         license: about?.license,
       );
+      // Week start and timezone both move the period boundaries.
+      _refreshWeekReport();
       _notify();
       return settings;
     } catch (error) {

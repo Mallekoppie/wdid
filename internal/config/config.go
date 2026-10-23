@@ -36,6 +36,8 @@ const (
 	TimerServiceName = "wdid.v1.TimerService"
 	// SettingsServiceName owns per-user behaviour and appearance.
 	SettingsServiceName = "wdid.v1.SettingsService"
+	// SummaryServiceName owns authoritative period aggregation.
+	SummaryServiceName = "wdid.v1.SummaryService"
 
 	// AuthRegisterAccountProcedure is public: a new account needs no token.
 	AuthRegisterAccountProcedure = "/wdid.v1.AuthService/RegisterAccount"

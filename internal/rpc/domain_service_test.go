@@ -36,6 +36,13 @@ func newDomainHandlerForConfig(t *testing.T, cfg config.Config) (http.Handler, *
 // the public RPC surface.
 func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() time.Time) (http.Handler, *store.Store) {
 	t.Helper()
+	return newDomainHandlerWithClocks(t, cfg, now, nil)
+}
+
+// newDomainHandlerWithClocks controls the timer and summary clocks, so tests
+// can pin the meaning of "now" for both server-owned lifecycles.
+func newDomainHandlerWithClocks(t *testing.T, cfg config.Config, timerNow, summaryNow func() time.Time) (http.Handler, *store.Store) {
+	t.Helper()
 
 	database, err := store.Open(cfg)
 	if err != nil {
@@ -46,8 +53,12 @@ func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() 
 	})
 
 	timerOptions := make([]rpc.TimerServiceOption, 0, 1)
-	if now != nil {
-		timerOptions = append(timerOptions, rpc.WithTimerClock(now))
+	if timerNow != nil {
+		timerOptions = append(timerOptions, rpc.WithTimerClock(timerNow))
+	}
+	summaryOptions := make([]rpc.SummaryServiceOption, 0, 1)
+	if summaryNow != nil {
+		summaryOptions = append(summaryOptions, rpc.WithSummaryClock(summaryNow))
 	}
 
 	authService := auth.NewService(database, cfg)
@@ -58,6 +69,7 @@ func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() 
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService, timerOptions...),
 			rpc.NewSettingsService(database, authService),
+			rpc.NewSummaryService(database, authService, summaryOptions...),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
@@ -65,6 +77,7 @@ func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() 
 			config.EntryServiceName,
 			config.TimerServiceName,
 			config.SettingsServiceName,
+			config.SummaryServiceName,
 		},
 	})
 	if err != nil {
@@ -91,6 +104,15 @@ func newDomainServerWithClock(t *testing.T, now func() time.Time) (*httptest.Ser
 	t.Helper()
 
 	handler, database := newDomainHandlerWithTimerClock(t, testConfig(t), now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, database
+}
+
+func newDomainServerWithSummaryClock(t *testing.T, now func() time.Time) (*httptest.Server, *store.Store) {
+	t.Helper()
+
+	handler, database := newDomainHandlerWithClocks(t, testConfig(t), nil, now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return server, database

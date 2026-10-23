@@ -8,6 +8,7 @@ import 'data/category_api.dart';
 import 'data/entry_api.dart';
 import 'data/repository.dart';
 import 'data/settings_api.dart';
+import 'data/summary_api.dart';
 import 'data/timer_api.dart';
 import 'models/app_settings.dart';
 import 'routing/app_router.dart';
@@ -26,6 +27,7 @@ class WdidApp extends StatefulWidget {
     this.settingsApiBuilder,
     this.entryApiBuilder,
     this.timerApiBuilder,
+    this.summaryApiBuilder,
   });
 
   final WdidRepository repository;
@@ -44,6 +46,9 @@ class WdidApp extends StatefulWidget {
 
   /// Builds the service-backed timer client with a token accessor.
   final TimerApi Function(String? Function() token)? timerApiBuilder;
+
+  /// Builds the service-backed period-report client with a token accessor.
+  final SummaryApi Function(String? Function() token)? summaryApiBuilder;
 
   @override
   State<WdidApp> createState() => _WdidAppState();
@@ -65,6 +70,7 @@ class _WdidAppState extends State<WdidApp> {
       settingsApi: widget.settingsApiBuilder?.call(token),
       entryApi: widget.entryApiBuilder?.call(token),
       timerApi: widget.timerApiBuilder?.call(token),
+      summaryApi: widget.summaryApiBuilder?.call(token),
     );
     _router = buildRouter(_state, _auth, initialLocation: widget.initialRoute);
     unawaited(_state.load());
