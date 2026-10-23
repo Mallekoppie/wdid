@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import 'data/auth_api.dart';
 import 'data/category_api.dart';
+import 'data/entry_api.dart';
 import 'data/repository.dart';
 import 'data/settings_api.dart';
 import 'models/app_settings.dart';
@@ -22,6 +23,7 @@ class WdidApp extends StatefulWidget {
     this.initialRoute,
     this.categoryApiBuilder,
     this.settingsApiBuilder,
+    this.entryApiBuilder,
   });
 
   final WdidRepository repository;
@@ -34,6 +36,9 @@ class WdidApp extends StatefulWidget {
 
   /// Builds the service-backed settings client with a token accessor.
   final SettingsApi Function(String? Function() token)? settingsApiBuilder;
+
+  /// Builds the service-backed entry client with a token accessor.
+  final EntryApi Function(String? Function() token)? entryApiBuilder;
 
   @override
   State<WdidApp> createState() => _WdidAppState();
@@ -53,6 +58,7 @@ class _WdidAppState extends State<WdidApp> {
       widget.repository,
       categoryApi: widget.categoryApiBuilder?.call(token),
       settingsApi: widget.settingsApiBuilder?.call(token),
+      entryApi: widget.entryApiBuilder?.call(token),
     );
     _router = buildRouter(_state, _auth, initialLocation: widget.initialRoute);
     unawaited(_state.load());

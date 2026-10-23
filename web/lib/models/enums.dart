@@ -20,12 +20,12 @@ enum InitiativeStatus {
   }
 
   String get label => switch (this) {
-        InitiativeStatus.planned => 'Planned',
-        InitiativeStatus.active => 'Active',
-        InitiativeStatus.blocked => 'Blocked',
-        InitiativeStatus.done => 'Done',
-        InitiativeStatus.archived => 'Archived',
-      };
+    InitiativeStatus.planned => 'Planned',
+    InitiativeStatus.active => 'Active',
+    InitiativeStatus.blocked => 'Blocked',
+    InitiativeStatus.done => 'Done',
+    InitiativeStatus.archived => 'Archived',
+  };
 }
 
 enum WorkType {
@@ -35,6 +35,15 @@ enum WorkType {
   static WorkType parse(Object? value) => value?.toString() == 'initiative'
       ? WorkType.initiative
       : WorkType.category;
+}
+
+/// How a work entry was captured. Mirrors `EntrySource` in the service.
+enum EntrySource {
+  manual,
+  timer;
+
+  static EntrySource parse(Object? value) =>
+      value?.toString() == 'timer' ? EntrySource.timer : EntrySource.manual;
 }
 
 enum CheckInState {
@@ -55,11 +64,11 @@ enum CheckInState {
   String get wireName => this == CheckInState.final_ ? 'final' : name;
 
   String get label => switch (this) {
-        CheckInState.draft => 'Draft',
-        CheckInState.generated => 'Generated',
-        CheckInState.edited => 'Edited',
-        CheckInState.final_ => 'Final',
-      };
+    CheckInState.draft => 'Draft',
+    CheckInState.generated => 'Generated',
+    CheckInState.edited => 'Edited',
+    CheckInState.final_ => 'Final',
+  };
 }
 
 /// Support modes from the Support screen design.
@@ -83,11 +92,11 @@ enum SupportMode {
   }
 
   String get label => switch (this) {
-        SupportMode.review => 'Review',
-        SupportMode.pair => 'Pair',
-        SupportMode.unblock => 'Unblock',
-        SupportMode.mentor => 'Mentor',
-        SupportMode.incident => 'Incident',
-        SupportMode.other => 'Other',
-      };
+    SupportMode.review => 'Review',
+    SupportMode.pair => 'Pair',
+    SupportMode.unblock => 'Unblock',
+    SupportMode.mentor => 'Mentor',
+    SupportMode.incident => 'Incident',
+    SupportMode.other => 'Other',
+  };
 }

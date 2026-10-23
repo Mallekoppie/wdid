@@ -15,6 +15,7 @@ class AppDropdown<T> extends StatelessWidget {
     this.enabled = true,
     this.isDense = true,
     this.expanded = true,
+    this.errorText,
   });
 
   final T? value;
@@ -26,6 +27,7 @@ class AppDropdown<T> extends StatelessWidget {
   final bool enabled;
   final bool isDense;
   final bool expanded;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -34,12 +36,16 @@ class AppDropdown<T> extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        errorText: errorText,
         enabled: enabled,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         prefixIcon: icon == null
             ? null
             : Icon(icon, size: 16, color: scheme.onSurfaceVariant),
-        prefixIconConstraints: const BoxConstraints(minWidth: 30, minHeight: 20),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 30,
+          minHeight: 20,
+        ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(

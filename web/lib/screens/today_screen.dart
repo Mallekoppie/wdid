@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/work_entry.dart';
 import '../models/work_item.dart';
+import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/attribution.dart';
@@ -15,7 +17,9 @@ import '../widgets/forms/entry_dialog.dart';
 import '../widgets/forms/support_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/quick_add_bar.dart';
+import '../widgets/quick_capture_bar.dart';
 import '../widgets/screen_states.dart';
+import '../widgets/work_entry_row.dart';
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -35,9 +39,8 @@ class _TodayScreenState extends State<TodayScreen> {
         ? await showSupportDialog(context, state: state, existing: item)
         : await showEntryDialog(context, state: state, existing: item);
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry updated')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry updated')));
     }
   }
 
@@ -46,9 +49,8 @@ class _TodayScreenState extends State<TodayScreen> {
     try {
       await state.deleteEntry(item.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry deleted')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry deleted')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -61,9 +63,8 @@ class _TodayScreenState extends State<TodayScreen> {
     final state = AppStateScope.read(context);
     final saved = await showEntryDialog(context, state: state);
     if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry saved')));
     }
   }
 
@@ -71,10 +72,121 @@ class _TodayScreenState extends State<TodayScreen> {
     final state = AppStateScope.read(context);
     final saved = await showSupportDialog(context, state: state);
     if (saved != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Support entry saved')));
+    }
+  }
+
+  Future<void> _editOutcome(WorkEntry entry) async {
+    final state = AppStateScope.read(context);
+    final outcome = await showDialog<String>(
+      context: context,
+      builder: (context) => _OutcomeDialog(entry: entry),
+    );
+    if (outcome == null || !mounted) return;
+
+    try {
+      await state.updateWorkEntry(entry.copyWith(outcome: outcome));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Outcome saved')));
+    } catch (error) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Support entry saved')),
+        SnackBar(content: Text('Could not save the outcome: $error')),
       );
     }
+  }
+
+  Widget _serviceTodayList(AppState state) {
+    if (state.entriesLoading) {
+      return Panel(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  "Loading today's entries…",
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (state.entriesError != null) {
+      final theme = Theme.of(context);
+      return Panel(
+        tone: PanelTone.warning,
+        child: Column(
+          children: [
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 28,
+              color: theme.colorScheme.error,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              "Could not load today's entries",
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              state.entriesError!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: state.loadEntries,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final entries = state.todayEntries;
+    if (entries.isEmpty) {
+      return const Panel(
+        padding: EdgeInsets.zero,
+        child: EmptyState(
+          icon: Icons.timelapse_outlined,
+          title: 'Nothing logged yet',
+          message: 'Capture your first entry above.',
+        ),
+      );
+    }
+
+    return Panel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (final entry in entries)
+            WorkEntryRow(
+              entry: entry,
+              category: state.categoryById(entry.categoryId),
+              subcategory: state.subcategoryById(entry.subcategoryId),
+              onEditOutcome: (entry) => unawaited(_editOutcome(entry)),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -82,7 +194,11 @@ class _TodayScreenState extends State<TodayScreen> {
     final state = AppStateScope.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final serviceMode = state.hasEntryService;
     final items = state.todayItems;
+    final todayMinutes = serviceMode
+        ? state.todayEntryMinutes
+        : state.todayMinutes;
 
     return ScreenBody(
       child: PageScaffold(
@@ -117,79 +233,92 @@ class _TodayScreenState extends State<TodayScreen> {
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
-            const _TimerCard(),
-            const SizedBox(height: AppSpacing.md),
-            QuickAddBar(onOpenFullForm: _openEntryForm),
+            if (!serviceMode) ...[
+              const _TimerCard(),
+              const SizedBox(height: AppSpacing.md),
+              QuickAddBar(onOpenFullForm: _openEntryForm),
+            ] else
+              const QuickCaptureBar(),
             const SizedBox(height: AppSpacing.xl),
             Row(
               children: [
                 Text('Today', style: theme.textTheme.titleMedium),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
-                  formatDuration(state.todayMinutes),
+                  formatDuration(todayMinutes),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                     fontFeatures: tabularFigures,
                   ),
                 ),
                 const Spacer(),
-                TextButton.icon(
-                  onPressed: _openEntryForm,
-                  icon: const Icon(Icons.add, size: 15),
-                  label: const Text('Add entry'),
-                ),
+                if (!serviceMode)
+                  TextButton.icon(
+                    onPressed: _openEntryForm,
+                    icon: const Icon(Icons.add, size: 15),
+                    label: const Text('Add entry'),
+                  ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            Panel(
-              padding: EdgeInsets.zero,
-              child: items.isEmpty
-                  ? EmptyState(
-                      icon: Icons.timelapse_outlined,
-                      title: 'Nothing logged yet',
-                      message:
-                          'Start a timer above, or add an entry after the fact.',
-                      action: FilledButton.icon(
-                        onPressed: _openEntryForm,
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('Add entry'),
+            if (serviceMode)
+              _serviceTodayList(state)
+            else
+              Panel(
+                padding: EdgeInsets.zero,
+                child: items.isEmpty
+                    ? EmptyState(
+                        icon: Icons.timelapse_outlined,
+                        title: 'Nothing logged yet',
+                        message: 'Start a timer above, or add an entry after the fact.',
+                        action: FilledButton.icon(
+                          onPressed: _openEntryForm,
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('Add entry'),
+                        ),
+                      )
+                    : Column(
+                        children: [
+                          for (final item in items)
+                            EntryRow(
+                              item: item,
+                              initiatives: state.initiatives,
+                              onEdit: _edit,
+                              onDelete: (item) => unawaited(_delete(item)),
+                              onOpenInitiative: (item) {
+                                if (item.initiativeId != null) {
+                                  context.go(
+                                    '/initiatives/${item.initiativeId}',
+                                  );
+                                }
+                              },
+                            ),
+                        ],
                       ),
-                    )
-                  : Column(
-                      children: [
-                        for (final item in items)
-                          EntryRow(
-                            item: item,
-                            initiatives: state.initiatives,
-                            onEdit: _edit,
-                            onDelete: (item) => unawaited(_delete(item)),
-                            onOpenInitiative: (item) {
-                              if (item.initiativeId != null) {
-                                context.go('/initiatives/${item.initiativeId}');
-                              }
-                            },
-                          ),
-                      ],
+              ),
+            if (!serviceMode) ...[
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: _logSupport,
+                    icon: const Icon(
+                      Icons.volunteer_activism_outlined,
+                      size: 16,
                     ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: _logSupport,
-                  icon: const Icon(Icons.volunteer_activism_outlined, size: 16),
-                  label: const Text('Log support'),
-                ),
-                const Spacer(),
-                Text(
-                  '${items.where((item) => item.isSupport).length} support interactions today',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: tabularFigures,
+                    label: const Text('Log support'),
                   ),
-                ),
-              ],
-            ),
+                  const Spacer(),
+                  Text(
+                    '${items.where((item) => item.isSupport).length} support interactions today',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontFeatures: tabularFigures,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -236,6 +365,56 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 }
 
+class _OutcomeDialog extends StatefulWidget {
+  const _OutcomeDialog({required this.entry});
+
+  final WorkEntry entry;
+
+  @override
+  State<_OutcomeDialog> createState() => _OutcomeDialogState();
+}
+
+class _OutcomeDialogState extends State<_OutcomeDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.entry.outcome,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        widget.entry.outcome.isEmpty ? 'Add outcome' : 'Edit outcome',
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 4,
+        decoration: const InputDecoration(
+          labelText: 'Outcome',
+          hintText: 'Script runs against staging',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('Save outcome'),
+        ),
+      ],
+    );
+  }
+}
+
 class _TimerCard extends StatefulWidget {
   const _TimerCard();
 
@@ -271,9 +450,8 @@ class _TimerCardState extends State<_TimerCard> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -311,8 +489,8 @@ class _TimerCardState extends State<_TimerCard> {
     final running = timer != null;
     final elapsed = timer?.elapsedAt(DateTime.now()) ?? Duration.zero;
     final choices = state.attributionChoices;
-    final choice = state.lastAttribution ??
-        (choices.isEmpty ? null : choices.first);
+    final choice =
+        state.lastAttribution ?? (choices.isEmpty ? null : choices.first);
 
     return Panel(
       tone: running ? PanelTone.accent : PanelTone.normal,
@@ -322,12 +500,10 @@ class _TimerCardState extends State<_TimerCard> {
           PanelHeader(
             title: running
                 ? timer.isPaused
-                    ? 'Timer paused'
-                    : 'Running'
+                      ? 'Timer paused'
+                      : 'Running'
                 : 'Start a timer',
-            subtitle: running
-                ? 'Since ${formatTime(timer.startedAt)}'
-                : 'Pick an attribution and start working. Last choice is remembered.',
+            subtitle: running ? 'Since ${formatTime(timer.startedAt)}' : 'Pick an attribution and start working. Last choice is remembered.',
             icon: running ? Icons.timer_outlined : Icons.play_circle_outline,
             trailing: running
                 ? Text(
@@ -425,10 +601,7 @@ class _TimerCardState extends State<_TimerCard> {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      '·',
-                      style: TextStyle(color: scheme.onSurfaceVariant),
-                    ),
+                    Text('·', style: TextStyle(color: scheme.onSurfaceVariant)),
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: Text(
@@ -445,8 +618,9 @@ class _TimerCardState extends State<_TimerCard> {
                   runSpacing: AppSpacing.sm,
                   children: [
                     OutlinedButton.icon(
-                      onPressed:
-                          timer.isPaused ? state.resumeTimer : state.pauseTimer,
+                      onPressed: timer.isPaused
+                          ? state.resumeTimer
+                          : state.pauseTimer,
                       icon: Icon(
                         timer.isPaused ? Icons.play_arrow : Icons.pause,
                         size: 16,
@@ -522,9 +696,8 @@ class _DayNoteCardState extends State<_DayNoteCard> {
         _saving = false;
         _saved = true;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Day note saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Day note saved')));
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -544,7 +717,9 @@ class _DayNoteCardState extends State<_DayNoteCard> {
         children: [
           PanelHeader(
             title: 'End of day note',
-            subtitle: _saved ? 'Saved just now' : 'Context that is easy to lose',
+            subtitle: _saved
+                ? 'Saved just now'
+                : 'Context that is easy to lose',
             icon: Icons.notes_outlined,
           ),
           const SizedBox(height: AppSpacing.md),

@@ -4,6 +4,7 @@ import 'app.dart';
 import 'data/auth_api.dart';
 import 'data/category_api.dart';
 import 'data/demo_repository.dart';
+import 'data/entry_api.dart';
 import 'data/settings_api.dart';
 
 void main() {
@@ -16,6 +17,7 @@ void main() {
           GrpcCategoryApi(rpc: GrpcCategoryRpc(token: token)),
       settingsApiBuilder: (token) =>
           GrpcSettingsApi(rpc: GrpcSettingsRpc(token: token)),
+      entryApiBuilder: (token) => GrpcEntryApi(rpc: GrpcEntryRpc(token: token)),
     ),
   );
 }

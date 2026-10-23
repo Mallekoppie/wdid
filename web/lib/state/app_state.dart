@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' hide Category;
 
 import '../data/category_api.dart';
 import '../data/demo_repository.dart';
+import '../data/entry_api.dart';
 import '../data/repository.dart';
 import '../data/settings_api.dart';
 import '../models/app_settings.dart';
@@ -13,6 +14,7 @@ import '../models/enums.dart';
 import '../models/initiative.dart';
 import '../models/note.dart';
 import '../models/taxonomy.dart';
+import '../models/work_entry.dart';
 import '../models/work_item.dart';
 import '../utils/analytics.dart';
 import '../utils/attribution.dart';
@@ -43,14 +45,20 @@ class ActiveTimer {
 }
 
 class AppState extends ChangeNotifier {
-  AppState(this.repository, {this.categoryApi, this.settingsApi});
+  AppState(
+    this.repository, {
+    this.categoryApi,
+    this.settingsApi,
+    this.entryApi,
+  });
 
   final WdidRepository repository;
 
-  /// Service-backed taxonomy and preferences. Null keeps the demo adapter,
-  /// which is how screens without a service contract still run.
+  /// Service-backed taxonomy, preferences and work entries. Null keeps the
+  /// demo adapter, which is how screens without a service contract still run.
   final CategoryApi? categoryApi;
   final SettingsApi? settingsApi;
+  final EntryApi? entryApi;
 
   AppStatus status = AppStatus.loading;
   String? loadError;
@@ -69,6 +77,15 @@ class AppState extends ChangeNotifier {
   String? preferencesError;
   AboutInfo? about;
   bool _taxonomyLoaded = false;
+
+  /// The signed-in user's entries for today, newest first.
+  List<WorkEntry> entries = const [];
+  bool entriesLoading = false;
+  String? entriesError;
+
+  /// The last attribution used by quick capture, remembered for the next one.
+  String? lastCategoryId;
+  String? lastSubcategoryId;
 
   ActiveTimer? activeTimer;
   AttributionChoice? lastAttribution;
@@ -106,6 +123,8 @@ class AppState extends ChangeNotifier {
       }
       _ensureAttribution();
       status = AppStatus.ready;
+      _notify();
+      unawaited(loadEntries());
     } catch (error) {
       status = AppStatus.error;
       loadError = error.toString();
@@ -165,6 +184,32 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Loads today's work entries from the service. Failures stay local to the
+  /// Today list instead of taking down the whole journal.
+  Future<void> loadEntries() async {
+    final api = entryApi;
+    if (api == null) return;
+
+    entriesLoading = true;
+    entriesError = null;
+    _notify();
+    try {
+      final loaded = await api.listEntries(today: true);
+      entries = _newestFirst(loaded);
+      // Prefill the capture selector from the most recent entry, so a reload
+      // keeps the last used pair without adding a preference field.
+      if (entries.isNotEmpty) {
+        lastCategoryId ??= entries.first.categoryId;
+        lastSubcategoryId ??= entries.first.subcategoryId;
+      }
+    } catch (error) {
+      entriesError = error.toString();
+    } finally {
+      entriesLoading = false;
+      _notify();
+    }
+  }
+
   /// Presentation-only choices for capture forms. Once a live taxonomy is
   /// loaded it is the source, so a newly created or renamed category appears
   /// in every entry selector immediately.
@@ -186,6 +231,40 @@ class AppState extends ChangeNotifier {
   List<Subcategory> subcategoriesFor(String categoryId) => subcategories
       .where((subcategory) => subcategory.categoryId == categoryId)
       .toList();
+
+  /// The subcategories an entry selector offers, excluding archived rows.
+  List<Subcategory> selectableSubcategoriesFor(String categoryId) =>
+      subcategoriesFor(categoryId)
+          .where((subcategory) => !subcategory.archived)
+          .toList();
+
+  /// The categories an entry selector offers, excluding archived rows.
+  List<Category> get selectableCategories =>
+      categories.where((category) => !category.archived).toList();
+
+  Category? categoryById(String id) {
+    for (final category in categories) {
+      if (category.id == id) return category;
+    }
+    return null;
+  }
+
+  Subcategory? subcategoryById(String id) {
+    for (final subcategory in subcategories) {
+      if (subcategory.id == id) return subcategory;
+    }
+    return null;
+  }
+
+  bool get hasEntryService => entryApi != null;
+
+  /// Entries loaded for today by the service, oldest first. The server owns
+  /// the day boundary, so this never re-filters on the device's clock.
+  List<WorkEntry> get todayEntries =>
+      [...entries]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+
+  int get todayEntryMinutes =>
+      todayEntries.fold(0, (total, entry) => total + entry.minutes);
 
   Initiative? initiativeById(String? id) {
     if (id == null) return null;
@@ -400,6 +479,66 @@ class AppState extends ChangeNotifier {
         source: 'manual',
       ),
     );
+  }
+
+  // --- Service-backed entries -------------------------------------------
+
+  EntryApi _entryApi() {
+    final api = entryApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'EntryService',
+        'Work entries need the service contract.',
+      );
+    }
+    return api;
+  }
+
+  /// Captures one line of work against a category and optional subcategory.
+  /// The pair is remembered for the next capture.
+  Future<WorkEntry> quickCapture({
+    required String categoryId,
+    String subcategoryId = '',
+    required String description,
+    required int minutes,
+    String outcome = '',
+    String person = '',
+  }) async {
+    final now = DateTime.now();
+    final entry = await _entryApi().createEntry(
+      EntryDraft(
+        categoryId: categoryId,
+        subcategoryId: subcategoryId,
+        description: description,
+        outcome: outcome,
+        startedAt: now.subtract(Duration(minutes: minutes)),
+        minutes: minutes,
+        person: person,
+        source: EntrySource.manual,
+      ),
+    );
+
+    entries = _newestFirst([entry, ...entries]);
+    lastCategoryId = categoryId;
+    lastSubcategoryId = subcategoryId;
+    _notify();
+    return entry;
+  }
+
+  Future<WorkEntry> updateWorkEntry(WorkEntry entry) async {
+    final updated = await _entryApi().updateEntry(entry);
+    entries = _newestFirst([
+      for (final existing in entries)
+        if (existing.id == updated.id) updated else existing,
+    ]);
+    _notify();
+    return updated;
+  }
+
+  Future<void> deleteWorkEntry(String id) async {
+    await _entryApi().deleteEntry(id);
+    entries = entries.where((entry) => entry.id != id).toList();
+    _notify();
   }
 
   Future<WorkItem> updateEntry(WorkItem item) async {
@@ -721,6 +860,9 @@ class AppState extends ChangeNotifier {
   void requestSearchFocus() {
     searchFocusRequest.value++;
   }
+
+  List<WorkEntry> _newestFirst(Iterable<WorkEntry> items) =>
+      items.toList()..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 
   void _replaceCategory(Category updated) {
     categories = [

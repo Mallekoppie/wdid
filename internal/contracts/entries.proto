@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "categories.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// EntrySource records how a work entry was captured.
+enum EntrySource {
+  ENTRY_SOURCE_UNSPECIFIED = 0;
+  ENTRY_SOURCE_MANUAL = 1;
+  ENTRY_SOURCE_TIMER = 2;
+}
+
+// WorkEntry is a recorded block of work time with exactly one category and an
+// optional subcategory from that category. Duration is authoritative.
+message WorkEntry {
+  string id = 1;
+  string category_id = 2;
+  string subcategory_id = 3;
+  string description = 4;
+  string outcome = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp ended_at = 7;
+  google.protobuf.Duration duration = 8;
+  string local_date = 9;
+  string person = 10;
+  string team = 11;
+  repeated string tags = 12;
+  repeated Link links = 13;
+  EntrySource source = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp updated_at = 16;
+}
+
+message ListEntriesRequest {
+  // Local calendar dates use YYYY-MM-DD so the day boundary is explicit.
+  string local_date = 1;
+  google.protobuf.Timestamp from = 2;
+  google.protobuf.Timestamp to = 3;
+  string category_id = 4;
+  string subcategory_id = 5;
+  string person = 6;
+  string query = 7;
+  int32 page_size = 8;
+  string page_token = 9;
+  // Selects today in the user's configured timezone. When set, local_date is
+  // ignored, so the client never has to reproduce the server's day boundary.
+  bool today = 10;
+}
+
+message ListEntriesResponse {
+  repeated WorkEntry entries = 1;
+  string next_page_token = 2;
+}
+
+message GetEntryRequest {
+  string id = 1;
+}
+
+message GetEntryResponse {
+  WorkEntry entry = 1;
+}
+
+message CreateEntryRequest {
+  string category_id = 1;
+  string subcategory_id = 2;
+  string description = 3;
+  string outcome = 4;
+  google.protobuf.Timestamp started_at = 5;
+  // When both ended_at and duration are absent, the user's default entry
+  // duration from Settings decides the block length.
+  google.protobuf.Timestamp ended_at = 6;
+  google.protobuf.Duration duration = 7;
+  string person = 8;
+  string team = 9;
+  repeated string tags = 10;
+  repeated Link links = 11;
+  EntrySource source = 12;
+}
+
+message CreateEntryResponse {
+  WorkEntry entry = 1;
+}
+
+// UpdateEntryRequest replaces the mutable fields. The record's user and source
+// never come from the request.
+message UpdateEntryRequest {
+  string id = 1;
+  string category_id = 2;
+  string subcategory_id = 3;
+  string description = 4;
+  string outcome = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp ended_at = 7;
+  google.protobuf.Duration duration = 8;
+  string person = 9;
+  string team = 10;
+  repeated string tags = 11;
+  repeated Link links = 12;
+}
+
+message UpdateEntryResponse {
+  WorkEntry entry = 1;
+}
+
+message DeleteEntryRequest {
+  string id = 1;
+}
+
+message DeleteEntryResponse {}
+
+// EntryService owns work entries. Every RPC requires a bearer token; the
+// account is derived from that token, never from a request field.
+service EntryService {
+  rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
+  rpc GetEntry(GetEntryRequest) returns (GetEntryResponse);
+  rpc CreateEntry(CreateEntryRequest) returns (CreateEntryResponse);
+  rpc UpdateEntry(UpdateEntryRequest) returns (UpdateEntryResponse);
+  rpc DeleteEntry(DeleteEntryRequest) returns (DeleteEntryResponse);
+}

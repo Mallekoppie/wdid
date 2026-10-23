@@ -91,6 +91,20 @@ func (s *Store) SaveWorkEntry(entry domain.WorkEntry) error {
 	})
 }
 
+// LocalDate returns the user's calendar date for an instant in the timezone
+// configured in their settings.
+func (s *Store) LocalDate(userID string, instant time.Time) (string, error) {
+	var date string
+	err := platform.Database.BoltDb.View(func(tx *bbolt.Tx) error {
+		date = entryLocalDate(tx, userID, instant)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return date, nil
+}
+
 // WorkEntry returns one entry owned by the user.
 func (s *Store) WorkEntry(userID, id string) (domain.WorkEntry, error) {
 	var entry domain.WorkEntry

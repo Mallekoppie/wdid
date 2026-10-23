@@ -6,11 +6,11 @@
 
 **Status:** ready-for-agent
 
-- [ ] An entry can be created from one line with a category, optional subcategory, description, and duration.
-- [ ] The default duration comes from settings.
-- [ ] Today's list shows the day's entries with category, subcategory, description, and outcome.
-- [ ] An entry's outcome can be added after capture.
-- [ ] The selector remembers the last used category and subcategory.
-- [ ] Validation errors appear on the right fields.
-- [ ] The screen handles loading, empty, error, and success states.
-- [ ] Connect and gRPC-Web tests cover create, list, and validation.
+- [x] An entry can be created from one line with a category, optional subcategory, description, and duration.
+- [x] The default duration comes from settings.
+- [x] Today's list shows the day's entries with category, subcategory, description, and outcome.
+- [x] An entry's outcome can be added after capture.
+- [x] The selector remembers the last used category and subcategory.
+- [x] Validation errors appear on the right fields.
+- [x] The screen handles loading, empty, error, and success states.
+- [x] Connect and gRPC-Web tests cover create, list, and validation.

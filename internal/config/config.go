@@ -30,6 +30,8 @@ const (
 	AuthServiceName = "wdid.v1.AuthService"
 	// CategoryServiceName owns the user's taxonomy.
 	CategoryServiceName = "wdid.v1.CategoryService"
+	// EntryServiceName owns work entries.
+	EntryServiceName = "wdid.v1.EntryService"
 	// SettingsServiceName owns per-user behaviour and appearance.
 	SettingsServiceName = "wdid.v1.SettingsService"
 

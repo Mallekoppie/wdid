@@ -43,11 +43,13 @@ func newDomainHandlerForConfig(t *testing.T, cfg config.Config) (http.Handler, *
 		Services: []platform.ConnectService{
 			rpc.NewAuthService(database, authService, cfg),
 			rpc.NewCategoryService(database, authService),
+			rpc.NewEntryService(database, authService),
 			rpc.NewSettingsService(database, authService),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
 			config.CategoryServiceName,
+			config.EntryServiceName,
 			config.SettingsServiceName,
 		},
 	})

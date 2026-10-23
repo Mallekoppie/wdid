@@ -37,6 +37,36 @@ class WorkItemDraft {
   final String source;
 }
 
+/// Inputs accepted by `EntryService` when capturing a work entry. IDs and the
+/// local grouping day are assigned by the service.
+class EntryDraft {
+  const EntryDraft({
+    required this.categoryId,
+    this.subcategoryId = '',
+    required this.description,
+    this.outcome = '',
+    required this.startedAt,
+    this.minutes = 0,
+    this.person = '',
+    this.team = '',
+    this.tags = const [],
+    this.links = const [],
+    this.source = EntrySource.manual,
+  });
+
+  final String categoryId;
+  final String subcategoryId;
+  final String description;
+  final String outcome;
+  final DateTime startedAt;
+  final int minutes;
+  final String person;
+  final String team;
+  final List<String> tags;
+  final List<LinkRef> links;
+  final EntrySource source;
+}
+
 class InitiativeDraft {
   const InitiativeDraft({
     required this.name,
@@ -72,11 +102,7 @@ class CheckInDraft {
 }
 
 class NoteDraft {
-  const NoteDraft({
-    required this.date,
-    this.initiativeId,
-    required this.text,
-  });
+  const NoteDraft({required this.date, this.initiativeId, required this.text});
 
   final String date;
   final String? initiativeId;
