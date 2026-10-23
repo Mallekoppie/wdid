@@ -7,7 +7,6 @@ require (
 	github.com/Mallekoppie/goslow v0.0.0-20261018185216-5eded094f41a
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/mux v1.8.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.58.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941
@@ -25,6 +24,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

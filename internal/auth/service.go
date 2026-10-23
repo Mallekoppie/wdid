@@ -63,19 +63,6 @@ func (i Identity) HasRole(role string) bool {
 	return false
 }
 
-type identityKey struct{}
-
-// WithIdentity stores the identity on the context.
-func WithIdentity(ctx context.Context, identity Identity) context.Context {
-	return context.WithValue(ctx, identityKey{}, identity)
-}
-
-// IdentityFromContext returns the identity stored by the middleware.
-func IdentityFromContext(ctx context.Context) (Identity, bool) {
-	identity, ok := ctx.Value(identityKey{}).(Identity)
-	return identity, ok
-}
-
 // Service handles registration, login and token verification.
 type Service struct {
 	store *store.Store

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,7 +13,6 @@ import (
 	"github.com/Mallekoppie/goslow/platform"
 	"go.uber.org/zap"
 
-	"github.com/Mallekoppie/wdid/internal/api"
 	"github.com/Mallekoppie/wdid/internal/auth"
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/rpc"
@@ -21,6 +21,18 @@ import (
 
 //go:embed all:dist
 var webAssets embed.FS
+
+// nonRPCRoutes returns the plain-HTTP routes. Liveness is the only one; every
+// domain capability is served through Connect.
+func nonRPCRoutes() platform.Routes {
+	return platform.Routes{
+		{Path: "/healthz", Method: http.MethodGet, Auth: platform.AuthNone, HandlerFunc: health, SlaMs: 50},
+	}
+}
+
+func health(w http.ResponseWriter, _ *http.Request) {
+	platform.JsonMarshaller.WriteJsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -41,7 +53,6 @@ func run() error {
 	defer database.Close()
 
 	authService := auth.NewService(database, cfg)
-	handler := api.New(database, authService, cfg)
 
 	assets, err := fs.Sub(webAssets, "dist")
 	if err != nil {
@@ -58,14 +69,14 @@ func run() error {
 		zap.Bool("reflection", cfg.DevMode),
 	)
 
-	// One listener serves Connect, native gRPC, gRPC-Web, the legacy REST
-	// routes during migration, and the embedded Flutter app.
+	// One listener serves Connect, native gRPC, gRPC-Web, the liveness route,
+	// and the embedded Flutter app.
 	return platform.StartApplicationServerWithContext(ctx, platform.ApplicationServerOptions{
 		Services: []platform.ConnectService{
 			rpc.NewAuthService(database, authService, cfg),
 		},
 		ServiceNames: []string{config.AuthServiceName},
-		Routes:       handler.Routes(),
+		Routes:       nonRPCRoutes(),
 		SPA: &platform.SPAOptions{
 			Assets: assets,
 			Index:  "index.html",

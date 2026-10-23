@@ -10,14 +10,13 @@ gRPC-Web and must not reimplement these rules.
 
 > **Status:** This README describes the current service implementation. `plan.md`
 > is the canonical product and domain model; where the two differ, the plan wins
-> and the service is to be migrated. The `kind`-based attribution described below
-> is the pre-taxonomy shape.
+> and the service is to be migrated. The current domain and storage shape is the
+> pre-taxonomy model.
 
-> **Transport status:** Connect is the target service transport. Connect serves
+> **Transport status:** Connect is the only service transport. It serves
 > Connect, native gRPC, and gRPC-Web from one handler, and
-> `internal/contracts/*.proto` is the source of truth. The REST surface
-> documented below is legacy and is retired as RPC replacements land. Do not add
-> new REST endpoints for capabilities that have RPCs.
+> `internal/contracts/*.proto` is the source of truth. `/healthz` is the only
+> non-RPC route.
 
 ## Stack
 
@@ -78,15 +77,13 @@ the Makefile are for local development only.
 
 Initial local deployment baseline:
 
-1. A local user registers through `wdid.v1.AuthService/RegisterAccount` (or the
-   legacy `POST /api/v1/auth/register` route during migration) with the shared
-   registration secret.
+1. A local user registers through `wdid.v1.AuthService/RegisterAccount` with the
+   shared registration secret.
 2. The **first** account becomes `admin`; later accounts are `user`.
-3. Login returns a local HS256 JWT. Protected RPCs and routes accept
+3. Login returns a local HS256 JWT. Protected RPCs accept
    `Authorization: Bearer <token>`.
 4. When Zitadel is enabled, goslow's Connect auth interceptor uses
-   `AuthLocalOrOIDC`, so the same RPCs and routes also accept a Zitadel ID
-   token. The first OIDC login provisions a local account by email, and a
+   `AuthLocalOrOIDC`, so the same RPCs also accept a Zitadel ID token. The first OIDC login provisions a local account by email, and a
    configured role claim maps to `admin`.
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
@@ -95,8 +92,8 @@ the user profile, so hashes are never serialized into API responses.
 ## Connect API
 
 `internal/contracts/auth.proto` is the first live contract. `AuthService` serves
-Connect, native gRPC, and gRPC-Web on the same origin as the HTTP routes and the
-embedded app.
+Connect, native gRPC, and gRPC-Web on the same origin as the liveness route and
+the embedded app.
 
 | RPC | Auth | Purpose |
 | --- | --- | --- |
@@ -105,68 +102,10 @@ embedded app.
 | `wdid.v1.AuthService/GetAuthConfig` | public | Report local/OIDC login capabilities |
 | `wdid.v1.AuthService/GetCurrentUser` | bearer token | Resolve the current account |
 
-## API (legacy REST)
+## Non-RPC routes
 
-The table below documents the current legacy surface. The target contract is
-protobuf plus Connect/gRPC/gRPC-Web in `internal/contracts/`. All protected
-routes require `Authorization: Bearer <token>`. Legacy routes are retired as
-their RPC replacements land; do not add new REST endpoints for capabilities
-that have RPCs.
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/healthz` | Liveness |
-| POST | `/api/v1/auth/register` | Create account with registration secret |
-| POST | `/api/v1/auth/login` | Email + password login |
-| GET | `/api/v1/auth/config` | Public auth capabilities for the UI |
-| GET | `/api/v1/auth/me` | Current account |
-| GET/POST | `/api/v1/initiatives` | List / create initiatives |
-| GET/PATCH/DELETE | `/api/v1/initiatives/{id}` | Initiative detail |
-| GET/POST | `/api/v1/entries` | List / create work entries |
-| GET/PATCH/DELETE | `/api/v1/entries/{id}` | Entry detail |
-| GET | `/api/v1/timer` | Active timer or `{ "active": false }` |
-| POST | `/api/v1/timer/start` | Start with `initiativeId`, `description` |
-| POST | `/api/v1/timer/pause` | Pause the running timer |
-| POST | `/api/v1/timer/resume` | Resume a paused timer |
-| POST | `/api/v1/timer/stop` | Save entry; `action` = `keep`/`trim`/`discard` |
-| GET | `/api/v1/summary?from=&to=` | Period rollup (JSON) |
-| GET | `/api/v1/export?from=&to=&format=markdown\|json` | Period export |
-
-Dates accept RFC3339 or `YYYY-MM-DD`. `summary` and `export` default to the
-last 30 days.
-
-### Entry attribution
-
-An entry has exactly one primary attribution:
-
-- `kind: "initiative"` requires `initiativeId`
-- `kind: "support"` requires `support.person` and `support.mode`
-  (`review`, `pair`, `unblock`, `mentor`, `incident`, `other`)
-- `kind: "other"` must have neither
-
-Quick capture sends `description`, `initiativeId` and `durationMinutes`.
-Entries carry `minutes` as the authoritative duration, plus `startedAt` and
-`endedAt` for the timeline.
-
-### Timer behaviour
-
-- One active timer per user.
-- Paused time is excluded from elapsed time.
-- Stops under one minute are rejected unless `action` is `discard`.
-- Over the block limit, `stop` returns `409 block_limit_exceeded` until the
-  caller chooses `keep`, `trim` or `discard`.
-
-### Errors
-
-```json
-{
-  "error": {
-    "code": "validation_failed",
-    "message": "initiativeId: is required for initiative entries",
-    "details": { "field": "initiativeId", "message": "is required for initiative entries" }
-  }
-}
-```
+`GET /healthz` is the only non-RPC route. It returns `{"status":"ok"}` and is
+the liveness probe.
 
 ## Storage layout
 
@@ -195,7 +134,7 @@ runs it with hot reload on `127.0.0.1:5173`.
 
 - Persistence goes through `platform.Database.BoltDb` helpers.
 - `platform.StartApplicationServerWithContext` serves Connect, native gRPC,
-  gRPC-Web, the legacy HTTP routes, and the embedded Flutter app on one origin.
+  gRPC-Web, the `/healthz` route, and the embedded Flutter app on one origin.
 - `Grpc.Server.Auth` is explicit: `AuthLocalJWT` for local-only deployments and
   `AuthLocalOrOIDC` when Zitadel is enabled.
 - Public RPCs live in `Auth.Server.UnauthenticatedPaths`; admin RPCs will use
@@ -217,4 +156,4 @@ runs it with hot reload on `127.0.0.1:5173`.
 - Check-in records and persistence
 - Backup snapshots: goslow does not expose the raw `*bolt.DB`, so the
   `db.View(tx.WriteTo)` hot snapshot needs an upstream accessor
-- Admin-only settings and user-management routes
+- Admin-only settings and user-management RPCs

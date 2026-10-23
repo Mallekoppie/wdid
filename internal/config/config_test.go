@@ -106,6 +106,9 @@ func TestLoadFromEnvironment(t *testing.T) {
 
 func TestPlatformConfigLocalOnlyUsesLocalJWT(t *testing.T) {
 	setRequiredEnv(t)
+	// make exports WDID_DEV_MODE=true for local runs; this case asserts the
+	// non-development configuration, so opt out explicitly.
+	t.Setenv("WDID_DEV_MODE", "false")
 
 	cfg, err := config.Load()
 	if err != nil {

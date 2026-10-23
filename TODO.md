@@ -28,8 +28,7 @@
 - Connect serves one service: `wdid.v1.AuthService` (`RegisterAccount`, `Login`,
   `GetAuthConfig`, `GetCurrentUser`). Generated Go and Connect stubs are
   committed.
-- Legacy REST surface in `internal/api/`: auth, initiatives, entries, timer,
-  summary, export.
+- No REST surface: `/healthz` is the only non-RPC route.
 - Domain in `internal/domain/`: `User`, `Initiative`, `Entry` with `kind`, and
   `ActiveTimer`. Store buckets: `sys:users`, `sys:user_emails`,
   `sys:user_credentials`, `user_<id>:initiatives`, `user_<id>:entries`,
@@ -85,10 +84,10 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
 
 ### Surface cleanup
 
-- [ ] Delete `internal/api` and its tests; keep `/healthz` as the only non-RPC
+- [x] Delete `internal/api` and its tests; keep `/healthz` as the only non-RPC
       route.
-- [ ] Remove `gorilla/mux` if nothing else uses it; update `cmd/wdid/main.go`.
-- [ ] Remove the legacy REST sections from `README.md` once the routes are gone.
+- [x] Remove `gorilla/mux` if nothing else uses it; update `cmd/wdid/main.go`.
+- [x] Remove the legacy REST sections from `README.md` once the routes are gone.
 
 ### Contracts and RPC
 

@@ -79,16 +79,16 @@ the plan replaces it with per-user categories, subcategories, and reporting
 roles. The service must migrate; `plan.md` is the target, not the current code.
 
 The Go service transport is Connect, which serves Connect, native gRPC, and
-gRPC-Web for the browser; the legacy REST surface is narrower than the product
-plan and is retired as RPCs land.
+gRPC-Web for the browser. `/healthz` is the only non-RPC route; there is no REST
+surface.
 
-- **Implemented by the service:** auth, the earlier initiative/work-entry model,
-  timer, period summary, and exports.
+- **Implemented by the service:** the auth RPCs. The earlier Initiative and Work
+  entry model still exists internally but is no longer exposed.
 - **Not implemented by the service yet:** categories and subcategories,
   milestones, check-in records, personal reviews, notes, settings, and
   backup/restore. Those screens run on the demo adapter and surface the gap
   rather than inventing a persistence model.
-- **Shape differences:** the current HTTP mapping uses `kind`
+- **Shape differences:** the earlier service shape used `kind`
   (`initiative`/`support`/`other`), `description`, and a nested `support` object.
   The plan replaces this with `categoryId` plus an optional `subcategoryId`. The
   protobuf contract is the source of truth; keep any temporary mapping in the
