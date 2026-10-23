@@ -15,6 +15,11 @@ printf '  go      : %s\n' "$(go version 2>/dev/null | awk '{print $3}')"
 printf '  protoc  : %s\n' "$(protoc --version 2>/dev/null)"
 printf '  dart    : %s\n' "$(dart --version 2>&1 | head -1)"
 printf '  flutter : %s\n' "$(flutter --version 2>/dev/null | head -1)"
+if command -v claude >/dev/null 2>&1; then
+    printf '  claude  : %s\n' "$(claude --version 2>/dev/null | head -1)"
+else
+    warn "claude not found - rebuild the container to install the devcontainer feature"
+fi
 for p in protoc-gen-go protoc-gen-connect-go protoc-gen-dart; do
     if command -v "$p" >/dev/null 2>&1; then
         printf '  %-8s: %s\n' "${p#protoc-gen-}" "$(command -v "$p")"
@@ -59,6 +64,7 @@ log "post-create finished."
 cat <<'EOF'
 
 Next steps:
+  claude            # first run signs in; auth persists in a volume
   make proto        # generate Go + Dart stubs from internal/contracts/*.proto
   make buildweb     # build the Flutter web app into the embedded dist directory
   make all          # build the server

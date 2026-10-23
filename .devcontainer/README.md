@@ -12,6 +12,8 @@ A reproducible toolchain for developing **wdid** in VS Code (or the
 | protoc-gen-go / protoc-gen-connect-go | 1.36.12 / 1.21.1 | Go message + Connect stubs |
 | Dart + Flutter | stable channel (`/opt/flutter`) | `make buildweb`, Dart stubs |
 | protoc-gen-dart | 25.1.0 | Dart stubs |
+| Node.js | LTS (devcontainer feature) | required by Claude Code |
+| Claude Code | latest (devcontainer feature) | `claude` CLI + VS Code extension |
 | podman + `docker` shim | (client only) | drive the **host** engine |
 | make, jq, openssl, curl, socat... | | Makefile targets |
 
@@ -33,6 +35,48 @@ while the images are actually built by the host's podman.
 > The wdid server itself runs fine inside the container. Nothing in this project
 > needs `kind`; if the deployment story grows into a cluster later, run cluster
 > tooling on the host.
+
+## Claude Code
+
+Claude Code is installed by the official dev container feature:
+
+```json
+"features": {
+  "ghcr.io/devcontainers/features/node:1": {},
+  "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+}
+```
+
+The Go base image ships nvm but does not install a Node version, so the Node
+feature comes first — without it, the Claude feature's NodeSource fallback fails
+on Debian trixie (Debian's `nodejs` package no longer pulls in `npm`). The
+Claude feature then installs the `claude` CLI globally and adds the Claude Code
+VS Code extension, so the tool works both from the integrated terminal and from
+the extension panel.
+
+### Host environment
+
+`remoteEnv` copies these variables from the host into terminals, tasks and
+extensions in the container:
+
+* `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`
+* `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`, `ANTHROPIC_MODEL`
+* `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`
+* the existing `COPILOT_*` settings
+
+Export them on the host before opening or rebuilding the container, e.g.
+`export ANTHROPIC_API_KEY=...`. Unset variables arrive as empty strings and are
+ignored by Claude Code. To forward another variable, add
+`"NAME": "${localEnv:NAME}"` to `remoteEnv` and rebuild.
+
+### Authentication and persistence
+
+If no API key or token is forwarded, run `claude` in the container and complete
+the browser sign-in. If the callback does not reach the container, copy the code
+shown in the browser back into the terminal. Authentication, settings and
+session history live under `/home/vscode/.claude`, which is the named volume
+`claude-code-config-<id>`, so they survive **Dev Containers: Rebuild Container**.
+`CLAUDE_CONFIG_DIR` points at that volume so `~/.claude.json` is persisted too.
 
 ## First run
 

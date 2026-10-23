@@ -8,6 +8,10 @@
 #   * make, openssl, jq and friends used by the Makefile
 #   * the podman client plus a `docker` shim so builds use the HOST engine
 #
+# Claude Code is installed by the official devcontainer feature declared in
+# devcontainer.json, not by this Dockerfile, so it stays current and brings the
+# VS Code extension along.
+#
 # The host's Podman socket is mounted at runtime (see devcontainer.json); this
 # image only ships the clients, it does not run a nested container engine.
 
@@ -78,7 +82,7 @@ RUN git clone --depth 1 -b "${FLUTTER_CHANNEL}" https://github.com/flutter/flutt
 # which is already on PATH for both interactive and login shells.
 USER vscode
 ENV PUB_CACHE="/home/vscode/.pub-cache"
-ENV PATH="/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${PATH}"
+ENV PATH="/usr/local/share/nvm/current/bin:/go/bin:/home/vscode/.local/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${PATH}"
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12 \
     && go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.21.1
 
@@ -91,18 +95,24 @@ RUN flutter --version \
     && dart pub global activate protoc_plugin 25.1.0
 
 # A login shell (`bash -lc`, which VS Code dev containers and postCreateCommand
-# use) resets PATH from /etc/profile and would otherwise drop the Flutter and
-# pub-cache directories. Register them in profile.d so every shell - interactive,
-# login or remote - sees dart, flutter and protoc-gen-dart. Also makes the
-# mounted host podman socket group-accessible to vscode.
+# use) resets PATH from /etc/profile and would otherwise drop the Flutter,
+# pub-cache and user-local bin directories. Register them in profile.d so every
+# shell - interactive, login or remote - sees dart, flutter, protoc-gen-dart and
+# claude. Also makes the mounted host podman socket group-accessible to vscode.
 USER root
 RUN printf '%s\n' \
         'export PUB_CACHE="/home/vscode/.pub-cache"' \
-        'export PATH="/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:$PATH"' \
+        'export PATH="/usr/local/share/nvm/current/bin:/go/bin:/home/vscode/.local/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:$PATH"' \
         > /etc/profile.d/00-devcontainer-path.sh \
     && chmod 0644 /etc/profile.d/00-devcontainer-path.sh \
     && groupadd -f podman-host \
     && usermod -aG podman-host vscode || true
+
+# Pre-create the mount point for Claude Code's config volume (see
+# devcontainer.json). A fresh named volume inherits the ownership of the image
+# path, so this is what makes it writable by the non-root vscode user.
+RUN mkdir -p /home/vscode/.claude \
+    && chown vscode:vscode /home/vscode/.claude
 
 # The workspace is bind-mounted from the host, so its files are owned by the
 # host user rather than `vscode`. Tell git to trust it, otherwise `go build`

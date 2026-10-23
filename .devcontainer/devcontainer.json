@@ -3,7 +3,8 @@
     //
     // Provides the full toolchain needed to edit, build, test and run this
     // repository: Go, protoc + Go/Dart plugins, the Dart/Flutter SDK for the
-    // web UI and the usual shell tooling (make, curl, jq...).
+    // web UI, Claude Code (CLI + VS Code extension) and the usual shell
+    // tooling (make, curl, jq...).
     //
     // Engine: Podman on the host (rootless). The host's podman socket is
     // mounted in so `podman`/`docker` commands inside the container drive the
@@ -21,6 +22,17 @@
         }
     },
 
+    // Claude Code CLI + VS Code extension, installed by the official feature.
+    // It needs node/npm. The Go base image ships nvm but no installed Node
+    // version, so install Node explicitly first: the Claude feature declares
+    // an installsAfter dependency on it. (Without this, the feature's own
+    // NodeSource fallback fails on Debian trixie because Debian's nodejs
+    // package no longer pulls in npm.)
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {},
+        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+    },
+
     // The remote user created by the base image. Keep the workspace owned by it.
     "remoteUser": "vscode",
     "containerUser": "vscode",
@@ -36,8 +48,11 @@
 
     // Mount the host podman socket so the container can talk to the host engine.
     // On Bazzite the rootless socket lives at /run/user/1000/podman/podman.sock.
+    // The Claude Code config lives in a named volume so the login/API settings
+    // survive container rebuilds (CLAUDE_CONFIG_DIR below points at it).
     "mounts": [
-        "source=/run/user/1000/podman/podman.sock,target=/run/host-podman.sock,type=bind"
+        "source=/run/user/1000/podman/podman.sock,target=/run/host-podman.sock,type=bind",
+        "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
     ],
 
     // Make the mounted socket discoverable by podman/docker clients in the
@@ -49,7 +64,11 @@
         "PODMAN_HOST": "unix:///run/host-podman.sock",
         "GOFLAGS": "-mod=mod",
         "PUB_CACHE": "/home/vscode/.pub-cache",
-        "PATH": "/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        // Keep Claude Code's ~/.claude.json inside the mounted config volume,
+        // otherwise it lands in the ephemeral home directory and is lost on
+        // rebuild (forcing the first-run setup again).
+        "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+        "PATH": "/usr/local/share/nvm/current/bin:/go/bin:/home/vscode/.local/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     },
 
     // The server serves native gRPC, gRPC-Web, and the Flutter web app on one
@@ -62,6 +81,7 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "anthropic.claude-code",
                 "golang.go",
                 "ms-vscode.makefile-tools",
                 "Dart-Code.dart-code",
@@ -82,8 +102,30 @@
 
     "postCreateCommand": "bash .devcontainer/post-create.sh",
 
+    // Host environment passed through to terminals, tasks and extensions in
+    // the container. ${localEnv:NAME} copies NAME from the host that runs the
+    // container; unset names resolve to an empty string. Add more here (then
+    // rebuild) if you use another provider or a proxy.
     "remoteEnv": {
         "PUB_CACHE": "/home/vscode/.pub-cache",
-        "PATH": "/go/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${containerEnv:PATH}"
+        "PATH": "/usr/local/share/nvm/current/bin:/go/bin:/home/vscode/.local/bin:/home/vscode/.pub-cache/bin:/opt/flutter/bin:${containerEnv:PATH}",
+
+        // Claude Code auth, provider routing and model selection.
+        "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+        "ANTHROPIC_AUTH_TOKEN": "${localEnv:ANTHROPIC_AUTH_TOKEN}",
+        "ANTHROPIC_BASE_URL": "${localEnv:ANTHROPIC_BASE_URL}",
+        "ANTHROPIC_CUSTOM_HEADERS": "${localEnv:ANTHROPIC_CUSTOM_HEADERS}",
+        "ANTHROPIC_MODEL": "${localEnv:ANTHROPIC_MODEL}",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "${localEnv:ANTHROPIC_DEFAULT_OPUS_MODEL}",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "${localEnv:ANTHROPIC_DEFAULT_SONNET_MODEL}",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${localEnv:ANTHROPIC_DEFAULT_HAIKU_MODEL}",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL": "${localEnv:ANTHROPIC_DEFAULT_FABLE_MODEL}",
+        "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
+
+        // Copilot custom-provider settings.
+        "COPILOT_PROVIDER_TYPE": "${localEnv:COPILOT_PROVIDER_TYPE}",
+        "COPILOT_PROVIDER_BASE_URL": "${localEnv:COPILOT_PROVIDER_BASE_URL}",
+        "COPILOT_PROVIDER_API_KEY": "${localEnv:COPILOT_PROVIDER_API_KEY}",
+        "COPILOT_MODEL": "${localEnv:COPILOT_MODEL}"
     }
 }
