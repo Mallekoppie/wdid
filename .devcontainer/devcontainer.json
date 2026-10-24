@@ -3,8 +3,8 @@
     //
     // Provides the full toolchain needed to edit, build, test and run this
     // repository: Go, protoc + Go/Dart plugins, the Dart/Flutter SDK for the
-    // web UI, Claude Code (CLI + VS Code extension) and the usual shell
-    // tooling (make, curl, jq...).
+    // web UI, Claude Code (CLI + VS Code extension), the GitHub CLI (for
+    // issues and pull requests) and the usual shell tooling (make, curl, jq...).
     //
     // Engine: Podman on the host (rootless). The host's podman socket is
     // mounted in so `podman`/`docker` commands inside the container drive the
@@ -30,7 +30,14 @@
     // package no longer pulls in npm.)
     "features": {
         "ghcr.io/devcontainers/features/node:1": {},
-        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+        "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+
+        // GitHub CLI (`gh`), so issues and pull requests can be read and
+        // updated against github.com/Mallekoppie/wdid. Pin the CLI version so
+        // rebuilds are reproducible; bump it deliberately.
+        "ghcr.io/devcontainers/features/github-cli:1": {
+            "version": "2.103.2"
+        }
     },
 
     // The remote user created by the base image. Keep the workspace owned by it.
@@ -48,11 +55,13 @@
 
     // Mount the host podman socket so the container can talk to the host engine.
     // On Bazzite the rootless socket lives at /run/user/1000/podman/podman.sock.
-    // The Claude Code config lives in a named volume so the login/API settings
-    // survive container rebuilds (CLAUDE_CONFIG_DIR below points at it).
+    // The Claude Code config and the GitHub CLI config live in named volumes so
+    // the logins/settings survive container rebuilds (CLAUDE_CONFIG_DIR below
+    // points at the Claude one).
     "mounts": [
         "source=/run/user/1000/podman/podman.sock,target=/run/host-podman.sock,type=bind",
-        "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
+        "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
+        "source=gh-config-${devcontainerId},target=/home/vscode/.config/gh,type=volume"
     ],
 
     // Make the mounted socket discoverable by podman/docker clients in the
@@ -121,6 +130,12 @@
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${localEnv:ANTHROPIC_DEFAULT_HAIKU_MODEL}",
         "ANTHROPIC_DEFAULT_FABLE_MODEL": "${localEnv:ANTHROPIC_DEFAULT_FABLE_MODEL}",
         "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
+
+        // GitHub CLI auth. Set exactly one on the host: GH_TOKEN is preferred
+        // by `gh`, GITHUB_TOKEN is also read. Without one, run `gh auth login`
+        // in the container (the credential persists in the gh-config volume).
+        "GH_TOKEN": "${localEnv:GH_TOKEN}",
+        "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
 
         // Copilot custom-provider settings.
         "COPILOT_PROVIDER_TYPE": "${localEnv:COPILOT_PROVIDER_TYPE}",

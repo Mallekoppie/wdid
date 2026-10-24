@@ -14,6 +14,7 @@ A reproducible toolchain for developing **wdid** in VS Code (or the
 | protoc-gen-dart | 25.1.0 | Dart stubs |
 | Node.js | LTS (devcontainer feature) | required by Claude Code |
 | Claude Code | latest (devcontainer feature) | `claude` CLI + VS Code extension |
+| gh (GitHub CLI) | 2.103.2 (devcontainer feature) | `gh issue` / `gh pr` against this repo |
 | podman + `docker` shim | (client only) | drive the **host** engine |
 | make, jq, openssl, curl, socat... | | Makefile targets |
 
@@ -62,6 +63,7 @@ extensions in the container:
 * `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`
 * `ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`, `ANTHROPIC_MODEL`
 * `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`
+* `GH_TOKEN`, `GITHUB_TOKEN` (the GitHub CLI, see below)
 * the existing `COPILOT_*` settings
 
 Export them on the host before opening or rebuilding the container, e.g.
@@ -78,11 +80,44 @@ session history live under `/home/vscode/.claude`, which is the named volume
 `claude-code-config-<id>`, so they survive **Dev Containers: Rebuild Container**.
 `CLAUDE_CONFIG_DIR` points at that volume so `~/.claude.json` is persisted too.
 
+## GitHub CLI
+
+The [GitHub CLI](https://cli.github.com/) is installed by the official dev
+container feature, pinned so rebuilds are reproducible (bump the version
+deliberately):
+
+```json
+"ghcr.io/devcontainers/features/github-cli:1": { "version": "2.103.2" }
+```
+
+Authenticate one of two ways:
+
+* **Token (non-interactive, good for agents):** export `GH_TOKEN` (or
+  `GITHUB_TOKEN`) on the host before opening the container; `remoteEnv` forwards
+  it into terminals, tasks and extensions.
+* **Interactive:** run `gh auth login`. The credential is stored in
+  `~/.config/gh`, which is the named volume `gh-config-<id>`, so it survives
+  **Dev Containers: Rebuild Container**.
+
+Then, from any terminal in the container:
+
+```bash
+gh auth status                 # which account (or token) is active
+gh issue list                  # issues on github.com/Mallekoppie/wdid
+gh issue view 42
+gh issue comment 42 --body "..."
+gh pr list
+```
+
+The repository remote is HTTPS. To let plain `git push` reuse the `gh`
+credential instead of prompting, run `gh auth setup-git` once (it writes the
+credential helper into git config).
+
 ## First run
 
 The `postCreateCommand` (`.devcontainer/post-create.sh`) checks the toolchain,
-`go mod download`, `make proto` and `flutter pub get`. Each step is best-effort so
-a flaky network does not block opening the repo.
+the GitHub CLI login, `go mod download`, `make proto` and `flutter pub get`. Each
+step is best-effort so a flaky network does not block opening the repo.
 
 ```bash
 make proto        # Go stubs (and Dart when web/pubspec.yaml exists)

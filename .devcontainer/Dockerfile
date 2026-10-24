@@ -108,11 +108,12 @@ RUN printf '%s\n' \
     && groupadd -f podman-host \
     && usermod -aG podman-host vscode || true
 
-# Pre-create the mount point for Claude Code's config volume (see
-# devcontainer.json). A fresh named volume inherits the ownership of the image
-# path, so this is what makes it writable by the non-root vscode user.
-RUN mkdir -p /home/vscode/.claude \
-    && chown vscode:vscode /home/vscode/.claude
+# Pre-create the mount points for the Claude Code and GitHub CLI config volumes
+# (see devcontainer.json). A fresh named volume inherits the ownership of the
+# image path, so this is what makes them writable by the non-root vscode user.
+RUN mkdir -p /home/vscode/.claude /home/vscode/.config/gh \
+    && chown -R vscode:vscode /home/vscode/.claude /home/vscode/.config/gh \
+    && chown vscode:vscode /home/vscode/.config
 
 # The workspace is bind-mounted from the host, so its files are owned by the
 # host user rather than `vscode`. Tell git to trust it, otherwise `go build`
