@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Mallekoppie/goslow/platform"
+
 	"github.com/Mallekoppie/wdid/internal/auth"
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
@@ -23,6 +25,15 @@ const (
 func newService(t *testing.T) (*auth.Service, *store.Store) {
 	t.Helper()
 
+	service, database, _ := newServiceConfig(t, nil)
+	return service, database
+}
+
+// newServiceConfig lets a test customize the configuration before the store
+// configures the platform. Tests that exercise OIDC enable Zitadel here.
+func newServiceConfig(t *testing.T, mutate func(*config.Config)) (*auth.Service, *store.Store, config.Config) {
+	t.Helper()
+
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid-auth.db"),
@@ -31,6 +42,9 @@ func newService(t *testing.T) (*auth.Service, *store.Store) {
 		JWTSigningMethod:     "HS256",
 		JWTExpirationMinutes: 60,
 		MaxBlockMinutes:      240,
+	}
+	if mutate != nil {
+		mutate(&cfg)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("test config invalid: %v", err)
@@ -44,7 +58,107 @@ func newService(t *testing.T) (*auth.Service, *store.Store) {
 		_ = database.Close()
 	})
 
-	return auth.NewService(database, cfg), database
+	return auth.NewService(database, cfg), database, cfg
+}
+
+func withZitadel(cfg *config.Config) {
+	cfg.Zitadel = config.Zitadel{
+		Enabled:           true,
+		IssuerURL:         "http://zitadel.local:8080",
+		ClientID:          "wdid-client",
+		AllowedAlgorithms: []string{"RS256"},
+	}
+}
+
+// localToken signs a wdid local token carrying the given roles. Tests use it
+// to prove that the token, not the stored profile, decides the role.
+func localToken(t *testing.T, user domain.User, roles []string) string {
+	t.Helper()
+
+	token, err := platform.LocalJwt.NewLocalJwtToken(map[string]interface{}{
+		"sub":                user.ID,
+		"email":              user.Email,
+		"preferred_username": user.DisplayName,
+		"roles":              roles,
+		"iss":                "wdid-local",
+	})
+	if err != nil {
+		t.Fatalf("issue local token: %v", err)
+	}
+	return token
+}
+
+// authorizeLocal drives the real goslow authorizer, so the identity reaches the
+// service through the same context path as a served request.
+func authorizeLocal(t *testing.T, cfg config.Config, token string) (context.Context, error) {
+	t.Helper()
+
+	platformConfig := cfg.PlatformConfig()
+	authorizer, err := platform.NewAuthorizer(platform.AuthSettingsFromConfig(&platformConfig))
+	if err != nil {
+		t.Fatalf("build authorizer: %v", err)
+	}
+	rule, err := authorizer.ResolveAccessRule(platform.AuthLocalJWT, nil)
+	if err != nil {
+		t.Fatalf("resolve access rule: %v", err)
+	}
+	return authorizer.Authorize(context.Background(), rule, platform.BearerCredential(token))
+}
+
+func localIdentity(t *testing.T, service *auth.Service, cfg config.Config, token string) auth.Identity {
+	t.Helper()
+
+	ctx, err := authorizeLocal(t, cfg, token)
+	if err != nil {
+		t.Fatalf("authorize local token: %v", err)
+	}
+	identity, err := service.IdentityFromRequestContext(ctx)
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	return identity
+}
+
+// fakeIDTokenVerifier stands in for the IdP: goslow's authorizer calls it and
+// trusts the claims it returns.
+type fakeIDTokenVerifier struct {
+	claims map[string]interface{}
+}
+
+func (f fakeIDTokenVerifier) Verify(context.Context, string) (map[string]interface{}, error) {
+	return f.claims, nil
+}
+
+func authorizeOIDC(t *testing.T, claims map[string]interface{}) context.Context {
+	t.Helper()
+
+	authorizer, err := platform.NewAuthorizer(
+		platform.AuthSettings{
+			OAuth: platform.OAuthSettings{
+				Enabled:           true,
+				ClientID:          "wdid-client",
+				AllowedAlgorithms: []string{"RS256"},
+				RolesClaim:        "roles",
+			},
+		},
+		platform.WithIDTokenVerifierFactory(
+			func(context.Context) (platform.IDTokenVerifier, error) {
+				return fakeIDTokenVerifier{claims: claims}, nil
+			},
+		),
+	)
+	if err != nil {
+		t.Fatalf("build OIDC authorizer: %v", err)
+	}
+	rule, err := authorizer.ResolveAccessRule(platform.AuthOAuth, nil)
+	if err != nil {
+		t.Fatalf("resolve OIDC access rule: %v", err)
+	}
+	ctx, err := authorizer.Authorize(context.Background(), rule, platform.BearerCredential("fake-id-token"))
+	if err != nil {
+		t.Fatalf("authorize OIDC token: %v", err)
+	}
+	return ctx
 }
 
 func bootstrap(t *testing.T, service *auth.Service) (domain.User, string) {
@@ -86,17 +200,14 @@ func registerWithInvite(service *auth.Service, email, code string) (domain.User,
 }
 
 func TestFirstUserBecomesAdminWithBootstrapSecret(t *testing.T) {
-	service, _ := newService(t)
+	service, _, cfg := newServiceConfig(t, nil)
 
 	first, token := bootstrap(t, service)
 	if first.Role != domain.RoleAdmin {
 		t.Fatalf("first role = %q, want admin", first.Role)
 	}
 
-	identity, err := service.VerifyToken(context.Background(), token)
-	if err != nil {
-		t.Fatalf("verify token: %v", err)
-	}
+	identity := localIdentity(t, service, cfg, token)
 	if identity.UserID != first.ID {
 		t.Fatalf("identity user = %q, want %q", identity.UserID, first.ID)
 	}
@@ -255,10 +366,168 @@ func TestLogin(t *testing.T) {
 	}
 }
 
-func TestVerifyTokenRejectsGarbage(t *testing.T) {
+func TestIdentityFromRequestContextRejectsMissingIdentity(t *testing.T) {
 	service, _ := newService(t)
 
-	if _, err := service.VerifyToken(context.Background(), "not-a-token"); !errors.Is(err, auth.ErrUnauthenticated) {
+	if _, err := service.IdentityFromRequestContext(context.Background()); !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatalf("error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestLocalAuthorizerRejectsGarbageToken(t *testing.T) {
+	_, _, cfg := newServiceConfig(t, nil)
+
+	if _, err := authorizeLocal(t, cfg, "not-a-token"); err == nil {
+		t.Fatal("authorize garbage token succeeded, want an error")
+	}
+}
+
+// TestLocalRoleComesFromTokenNotTheStoredProfile pins the rule that the token's
+// roles claim decides the caller's role.
+func TestLocalRoleComesFromTokenNotTheStoredProfile(t *testing.T) {
+	service, database, cfg := newServiceConfig(t, nil)
+	admin, _ := bootstrap(t, service)
+
+	_, code := createInvite(t, database, "member@example.com")
+	member, _, err := registerWithInvite(service, "member@example.com", code)
+	if err != nil {
+		t.Fatalf("register member: %v", err)
+	}
+
+	demoted := localIdentity(t, service, cfg, localToken(t, admin, []string{string(domain.RoleUser)}))
+	if demoted.HasRole(string(domain.RoleAdmin)) {
+		t.Fatalf("roles = %v, want the token's user role", demoted.Roles)
+	}
+
+	promoted := localIdentity(t, service, cfg, localToken(t, member, []string{string(domain.RoleAdmin)}))
+	if !promoted.HasRole(string(domain.RoleAdmin)) {
+		t.Fatalf("roles = %v, want the token's admin role", promoted.Roles)
+	}
+}
+
+func TestLocalTokenForUnknownAccountIsRejected(t *testing.T) {
+	service, _, cfg := newServiceConfig(t, nil)
+
+	ghost := domain.User{ID: domain.NewID(), Email: "ghost@example.com", DisplayName: "Ghost"}
+	ctx, err := authorizeLocal(t, cfg, localToken(t, ghost, []string{string(domain.RoleAdmin)}))
+	if err != nil {
+		t.Fatalf("authorize token: %v", err)
+	}
+
+	if _, err := service.IdentityFromRequestContext(ctx); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+// TestLocalTokenWithoutIssuerIsRejected covers the issuer split: goslow accepts
+// the signature, but wdid cannot tell local from OIDC and refuses it.
+func TestLocalTokenWithoutIssuerIsRejected(t *testing.T) {
+	service, _, cfg := newServiceConfig(t, nil)
+	user, _ := bootstrap(t, service)
+
+	token, err := platform.LocalJwt.NewLocalJwtToken(map[string]interface{}{
+		"sub":   user.ID,
+		"roles": []string{string(domain.RoleAdmin)},
+	})
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	ctx, err := authorizeLocal(t, cfg, token)
+	if err != nil {
+		t.Fatalf("authorize token: %v", err)
+	}
+
+	if _, err := service.IdentityFromRequestContext(ctx); !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestOIDCFirstLoginProvisionsAccountWithTokenRole(t *testing.T) {
+	service, database, _ := newServiceConfig(t, withZitadel)
+
+	identity, err := service.IdentityFromRequestContext(authorizeOIDC(t, map[string]interface{}{
+		"iss":   "http://zitadel.local:8080",
+		"email": "oidc@example.com",
+		"name":  "OIDC User",
+		"roles": []interface{}{"admin"},
+	}))
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if identity.Source != auth.OIDCSource {
+		t.Fatalf("source = %q, want %q", identity.Source, auth.OIDCSource)
+	}
+	if !identity.HasRole(string(domain.RoleAdmin)) {
+		t.Fatalf("roles = %v, want admin", identity.Roles)
+	}
+
+	stored, err := database.UserByID(identity.UserID)
+	if err != nil {
+		t.Fatalf("read provisioned user: %v", err)
+	}
+	if stored.Role != domain.RoleAdmin {
+		t.Fatalf("stored role = %q, want admin", stored.Role)
+	}
+	if stored.Email != "oidc@example.com" || stored.DisplayName != "OIDC User" {
+		t.Fatalf("stored user = %+v, want email and name from claims", stored)
+	}
+}
+
+// TestOIDCFirstLoginWithoutAdminClaimIsNotAdmin covers the strict rule: even the
+// first account is not an admin unless its token says so.
+func TestOIDCFirstLoginWithoutAdminClaimIsNotAdmin(t *testing.T) {
+	service, database, _ := newServiceConfig(t, withZitadel)
+
+	identity, err := service.IdentityFromRequestContext(authorizeOIDC(t, map[string]interface{}{
+		"iss":   "http://zitadel.local:8080",
+		"email": "first@example.com",
+		"roles": []interface{}{"user"},
+	}))
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if identity.HasRole(string(domain.RoleAdmin)) {
+		t.Fatalf("roles = %v, want user", identity.Roles)
+	}
+
+	stored, err := database.UserByID(identity.UserID)
+	if err != nil {
+		t.Fatalf("read provisioned user: %v", err)
+	}
+	if stored.Role != domain.RoleUser {
+		t.Fatalf("stored role = %q, want user", stored.Role)
+	}
+}
+
+func TestOIDCMissingEmailIsRejected(t *testing.T) {
+	service, _, _ := newServiceConfig(t, withZitadel)
+
+	_, err := service.IdentityFromRequestContext(authorizeOIDC(t, map[string]interface{}{
+		"iss":   "http://zitadel.local:8080",
+		"roles": []interface{}{"admin"},
+	}))
+	if !errors.Is(err, auth.ErrUnauthenticated) {
+		t.Fatalf("error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestOIDCRoleComesFromTokenNotTheStoredProfile(t *testing.T) {
+	service, _, _ := newServiceConfig(t, withZitadel)
+	admin, _ := bootstrap(t, service)
+
+	identity, err := service.IdentityFromRequestContext(authorizeOIDC(t, map[string]interface{}{
+		"iss":   "http://zitadel.local:8080",
+		"email": admin.Email,
+		"roles": []interface{}{"user"},
+	}))
+	if err != nil {
+		t.Fatalf("resolve identity: %v", err)
+	}
+	if identity.UserID != admin.ID {
+		t.Fatalf("identity user = %q, want %q", identity.UserID, admin.ID)
+	}
+	if identity.HasRole(string(domain.RoleAdmin)) {
+		t.Fatalf("roles = %v, want the token's user role", identity.Roles)
 	}
 }

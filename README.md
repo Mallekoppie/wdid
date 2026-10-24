@@ -21,10 +21,9 @@ gRPC-Web and must not reimplement these rules.
 ## Stack
 
 - Go 1.27.2
-- `github.com/Mallekoppie/goslow` platform: Connect/HTTP serving, goslow auth
-  interceptors, logging, BoltDB helpers, local JWT issuance
-- `github.com/coreos/go-oidc` for Zitadel ID token verification in the wdid
-  identity resolver
+- `github.com/Mallekoppie/goslow` platform: Connect/HTTP serving, goslow's
+  unified identity and authorization module, logging, BoltDB helpers, local JWT
+  issuance
 - BoltDB persistence with per-user bucket isolation
 
 ## Run
@@ -71,7 +70,11 @@ the Makefile are for local development only.
 | `WDID_ZITADEL_ISSUER_URL` | empty | Issuer base URL, e.g. `http://zitadel.local:8080` |
 | `WDID_ZITADEL_CLIENT_ID` | empty | OIDC client identifier |
 | `WDID_ZITADEL_ALLOWED_ALGORITHMS` | `RS256` | Comma-separated signing algorithms |
-| `WDID_ZITADEL_ADMIN_ROLE` | `wdid-admins` | Role claim mapped to admin |
+
+When Zitadel is enabled, configure it to emit wdid's role vocabulary in a
+`roles` claim: an admin token carries `"admin"`, every other token is a plain
+user. There is no separately configurable admin-role string; local and OIDC
+tokens share one mapping.
 
 ## Authentication model
 
@@ -87,8 +90,14 @@ Initial local deployment baseline:
 3. Login returns a local HS256 JWT. Protected RPCs accept
    `Authorization: Bearer <token>`.
 4. When Zitadel is enabled, goslow's Connect auth interceptor uses
-   `AuthLocalOrOIDC`, so the same RPCs also accept a Zitadel ID token. The first OIDC login provisions a local account by email, and a
-   configured role claim maps to `admin`.
+   `AuthLocalOrOIDC`, so the same RPCs also accept a Zitadel ID token. The first
+   OIDC login provisions a local account by email.
+5. The caller's role always comes from the verified token's `roles` claim:
+   `"admin"` is required for admin, everything else is a plain user. The stored
+   profile role is a provisioning record, not an authorization source. An OIDC
+   deployment must therefore grant the IdP admin role to at least one user;
+   bootstrapping an admin locally first also works, because local tokens carry
+   `"admin"`.
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
 the user profile, so hashes are never serialized into API responses.
@@ -168,9 +177,11 @@ runs it with hot reload on `127.0.0.1:5173`.
 - The database file is pre-created with `0600` permissions because goslow opens
   BoltDB with `os.ModeExclusive` as the file mode, which would create new files
   as `0000`.
-- `auth.Service.IdentityFromRequestContext` resolves the wdid account after
-  goslow has already validated the bearer token; it does not re-authenticate
-  local JWTs.
+- `auth.Service.IdentityFromRequestContext` reads goslow's single
+  `platform.Identity` from the request context and resolves it onto a local
+  account. goslow's `Identity.Issuer` selects local (`wdid-local`) versus OIDC
+  resolution; the token's `roles` claim selects the role. wdid does not
+  re-verify the token.
 - Object reads go through `ReadAllObjects` because goslow's `ReadObject` panics
   on a missing bucket.
 

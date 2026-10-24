@@ -66,12 +66,15 @@ const (
 // Zitadel holds the OIDC settings for the initial local Zitadel deployment.
 // IssuerURL is the issuer base URL (for example http://zitadel.local:8080),
 // not the .well-known discovery document.
+//
+// The provider must emit wdid's role vocabulary in a roles claim: an admin
+// token carries "admin". There is no separately configurable admin role string,
+// so local and OIDC tokens share one mapping.
 type Zitadel struct {
 	Enabled           bool
 	IssuerURL         string
 	ClientID          string
 	AllowedAlgorithms []string
-	AdminRole         string
 }
 
 // Config is the service configuration, loaded from the environment.
@@ -119,7 +122,6 @@ func Load() (Config, error) {
 			IssuerURL:         strings.TrimRight(envString("WDID_ZITADEL_ISSUER_URL", ""), "/"),
 			ClientID:          envString("WDID_ZITADEL_CLIENT_ID", ""),
 			AllowedAlgorithms: splitList(envString("WDID_ZITADEL_ALLOWED_ALGORITHMS", "RS256")),
-			AdminRole:         envString("WDID_ZITADEL_ADMIN_ROLE", "wdid-admins"),
 		},
 	}
 
@@ -245,6 +247,16 @@ func (c Config) PlatformConfig() platform.Config {
 	pc.Log.MaxAge = 14
 	pc.Component.ComponentName = "wdid"
 
+	pc.Database.BoltDB.Enabled = true
+	pc.Database.BoltDB.FileName = c.DBPath
+
+	// Storage-only commands (invite, backup, restore) open the database without
+	// serving requests. They have no JWT secret, so enabling auth here would
+	// make goslow reject the configuration.
+	if c.StorageOnly {
+		return pc
+	}
+
 	pc.HTTP.Server.ListeningAddress = c.HTTPAddr
 	pc.HTTP.Server.AllowedOrigins = append([]string(nil), c.AllowedOrigins...)
 
@@ -265,13 +277,11 @@ func (c Config) PlatformConfig() platform.Config {
 		AuthConfigProcedure,
 	}
 
-	pc.Database.BoltDB.Enabled = true
-	pc.Database.BoltDB.FileName = c.DBPath
-
 	pc.Auth.Server.LocalJwt.Enabled = true
 	pc.Auth.Server.LocalJwt.JwtSigningKey = c.JWTSecret
 	pc.Auth.Server.LocalJwt.JwtSigningMethod = c.JWTSigningMethod
 	pc.Auth.Server.LocalJwt.JwtExpiration = c.JWTExpirationMinutes
+	pc.Auth.Server.LocalJwt.RolesClaim = "roles"
 
 	if c.Zitadel.Enabled {
 		pc.Grpc.Server.Auth = platform.AuthLocalOrOIDC
