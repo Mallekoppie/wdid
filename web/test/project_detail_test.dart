@@ -391,6 +391,31 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a failed report hides the interactions it cannot date', (
+    tester,
+  ) async {
+    final summary = FakeSummaryApi(report: reportWithProject())
+      ..failure = const SummaryFailure('The report is unavailable.');
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      summaryApi: summary,
+    );
+
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The report is unavailable.'), findsOneWidget);
+    expect(find.text('Report unavailable'), findsOneWidget);
+    // The entry named Priya falls inside the quarter, but without a report
+    // there is no period to filter against; it must not be shown as if it
+    // were this quarter's interaction.
+    expect(find.text('Priya'), findsNothing);
+    expect(find.text('In period review'), findsNothing);
+    expect(find.textContaining('No people were named'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('handles an unknown project id', (tester) async {
     await pumpDetail(tester, route: '/initiatives/missing');
 

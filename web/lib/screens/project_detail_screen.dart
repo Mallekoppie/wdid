@@ -372,12 +372,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
     final milestoneProgress = state.milestoneProgressForProject(project.id);
     final loading = state.initiativesLoading && report == null;
     final error = state.initiativesError;
-    final supportEntries = [
-      for (final entry in entries)
-        if (entry.person.isNotEmpty &&
-            (report == null || _entryFallsIn(entry, report)))
-          entry,
-    ];
+    // Interactions belong to the report's period. Without a report there is no
+    // period to filter against, so listing every person-tagged entry would
+    // mislabel all-time history as this quarter.
+    final supportEntries = report == null
+        ? const <WorkEntry>[]
+        : [
+            for (final entry in entries)
+              if (entry.person.isNotEmpty && _entryFallsIn(entry, report))
+                entry,
+          ];
 
     return Panel(
       child: Column(
@@ -386,7 +390,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
           PanelHeader(
             title: 'Project report',
             subtitle: report == null
-                ? 'This quarter'
+                ? error == null
+                      ? 'This quarter'
+                      : 'Report unavailable'
                 : '${report.fromDate} – ${report.toDate}',
             icon: Icons.description_outlined,
           ),

@@ -72,6 +72,12 @@ func (s *Store) Categories(userID string) ([]domain.Category, error) {
 		categories = append(categories, category)
 	}
 
+	sortCategories(categories)
+
+	return categories, nil
+}
+
+func sortCategories(categories []domain.Category) {
 	sort.Slice(categories, func(i, j int) bool {
 		if categories[i].SortOrder != categories[j].SortOrder {
 			return categories[i].SortOrder < categories[j].SortOrder
@@ -81,8 +87,6 @@ func (s *Store) Categories(userID string) ([]domain.Category, error) {
 		}
 		return categories[i].CreatedAt.Before(categories[j].CreatedAt)
 	})
-
-	return categories, nil
 }
 
 // DeleteCategory removes a category that no entry references. Its unused
@@ -220,6 +224,12 @@ func (s *Store) Subcategories(userID, categoryID string) ([]domain.Subcategory, 
 		subcategories = append(subcategories, subcategory)
 	}
 
+	sortSubcategories(subcategories)
+
+	return subcategories, nil
+}
+
+func sortSubcategories(subcategories []domain.Subcategory) {
 	sort.Slice(subcategories, func(i, j int) bool {
 		if subcategories[i].SortOrder != subcategories[j].SortOrder {
 			return subcategories[i].SortOrder < subcategories[j].SortOrder
@@ -229,8 +239,6 @@ func (s *Store) Subcategories(userID, categoryID string) ([]domain.Subcategory, 
 		}
 		return subcategories[i].CreatedAt.Before(subcategories[j].CreatedAt)
 	})
-
-	return subcategories, nil
 }
 
 // DeleteSubcategory removes a subcategory that no entry, milestone or note
@@ -255,12 +263,25 @@ func (s *Store) DeleteSubcategory(userID, id string) error {
 }
 
 func entryReferencesCategoryTx(tx *bbolt.Tx, userID, categoryID string) (bool, error) {
-	return scanTxBucket(tx, userBucket(userID, entriesBucket), func(raw []byte) (bool, error) {
+	referenced, err := scanTxBucket(tx, userBucket(userID, entriesBucket), func(raw []byte) (bool, error) {
 		var entry domain.WorkEntry
 		if err := json.Unmarshal(raw, &entry); err != nil {
 			return false, fmt.Errorf("decode entry: %w", err)
 		}
 		return entry.CategoryID == categoryID, nil
+	})
+	if err != nil || referenced {
+		return referenced, err
+	}
+
+	// An active timer is not an entry yet, but deleting its attribution would
+	// leave it pointing at a category that no longer exists.
+	return scanTxBucket(tx, userBucket(userID, timerBucket), func(raw []byte) (bool, error) {
+		var timer domain.ActiveTimer
+		if err := json.Unmarshal(raw, &timer); err != nil {
+			return false, fmt.Errorf("decode timer: %w", err)
+		}
+		return timer.CategoryID == categoryID, nil
 	})
 }
 
@@ -271,6 +292,17 @@ func subcategoryReferencedTx(tx *bbolt.Tx, userID, subcategoryID string) (bool, 
 			return false, fmt.Errorf("decode entry: %w", err)
 		}
 		return entry.SubcategoryID == subcategoryID, nil
+	})
+	if err != nil || referenced {
+		return referenced, err
+	}
+
+	referenced, err = scanTxBucket(tx, userBucket(userID, timerBucket), func(raw []byte) (bool, error) {
+		var timer domain.ActiveTimer
+		if err := json.Unmarshal(raw, &timer); err != nil {
+			return false, fmt.Errorf("decode timer: %w", err)
+		}
+		return timer.SubcategoryID == subcategoryID, nil
 	})
 	if err != nil || referenced {
 		return referenced, err

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
+import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
 
@@ -61,6 +64,77 @@ void main() {
     expect(settings.settings.aiBaseUrl, 'https://provider.example/v1');
     expect(settings.settings.aiModel, 'provider-model');
     expect(settings.settings.redactUrls, isTrue);
+  });
+
+  testWidgets('a delayed preferences load is not overwritten by editors', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final gate = Completer<void>();
+    final settingsApi = FakeSettingsApi(
+      settings: const AppSettings(
+        timezone: 'Europe/Amsterdam',
+        weekStart: 1,
+        dailyTargetHours: 6.5,
+        longTimerMinutes: 180,
+        defaultDurationMinutes: 45,
+        aiBaseUrl: 'https://stored.example/v1',
+        aiModel: 'stored-model',
+        redactUrls: true,
+      ),
+    )..gate = gate;
+
+    await tester.pumpWidget(
+      WdidApp(
+        authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
+        initialRoute: '/settings',
+        settingsApiBuilder: (_) => settingsApi,
+        summaryApiBuilder: (_) => FakeSummaryApi(),
+      ),
+    );
+    // The Settings route is built while GetSettings is still in flight, so
+    // the editors initially hold the local defaults.
+    await tester.pump();
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    String fieldText(String label) => tester
+        .widget<TextField>(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is TextField && widget.decoration?.labelText == label,
+          ),
+        )
+        .controller!
+        .text;
+
+    expect(fieldText('Timezone'), 'Europe/Amsterdam');
+    expect(fieldText('Daily target'), '6.5');
+    expect(fieldText('Long timer prompt'), '180');
+    expect(fieldText('Default duration'), '45');
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Save time settings'));
+    await tester.pumpAndSettle();
+
+    expect(settingsApi.updateCalls, 1);
+    expect(settingsApi.settings.timezone, 'Europe/Amsterdam');
+    expect(settingsApi.settings.dailyTargetHours, 6.5);
+    expect(settingsApi.settings.longTimerMinutes, 180);
+    expect(settingsApi.settings.defaultDurationMinutes, 45);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Save AI settings'));
+    await tester.pumpAndSettle();
+
+    expect(settingsApi.updateCalls, 2);
+    expect(settingsApi.settings.aiBaseUrl, 'https://stored.example/v1');
+    expect(settingsApi.settings.aiModel, 'stored-model');
+    expect(settingsApi.settings.redactUrls, isTrue);
   });
 
   testWidgets('the prompt preview comes from the service template', (

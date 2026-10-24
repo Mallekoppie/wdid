@@ -67,18 +67,25 @@ class _EntryFormState extends State<EntryForm> {
     _initialized = true;
     if (widget.entry != null) return;
 
-    // A new entry starts from the user's defaults and last capture pair.
+    // A new entry starts from the user's defaults and last capture pair. A
+    // remembered pair that has since been archived is not offered again.
     final state = AppStateScope.of(context);
     _minutes.text = state.settings.defaultDurationMinutes.toString();
     final preferred = state.lastCategoryId;
-    _categoryId = preferred != null && state.categoryById(preferred) != null
+    _categoryId =
+        preferred != null &&
+            state.selectableCategories.any(
+              (category) => category.id == preferred,
+            )
         ? preferred
         : state.selectableCategories.isEmpty
         ? ''
         : state.selectableCategories.first.id;
     final lastSubcategory = state.lastSubcategoryId ?? '';
     _subcategoryId =
-        state.subcategoryById(lastSubcategory)?.categoryId == _categoryId
+        state
+            .selectableSubcategoriesFor(_categoryId)
+            .any((subcategory) => subcategory.id == lastSubcategory)
         ? lastSubcategory
         : '';
   }
@@ -181,10 +188,17 @@ class _EntryFormState extends State<EntryForm> {
     final scheme = theme.colorScheme;
     final subcategories = _categoryId.isEmpty
         ? <Subcategory>[]
-        : state.subcategoriesFor(_categoryId);
+        : state.selectableSubcategoriesFor(_categoryId);
     final support =
         state.categoryById(_categoryId)?.role == CategoryRole.support;
-
+    final selectedCategory =
+        state.selectableCategories.any((category) => category.id == _categoryId)
+        ? null
+        : state.categoryById(_categoryId);
+    final selectedSubcategory =
+        subcategories.any((subcategory) => subcategory.id == _subcategoryId)
+        ? null
+        : state.subcategoryById(_subcategoryId);
     return Container(
       width: double.infinity,
       color: widget.entry == null
@@ -217,14 +231,19 @@ class _EntryFormState extends State<EntryForm> {
                   value: _categoryId,
                   label: 'Category',
                   items: [
-                    if (state.categoryById(_categoryId) == null &&
-                        _categoryId.isNotEmpty)
-                      const DropdownMenuItem(
-                        value: '',
+                    // An entry already filed under an archived category keeps
+                    // its attribution visible but cannot be re-selected.
+                    if (_categoryId.isNotEmpty && selectedCategory != null)
+                      DropdownMenuItem(
+                        value: _categoryId,
                         enabled: false,
-                        child: Text('Unknown category'),
+                        child: Text(
+                          selectedCategory.name.isEmpty
+                              ? 'Unknown category'
+                              : '${selectedCategory.name} (archived)',
+                        ),
                       ),
-                    for (final category in state.categories)
+                    for (final category in state.selectableCategories)
                       DropdownMenuItem(
                         value: category.id,
                         child: Text(category.name),
@@ -249,6 +268,17 @@ class _EntryFormState extends State<EntryForm> {
                       value: '',
                       child: Text('No subcategory'),
                     ),
+                    if (_subcategoryId.isNotEmpty &&
+                        selectedSubcategory != null)
+                      DropdownMenuItem(
+                        value: _subcategoryId,
+                        enabled: false,
+                        child: Text(
+                          selectedSubcategory.name.isEmpty
+                              ? 'Unknown subcategory'
+                              : '${selectedSubcategory.name} (archived)',
+                        ),
+                      ),
                     for (final subcategory in subcategories)
                       DropdownMenuItem(
                         value: subcategory.id,

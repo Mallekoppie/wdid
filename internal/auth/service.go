@@ -6,12 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Mallekoppie/goslow/platform"
-	"github.com/coreos/go-oidc"
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Mallekoppie/wdid/internal/config"
@@ -77,13 +74,11 @@ func (i Identity) HasRole(role string) bool {
 	return false
 }
 
-// Service handles registration, login and token verification.
+// Service handles registration, login and resolving goslow's verified identity
+// onto a local account.
 type Service struct {
 	store *store.Store
 	cfg   config.Config
-
-	verifierMu sync.Mutex
-	verifier   *oidc.IDTokenVerifier
 }
 
 // NewService builds the auth service.
@@ -221,39 +216,36 @@ func (s *Service) issueToken(user domain.User) (string, error) {
 	})
 }
 
-// VerifyToken accepts either a locally issued token or, when Zitadel is
-// enabled, an ID token from the configured provider.
-func (s *Service) VerifyToken(ctx context.Context, raw string) (Identity, error) {
-	if claims, err := platform.LocalJwt.ValidateLocalJwtToken(raw); err == nil {
-		return s.identityFromLocalClaims(claims)
+// IdentityFromRequestContext resolves the wdid identity after goslow has
+// authorized the request. goslow stores exactly one Identity in the context;
+// its issuer records which strategy verified the token. wdid resolves that
+// identity onto a local account and always takes the role from the token.
+func (s *Service) IdentityFromRequestContext(ctx context.Context) (Identity, error) {
+	platformIdentity, ok := platform.IdentityFromContext(ctx)
+	if !ok {
+		return Identity{}, ErrUnauthenticated
+	}
+
+	return s.identityFromPlatform(platformIdentity)
+}
+
+func (s *Service) identityFromPlatform(platformIdentity platform.Identity) (Identity, error) {
+	if platformIdentity.Issuer == localIssuer {
+		return s.identityFromLocalClaims(platformIdentity)
 	}
 
 	if !s.cfg.Zitadel.Enabled {
 		return Identity{}, ErrUnauthenticated
 	}
 
-	return s.verifyOIDCToken(ctx, raw)
+	return s.identityFromOIDCClaims(platformIdentity)
 }
 
-// IdentityFromRequestContext resolves the wdid identity after goslow's auth
-// interceptor has accepted the request. Local JWTs expose their claims through
-// the platform context; OIDC tokens carry the raw token, which wdid resolves to
-// a local account (provisioning it on first login).
-func (s *Service) IdentityFromRequestContext(ctx context.Context) (Identity, error) {
-	if claims := platform.ClaimsFromContext(ctx); len(claims) > 0 {
-		return s.identityFromLocalClaims(claims)
-	}
-
-	raw := platform.ClientTokenFromContext(ctx)
-	if raw == "" {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	return s.VerifyToken(ctx, raw)
-}
-
-func (s *Service) identityFromLocalClaims(claims map[string]interface{}) (Identity, error) {
-	userID, _ := claims["sub"].(string)
+// identityFromLocalClaims resolves a locally issued token. The account must
+// still exist; the role comes from the token's roles claim, not the stored
+// profile.
+func (s *Service) identityFromLocalClaims(platformIdentity platform.Identity) (Identity, error) {
+	userID, _ := platformIdentity.Claims["sub"].(string)
 	if strings.TrimSpace(userID) == "" {
 		return Identity{}, ErrUnauthenticated
 	}
@@ -270,46 +262,25 @@ func (s *Service) identityFromLocalClaims(claims map[string]interface{}) (Identi
 		UserID:      user.ID,
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
-		Roles:       []string{string(user.Role)},
+		Roles:       rolesFor(platformIdentity.Roles),
 		Source:      LocalSource,
 	}, nil
 }
 
-func (s *Service) verifyOIDCToken(ctx context.Context, raw string) (Identity, error) {
-	verifier, err := s.oidcVerifier(ctx)
+// identityFromOIDCClaims resolves an ID token verified by goslow. The first
+// login provisions a local account by email; the role still comes from the
+// token, and provisioning only records it.
+func (s *Service) identityFromOIDCClaims(platformIdentity platform.Identity) (Identity, error) {
+	email, displayName, err := oidcProfile(platformIdentity.Claims)
 	if err != nil {
 		return Identity{}, err
 	}
 
-	idToken, err := verifier.Verify(ctx, raw)
-	if err != nil {
-		platform.Log.Warn("OIDC token rejected", zap.Error(err))
-		return Identity{}, ErrUnauthenticated
-	}
-
-	var claims struct {
-		Email             string   `json:"email"`
-		Name              string   `json:"name"`
-		PreferredUsername string   `json:"preferred_username"`
-		Roles             []string `json:"roles"`
-	}
-
-	if err := idToken.Claims(&claims); err != nil {
-		return Identity{}, ErrUnauthenticated
-	}
-
-	email := strings.ToLower(strings.TrimSpace(claims.Email))
-	if email == "" {
-		return Identity{}, fmt.Errorf("%w: OIDC token has no email claim", ErrUnauthenticated)
-	}
+	role := roleFromRoles(platformIdentity.Roles)
 
 	user, err := s.store.UserByEmail(email)
 	if errors.Is(err, store.ErrNotFound) {
-		displayName := claims.Name
-		if strings.TrimSpace(displayName) == "" {
-			displayName = claims.PreferredUsername
-		}
-		user, err = s.provisionOIDCUser(email, displayName, claims.Roles)
+		user, err = s.provisionOIDCUser(email, displayName, role)
 	}
 	if err != nil {
 		return Identity{}, err
@@ -319,31 +290,50 @@ func (s *Service) verifyOIDCToken(ctx context.Context, raw string) (Identity, er
 		UserID:      user.ID,
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
-		Roles:       []string{string(user.Role)},
+		Roles:       []string{string(role)},
 		Source:      OIDCSource,
 	}, nil
 }
 
-// provisionOIDCUser creates the local account backing a first-time OIDC login.
-func (s *Service) provisionOIDCUser(email, displayName string, roles []string) (domain.User, error) {
-	role := domain.RoleUser
-	if s.cfg.Zitadel.AdminRole != "" {
-		for _, candidate := range roles {
-			if candidate == s.cfg.Zitadel.AdminRole {
-				role = domain.RoleAdmin
-				break
-			}
+// oidcProfile extracts the account keys from verified ID token claims.
+func oidcProfile(claims map[string]interface{}) (string, string, error) {
+	email := strings.ToLower(strings.TrimSpace(stringClaim(claims, "email")))
+	if email == "" {
+		return "", "", fmt.Errorf("%w: OIDC token has no email claim", ErrUnauthenticated)
+	}
+
+	displayName := strings.TrimSpace(stringClaim(claims, "name"))
+	if displayName == "" {
+		displayName = strings.TrimSpace(stringClaim(claims, "preferred_username"))
+	}
+
+	return email, displayName, nil
+}
+
+// roleFromRoles maps goslow's verified roles claim onto a wdid role. Local and
+// OIDC tokens both use wdid's role vocabulary, so one rule covers both: an
+// admin claim wins, and everything else is a plain user.
+func roleFromRoles(roles []string) domain.Role {
+	for _, role := range roles {
+		if role == string(domain.RoleAdmin) {
+			return domain.RoleAdmin
 		}
 	}
 
-	count, err := s.store.CountUsers()
-	if err != nil {
-		return domain.User{}, err
-	}
-	if count == 0 {
-		role = domain.RoleAdmin
-	}
+	return domain.RoleUser
+}
 
+func rolesFor(roles []string) []string {
+	return []string{string(roleFromRoles(roles))}
+}
+
+func stringClaim(claims map[string]interface{}, key string) string {
+	value, _ := claims[key].(string)
+	return value
+}
+
+// provisionOIDCUser creates the local account backing a first-time OIDC login.
+func (s *Service) provisionOIDCUser(email, displayName string, role domain.Role) (domain.User, error) {
 	if strings.TrimSpace(displayName) == "" {
 		displayName = email
 	}
@@ -364,29 +354,4 @@ func (s *Service) provisionOIDCUser(email, displayName string, roles []string) (
 	}
 
 	return user, nil
-}
-
-// oidcVerifier discovers the provider lazily so a local-only deployment does
-// not depend on Zitadel being reachable at startup.
-func (s *Service) oidcVerifier(ctx context.Context) (*oidc.IDTokenVerifier, error) {
-	s.verifierMu.Lock()
-	defer s.verifierMu.Unlock()
-
-	if s.verifier != nil {
-		return s.verifier, nil
-	}
-
-	provider, err := oidc.NewProvider(ctx, s.cfg.Zitadel.IssuerURL)
-	if err != nil {
-		return nil, fmt.Errorf("discover OIDC provider: %w", err)
-	}
-
-	oidcConfig := &oidc.Config{ClientID: s.cfg.Zitadel.ClientID}
-	if len(s.cfg.Zitadel.AllowedAlgorithms) > 0 {
-		oidcConfig.SupportedSigningAlgs = s.cfg.Zitadel.AllowedAlgorithms
-	}
-
-	s.verifier = provider.Verifier(oidcConfig)
-
-	return s.verifier, nil
 }

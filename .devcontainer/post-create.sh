@@ -15,6 +15,11 @@ printf '  go      : %s\n' "$(go version 2>/dev/null | awk '{print $3}')"
 printf '  protoc  : %s\n' "$(protoc --version 2>/dev/null)"
 printf '  dart    : %s\n' "$(dart --version 2>&1 | head -1)"
 printf '  flutter : %s\n' "$(flutter --version 2>/dev/null | head -1)"
+if command -v gh >/dev/null 2>&1; then
+    printf '  gh      : %s\n' "$(gh --version 2>/dev/null | head -1)"
+else
+    warn "gh not found - rebuild the container to install the github-cli feature"
+fi
 if command -v claude >/dev/null 2>&1; then
     printf '  claude  : %s\n' "$(claude --version 2>/dev/null | head -1)"
 else
@@ -38,6 +43,18 @@ if command -v docker >/dev/null 2>&1; then
     fi
 else
     warn "docker/podman client not found"
+fi
+
+log "GitHub CLI"
+if command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1; then
+        acct="$(gh api user --jq .login 2>/dev/null || true)"
+        echo "  authenticated${acct:+ as ${acct}}"
+    else
+        warn "gh is not authenticated - export GH_TOKEN on the host or run 'gh auth login'"
+    fi
+else
+    warn "gh missing - rebuild the container to install the github-cli feature"
 fi
 
 if [ -f go.mod ]; then
@@ -65,6 +82,8 @@ cat <<'EOF'
 
 Next steps:
   claude            # first run signs in; auth persists in a volume
+  gh auth login     # or export GH_TOKEN on the host; persists in a volume
+  gh issue list     # track issues on github.com/Mallekoppie/wdid
   make proto        # generate Go + Dart stubs from internal/contracts/*.proto
   make buildweb     # build the Flutter web app into the embedded dist directory
   make all          # build the server

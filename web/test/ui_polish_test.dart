@@ -129,7 +129,10 @@ void main() {
         isNot(light.colorScheme.primary),
         reason: 'High Contrast must strengthen the generated scheme',
       );
-      expect(highContrast.colorScheme.onSurface, isNot(light.colorScheme.onSurface));
+      expect(
+        highContrast.colorScheme.onSurface,
+        isNot(light.colorScheme.onSurface),
+      );
     });
 
     test('comfortable and compact densities change the shared theme', () {
@@ -145,13 +148,14 @@ void main() {
       expect(compact.listTileTheme.dense, isTrue);
     });
 
-    testWidgets('settings applies theme and density immediately', (tester) async {
+    testWidgets('settings applies theme and density immediately', (
+      tester,
+    ) async {
       final settingsApi = FakeSettingsApi();
       await pumpApp(tester, route: '/settings', settingsApi: settingsApi);
 
-      ThemeData currentTheme() => Theme.of(
-        tester.element(find.byType(SettingsScreen)),
-      );
+      ThemeData currentTheme() =>
+          Theme.of(tester.element(find.byType(SettingsScreen)));
 
       expect(currentTheme().brightness, Brightness.light);
 
@@ -415,6 +419,16 @@ void main() {
         entryApi: entryApi,
         timerApi: timerApi,
       );
+      // Register the teardown before any expectation so a failing assertion
+      // cannot leave the ticker running and mask the real failure.
+      var disposed = false;
+      void disposeOnce() {
+        if (disposed) return;
+        disposed = true;
+        state.dispose();
+      }
+
+      addTearDown(disposeOnce);
       await tester.runAsync(() async {
         await state.load();
         await state.startTimer(categoryId: 'cat-1');
@@ -441,9 +455,9 @@ void main() {
       expect(find.text('Paused'), findsOneWidget);
       expect(find.byIcon(Icons.play_arrow), findsOneWidget);
 
-      // Stop the poll ticker before the test framework checks for pending
-      // timers.
-      state.dispose();
+      // Cancel the poll ticker before the binding checks for pending timers;
+      // the teardown above stays registered for an early failure.
+      disposeOnce();
     });
   });
 
@@ -459,8 +473,61 @@ void main() {
       expect(full.endsWith('2025'), isTrue);
       expect(full.indexOf('17'), lessThan(full.indexOf('Oct')));
 
-      expect(formatTimeRange(date, DateTime(2025, 10, 17, 9, 57)),
-          '09:05–09:57');
+      expect(
+        formatTimeRange(date, DateTime(2025, 10, 17, 9, 57)),
+        '09:05–09:57',
+      );
+    });
+
+    testWidgets('entry rows align times and durations with tabular figures', (
+      tester,
+    ) async {
+      final start = DateTime(2026, 10, 23, 9, 15);
+      final entry = WorkEntry(
+        id: 'entry-1',
+        categoryId: 'cat-1',
+        subcategoryId: 'sub-1',
+        description: 'Backfill script skeleton',
+        startedAt: start,
+        endedAt: start.add(const Duration(minutes: 42)),
+        minutes: 42,
+        localDate: '2026-10-23',
+        createdAt: start,
+        updatedAt: start,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.build(ThemePreference.light),
+          home: Scaffold(
+            body: WorkEntryRow(entry: entry, onEditOutcome: (_) {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      bool usesTabular(Text text) =>
+          text.style?.fontFeatures?.any(
+            (feature) => feature.feature == 'tnum',
+          ) ??
+          false;
+
+      final time = tester.widget<Text>(
+        find.text(formatTimeRange(entry.startedLocal, entry.endedLocal)),
+      );
+      final duration = tester.widget<Text>(
+        find.text(formatDuration(entry.minutes)),
+      );
+      expect(
+        usesTabular(time),
+        isTrue,
+        reason: 'the row time must use tabular figures so columns align',
+      );
+      expect(
+        usesTabular(duration),
+        isTrue,
+        reason: 'the row duration must use tabular figures so columns align',
+      );
     });
 
     testWidgets('compact density tightens data rows', (tester) async {
@@ -481,10 +548,7 @@ void main() {
       Future<double> workRowTopPadding(DensityPreference density) async {
         await tester.pumpWidget(
           MaterialApp(
-            theme: AppTheme.build(
-              ThemePreference.light,
-              density: density,
-            ),
+            theme: AppTheme.build(ThemePreference.light, density: density),
             home: Scaffold(
               body: WorkEntryRow(entry: entry, onEditOutcome: (_) {}),
             ),
@@ -514,34 +578,35 @@ void main() {
   });
 
   group('quick capture regression', () {
-    testWidgets('Enter still logs a one-line capture with the default duration', (
-      tester,
-    ) async {
-      final entryApi = FakeEntryApi();
-      final state = await pumpApp(
-        tester,
-        settingsApi: FakeSettingsApi(
-          settings: const AppSettings(defaultDurationMinutes: 45),
-        ),
-        entryApi: entryApi,
-      );
+    testWidgets(
+      'Enter still logs a one-line capture with the default duration',
+      (tester) async {
+        final entryApi = FakeEntryApi();
+        final state = await pumpApp(
+          tester,
+          settingsApi: FakeSettingsApi(
+            settings: const AppSettings(defaultDurationMinutes: 45),
+          ),
+          entryApi: entryApi,
+        );
 
-      expect(state.hasEntryService, isTrue);
-      expect(find.byType(QuickCaptureBar), findsOneWidget);
+        expect(state.hasEntryService, isTrue);
+        expect(find.byType(QuickCaptureBar), findsOneWidget);
 
-      final description = find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField &&
-            widget.decoration?.hintText == 'What did you do?',
-      );
-      await tester.enterText(description, 'Planned the sprint');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
+        final description = find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.hintText == 'What did you do?',
+        );
+        await tester.enterText(description, 'Planned the sprint');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
 
-      expect(entryApi.drafts, hasLength(1));
-      expect(entryApi.drafts.single.description, 'Planned the sprint');
-      expect(entryApi.drafts.single.minutes, 45);
-      expect(find.textContaining('Logged 45m'), findsOneWidget);
-    });
+        expect(entryApi.drafts, hasLength(1));
+        expect(entryApi.drafts.single.description, 'Planned the sprint');
+        expect(entryApi.drafts.single.minutes, 45);
+        expect(find.textContaining('Logged 45m'), findsOneWidget);
+      },
+    );
   });
 }

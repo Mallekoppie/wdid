@@ -56,6 +56,12 @@ func (s *Store) Milestones(userID, subcategoryID string) ([]domain.Milestone, er
 		milestones = append(milestones, milestone)
 	}
 
+	sortMilestones(milestones)
+
+	return milestones, nil
+}
+
+func sortMilestones(milestones []domain.Milestone) {
 	sort.Slice(milestones, func(i, j int) bool {
 		if (milestones[i].DueDate == "") != (milestones[j].DueDate == "") {
 			return milestones[j].DueDate == ""
@@ -65,8 +71,6 @@ func (s *Store) Milestones(userID, subcategoryID string) ([]domain.Milestone, er
 		}
 		return milestones[i].CreatedAt.Before(milestones[j].CreatedAt)
 	})
-
-	return milestones, nil
 }
 
 // DeleteMilestone removes one milestone owned by the user.
@@ -232,11 +236,15 @@ func (s *Store) CheckIns(userID string, kind domain.CheckInKind) ([]domain.Check
 		checkIns = append(checkIns, checkIn)
 	}
 
+	sortCheckIns(checkIns)
+
+	return checkIns, nil
+}
+
+func sortCheckIns(checkIns []domain.CheckIn) {
 	sort.Slice(checkIns, func(i, j int) bool {
 		return checkIns[i].CreatedAt.After(checkIns[j].CreatedAt)
 	})
-
-	return checkIns, nil
 }
 
 // DeleteCheckIn removes one check-in owned by the user. A final manager

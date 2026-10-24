@@ -99,6 +99,12 @@ func (s *AuthService) GetCurrentUser(ctx context.Context, _ *connect.Request[wdi
 		return nil, toConnectError(err)
 	}
 
+	// The caller's role comes from the verified token, not the stored profile,
+	// so the response must report the role that actually authorized the request.
+	if len(identity.Roles) > 0 {
+		user.Role = domain.Role(identity.Roles[0])
+	}
+
 	return connect.NewResponse(&wdidv1.GetCurrentUserResponse{User: toProtoUser(user)}), nil
 }
 

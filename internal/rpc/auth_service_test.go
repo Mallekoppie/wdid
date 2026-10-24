@@ -156,6 +156,26 @@ func TestAuthServiceConnectFlow(t *testing.T) {
 		t.Fatalf("current user email = %q", current.Msg.GetUser().GetEmail())
 	}
 
+	// The token's roles claim, not the stored profile, decides the reported
+	// role: the same account presents a user-role token and must read as user.
+	userToken, err := platform.LocalJwt.NewLocalJwtToken(map[string]interface{}{
+		"sub":                registration.GetUser().GetId(),
+		"email":              "admin@example.com",
+		"preferred_username": "Admin",
+		"roles":              []string{string(domain.RoleUser)},
+		"iss":                "wdid-local",
+	})
+	if err != nil {
+		t.Fatalf("issue user-role token: %v", err)
+	}
+	demoted, err := client.GetCurrentUser(context.Background(), withBearer(&wdidv1.GetCurrentUserRequest{}, userToken))
+	if err != nil {
+		t.Fatalf("get current user with user-role token: %v", err)
+	}
+	if demoted.Msg.GetUser().GetRole() != wdidv1.UserRole_USER_ROLE_USER {
+		t.Fatalf("reported role = %v, want user", demoted.Msg.GetUser().GetRole())
+	}
+
 	login, err := client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
 		Email:    "ADMIN@example.com",
 		Password: testPassword,
@@ -327,7 +347,6 @@ func TestAuthServiceReportsOIDCConfig(t *testing.T) {
 		IssuerURL:         "http://zitadel.local:8080",
 		ClientID:          "wdid-client",
 		AllowedAlgorithms: []string{"RS256"},
-		AdminRole:         "wdid-admins",
 	}
 
 	handler, _ := newAuthHandlerWithConfig(t, cfg)

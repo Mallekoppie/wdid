@@ -188,6 +188,21 @@ class FakeSettingsApi implements SettingsApi {
   SettingsFailure? failure;
   int updateCalls = 0;
 
+  /// When set, the next `getSettings` waits for it so tests can observe the
+  /// screen before the preferences arrive.
+  Completer<void>? gate;
+
+  @override
+  Future<SettingsSnapshot> getSettings() async {
+    if (gate != null) {
+      final pending = gate!;
+      gate = null;
+      await pending.future;
+    }
+    if (failure != null) throw failure!;
+    return SettingsSnapshot(settings: settings, about: about);
+  }
+
   BackupStatusInfo backupStatus = const BackupStatusInfo(
     overdue: true,
     backupDirectory: '/var/lib/wdid/backups',
@@ -201,12 +216,6 @@ class FakeSettingsApi implements SettingsApi {
   int backupNowCalls = 0;
   int restoreCalls = 0;
   String? restoredName;
-
-  @override
-  Future<SettingsSnapshot> getSettings() async {
-    if (failure != null) throw failure!;
-    return SettingsSnapshot(settings: settings, about: about);
-  }
 
   @override
   Future<AppSettings> updateSettings(AppSettings updated) async {

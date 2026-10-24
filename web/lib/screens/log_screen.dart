@@ -289,7 +289,16 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final range = _range(state);
-    final grouped = groupEntriesByLocalDay(state.logEntries);
+    final editing = _editing;
+    final visibleEntries = [...state.logEntries];
+    // A reload must never make an open editor disappear. If the new result no
+    // longer includes the edited row, keep showing it until the user saves or
+    // cancels, so the draft is not silently discarded.
+    if (editing != null &&
+        !visibleEntries.any((entry) => entry.id == editing.id)) {
+      visibleEntries.add(editing);
+    }
+    final grouped = groupEntriesByLocalDay(visibleEntries);
     for (final day in grouped.values) {
       day.sort((a, b) => a.startedAt.compareTo(b.startedAt));
     }
@@ -301,6 +310,10 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
         _categoryId.isNotEmpty ||
         _subcategoryId.isNotEmpty ||
         _search.text.trim().isNotEmpty;
+    // Keep the rows mounted while a draft is open; the loading panel would
+    // destroy the inline editor's state.
+    final showLoading = state.logLoading && editing == null;
+    final showError = state.logError != null && editing == null;
 
     return ScreenBody(
       child: PageScaffold(
@@ -509,7 +522,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                   ),
                 ),
               ),
-            if (state.logLoading)
+            if (showLoading)
               const Panel(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
@@ -529,7 +542,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                   ),
                 ),
               )
-            else if (state.logError != null)
+            else if (showError)
               Panel(
                 tone: PanelTone.warning,
                 child: Column(
@@ -599,6 +612,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                       ),
                       for (final entry in grouped[day]!)
                         _ServiceEntryRow(
+                          key: ValueKey(entry.id),
                           entry: entry,
                           category: state.categoryById(entry.categoryId),
                           subcategory: state.subcategoryById(
@@ -640,6 +654,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
 
 class _ServiceEntryRow extends StatefulWidget {
   const _ServiceEntryRow({
+    super.key,
     required this.entry,
     required this.category,
     required this.subcategory,

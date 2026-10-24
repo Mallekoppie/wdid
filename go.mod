@@ -4,8 +4,7 @@ go 1.27.2
 
 require (
 	connectrpc.com/connect v1.21.1
-	github.com/Mallekoppie/goslow v0.0.0-20261018185216-5eded094f41a
-	github.com/coreos/go-oidc v2.2.1+incompatible
+	github.com/Mallekoppie/goslow v0.1.0
 	github.com/google/uuid v1.6.0
 	go.etcd.io/bbolt v1.5.0
 	go.uber.org/zap v1.28.0
@@ -40,7 +39,6 @@ require (
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
-	github.com/pquerna/cachecontrol v0.0.0-20200921180117-858c6e7e6b7e // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.72.1 // indirect
@@ -60,5 +58,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 )

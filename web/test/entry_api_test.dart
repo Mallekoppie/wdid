@@ -17,6 +17,12 @@ class FakeEntryRpc implements EntryRpc {
   generated.ListEntriesResponse listResponse = generated.ListEntriesResponse();
   generated.WorkEntry entry = generated.WorkEntry();
 
+  /// When non-empty, each call returns the next page. A repeated trailing page
+  /// keeps the fake finite if the request loop runs unexpectedly.
+  final List<generated.ListEntriesResponse> listResponses = [];
+  final List<generated.ListEntriesRequest> listRequests = [];
+  int listCalls = 0;
+
   generated.ListEntriesRequest? listRequest;
   generated.CreateEntryRequest? createRequest;
   generated.UpdateEntryRequest? updateRequest;
@@ -33,7 +39,13 @@ class FakeEntryRpc implements EntryRpc {
     generated.ListEntriesRequest request,
   ) async {
     listRequest = request;
+    listRequests.add(request);
+    listCalls++;
     _maybeFail();
+    if (listResponses.isNotEmpty) {
+      final index = (listCalls - 1).clamp(0, listResponses.length - 1);
+      return listResponses[index];
+    }
     return listResponse;
   }
 
@@ -142,6 +154,40 @@ void main() {
     expect(rpc.listRequest!.query, 'backfill');
     expect(listing.overlappingIds, {'entry-1', 'entry-9'});
   });
+
+  test(
+    'listEntries merges overlapping pages without duplicating rows',
+    () async {
+      final rpc = FakeEntryRpc()
+        ..listResponses.addAll([
+          generated.ListEntriesResponse(
+            entries: [protoEntry(id: 'entry-1', minutes: 30)],
+            nextPageToken: 'page-2',
+            overlappingEntryIds: ['entry-1'],
+          ),
+          generated.ListEntriesResponse(
+            entries: [
+              // The second page repeats the last row of the first page.
+              protoEntry(id: 'entry-1', minutes: 30),
+              protoEntry(id: 'entry-2', minutes: 45),
+            ],
+            overlappingEntryIds: ['entry-2'],
+          ),
+        ]);
+
+      final listing = await GrpcEntryApi(rpc: rpc).listEntries();
+
+      expect(rpc.listCalls, 2);
+      expect(rpc.listRequests.first.pageToken, '');
+      expect(rpc.listRequests.last.pageToken, 'page-2');
+      expect(listing.entries.map((entry) => entry.id), ['entry-1', 'entry-2']);
+      expect(
+        listing.entries.fold<int>(0, (sum, entry) => sum + entry.minutes),
+        75,
+      );
+      expect(listing.overlappingIds, {'entry-1', 'entry-2'});
+    },
+  );
 
   test('splitEntry sends the offset and returns both halves', () async {
     final rpc = FakeEntryRpc()
