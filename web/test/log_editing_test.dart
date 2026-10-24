@@ -19,10 +19,12 @@ Category category(
   String id,
   String name, {
   CategoryRole role = CategoryRole.initiative,
+  bool archived = false,
 }) => Category(
   id: id,
   name: name,
   role: role,
+  archived: archived,
   createdAt: DateTime.utc(2026, 10, 23),
   updatedAt: DateTime.utc(2026, 10, 23),
 );
@@ -86,6 +88,7 @@ Future<FakeEntryApi> pumpLog(
   EntryFailure? listFailure,
   Completer<List<WorkEntry>>? logGate,
   bool settle = true,
+  FakeCategoryApi? categoryApi,
 }) async {
   tester.view.physicalSize = const Size(1600, 1400);
   tester.view.devicePixelRatio = 1.0;
@@ -102,18 +105,20 @@ Future<FakeEntryApi> pumpLog(
       authApi: FakeAuthApi(),
       initialSession: signedInSession(),
       initialRoute: '/log',
-      categoryApiBuilder: (_) => FakeCategoryApi(
-        categories: [
-          category('cat-1', 'Initiatives'),
-          category('cat-2', 'Meetings', role: CategoryRole.other),
-          category('cat-s', 'Support', role: CategoryRole.support),
-        ],
-        subcategories: [
-          subcategory('sub-1', 'cat-1', 'Billing migration'),
-          subcategory('sub-2', 'cat-2', 'Sprint planning'),
-          subcategory('sub-s', 'cat-s', 'Unblock'),
-        ],
-      ),
+      categoryApiBuilder: (_) =>
+          categoryApi ??
+          FakeCategoryApi(
+            categories: [
+              category('cat-1', 'Initiatives'),
+              category('cat-2', 'Meetings', role: CategoryRole.other),
+              category('cat-s', 'Support', role: CategoryRole.support),
+            ],
+            subcategories: [
+              subcategory('sub-1', 'cat-1', 'Billing migration'),
+              subcategory('sub-2', 'cat-2', 'Sprint planning'),
+              subcategory('sub-s', 'cat-s', 'Unblock'),
+            ],
+          ),
       settingsApiBuilder: (_) => FakeSettingsApi(settings: const AppSettings()),
       entryApiBuilder: (_) => entryApi,
     ),
@@ -225,6 +230,102 @@ void main() {
     expect(entryApi.entries.single.description, 'Backfill script finished');
     expect(find.text('Backfill script finished'), findsOneWidget);
     expect(find.text('Entry updated'), findsOneWidget);
+  });
+
+  testWidgets('keeps an inline draft across a reload', (tester) async {
+    final entryApi = await pumpLog(
+      tester,
+      entries: [
+        testWorkEntry(id: 'entry-a', description: 'Backfill script skeleton'),
+      ],
+    );
+
+    await openRowMenu(tester);
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(descriptionField(), 'Unsaved draft text');
+
+    final gate = Completer<List<WorkEntry>>();
+    entryApi.logGate = gate;
+    await tester.enterText(searchField(), 'backfill');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+
+    // The rows stay mounted while the reload is in flight, so the editor and
+    // its draft are not destroyed by the loading panel.
+    expect(find.text('Loading entries…'), findsNothing);
+    expect(descriptionField(), findsOneWidget);
+
+    // The server returns a different description and the filter no longer
+    // matches it; the open editor still survives.
+    gate.complete([testWorkEntry(id: 'entry-a', description: 'Server values')]);
+    await tester.pumpAndSettle();
+
+    expect(descriptionField(), findsOneWidget);
+    expect(
+      tester.widget<TextField>(descriptionField()).controller!.text,
+      'Unsaved draft text',
+    );
+  });
+
+  testWidgets('archived categories are not offered or preselected', (
+    tester,
+  ) async {
+    final taxonomy = FakeCategoryApi(
+      categories: [
+        category(
+          'cat-retired',
+          'Retired',
+          role: CategoryRole.other,
+          archived: true,
+        ),
+        category('cat-1', 'Initiatives'),
+      ],
+      subcategories: [
+        Subcategory(
+          id: 'sub-retired',
+          categoryId: 'cat-retired',
+          name: 'Old project',
+          archived: true,
+          createdAt: DateTime.utc(2026, 10, 23),
+          updatedAt: DateTime.utc(2026, 10, 23),
+        ),
+        subcategory('sub-1', 'cat-1', 'Billing migration'),
+      ],
+    );
+    await pumpLog(
+      tester,
+      categoryApi: taxonomy,
+      entries: [
+        testWorkEntry(
+          id: 'entry-archived',
+          categoryId: 'cat-retired',
+          subcategoryId: 'sub-retired',
+          description: 'Old archived work',
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('Add entry').first);
+    await tester.pumpAndSettle();
+
+    // The remembered pair came from the archived entry, so the form must fall
+    // back to the first selectable category and no subcategory.
+    final formCategory = tester.widget<DropdownButton<String>>(
+      find.byType(DropdownButton<String>).at(2),
+    );
+    final formSubcategory = tester.widget<DropdownButton<String>>(
+      find.byType(DropdownButton<String>).at(3),
+    );
+    expect(formCategory.value, 'cat-1');
+    expect(formSubcategory.value, '');
+
+    await tester.tap(find.byType(DropdownButton<String>).at(2));
+    await tester.pumpAndSettle();
+    expect(find.text('Retired'), findsNothing);
+    expect(find.text('Old project'), findsNothing);
+    await tester.tap(find.text('Initiatives').last);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('rejects invalid inline minutes', (tester) async {

@@ -48,6 +48,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _timeError;
   String? _timeField;
 
+  // An editor only resyncs from the service while the user has not changed it,
+  // so a delayed preferences load cannot overwrite a draft.
+  bool _timeDirty = false;
+  bool _aiDirty = false;
+  bool _syncing = false;
+
   CheckInPromptVariant _previewVariant = CheckInPromptVariant.managerOneOnOne;
   PromptTemplate? _previewTemplate;
   String? _previewError;
@@ -56,27 +62,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_initialized) return;
-    _initialized = true;
-    final settings = AppStateScope.of(context).settings;
-    _timezone = TextEditingController(text: settings.timezone);
-    _dailyTarget = TextEditingController(
-      text: settings.dailyTargetHours.toString(),
-    );
-    _longTimer = TextEditingController(text: '${settings.longTimerMinutes}');
-    _defaultDuration = TextEditingController(
-      text: '${settings.defaultDurationMinutes}',
-    );
-    _baseUrl = TextEditingController(text: settings.aiBaseUrl);
-    _model = TextEditingController(text: settings.aiModel);
-    _weekStart = settings.weekStart;
-    _reviewCadence = settings.reviewCadence;
-    _redactUrls = settings.redactUrls;
-    if (AppStateScope.of(context).hasSummaryService) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(_loadPromptTemplate());
-      });
+    final state = AppStateScope.of(context);
+    if (!_initialized) {
+      _initialized = true;
+      _timezone = TextEditingController(text: state.settings.timezone);
+      _dailyTarget = TextEditingController(
+        text: state.settings.dailyTargetHours.toString(),
+      );
+      _longTimer = TextEditingController(
+        text: '${state.settings.longTimerMinutes}',
+      );
+      _defaultDuration = TextEditingController(
+        text: '${state.settings.defaultDurationMinutes}',
+      );
+      _baseUrl = TextEditingController(text: state.settings.aiBaseUrl);
+      _model = TextEditingController(text: state.settings.aiModel);
+      for (final controller in [
+        _timezone,
+        _dailyTarget,
+        _longTimer,
+        _defaultDuration,
+      ]) {
+        controller.addListener(_markTimeDirty);
+      }
+      for (final controller in [_baseUrl, _model]) {
+        controller.addListener(_markAiDirty);
+      }
+      _weekStart = state.settings.weekStart;
+      _reviewCadence = state.settings.reviewCadence;
+      _redactUrls = state.settings.redactUrls;
+      if (state.hasSummaryService) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_loadPromptTemplate());
+        });
+      }
+      return;
     }
+
+    // Preferences load asynchronously (and can be retried after a transient
+    // failure). When they arrive, refresh only the editors the user has not
+    // touched; otherwise Save would write defaults over stored values.
+    _applySettings(state.settings);
+  }
+
+  void _markTimeDirty() {
+    if (!_syncing) _timeDirty = true;
+  }
+
+  void _markAiDirty() {
+    if (!_syncing) _aiDirty = true;
+  }
+
+  void _applySettings(AppSettings settings) {
+    _syncing = true;
+    try {
+      if (!_timeDirty) {
+        _setText(_timezone, settings.timezone);
+        _setText(_dailyTarget, settings.dailyTargetHours.toString());
+        _setText(_longTimer, '${settings.longTimerMinutes}');
+        _setText(_defaultDuration, '${settings.defaultDurationMinutes}');
+        _weekStart = settings.weekStart;
+        _reviewCadence = settings.reviewCadence;
+      }
+      if (!_aiDirty) {
+        _setText(_baseUrl, settings.aiBaseUrl);
+        _setText(_model, settings.aiModel);
+        _redactUrls = settings.redactUrls;
+      }
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  void _setText(TextEditingController controller, String value) {
+    if (controller.text != value) controller.text = value;
   }
 
   @override
@@ -92,13 +151,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveTime() async {
     final state = AppStateScope.read(context);
+    if (state.preferencesError != null || state.preferencesLoading) {
+      setState(() {
+        _timeError =
+            'Preferences could not be loaded. Retry before saving so stored '
+            'values are not replaced.';
+        _timeField = null;
+      });
+      return;
+    }
     setState(() {
       _savingTime = true;
       _timeError = null;
       _timeField = null;
     });
     try {
-      await state.saveSettings(
+      final saved = await state.saveSettings(
         state.settings.copyWith(
           timezone: _timezone.text.trim().isEmpty
               ? state.settings.timezone
@@ -117,7 +185,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      setState(() => _savingTime = false);
+      setState(() {
+        _savingTime = false;
+        _timeDirty = false;
+      });
+      _applySettings(saved);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Time settings saved')));
     } on SettingsFailure catch (failure) {
@@ -138,11 +210,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveAi() async {
     final state = AppStateScope.read(context);
+    if (state.preferencesError != null || state.preferencesLoading) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Preferences could not be loaded. Retry before saving so stored '
+            'values are not replaced.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _savingAi = true);
     try {
       // The key is deliberately absent: it comes from the server environment
       // and the settings contract has no field for it.
-      await state.saveSettings(
+      final saved = await state.saveSettings(
         state.settings.copyWith(
           aiBaseUrl: _baseUrl.text.trim(),
           aiModel: _model.text.trim(),
@@ -150,7 +233,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      setState(() => _savingAi = false);
+      setState(() {
+        _savingAi = false;
+        _aiDirty = false;
+      });
+      _applySettings(saved);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('AI settings saved')));
     } catch (error) {
@@ -221,6 +308,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final settings = state.settings;
+    // Saving before a successful load would write the default editors over the
+    // account's stored preferences.
+    final canSavePreferences =
+        state.preferencesError == null && !state.preferencesLoading;
 
     return ScreenBody(
       child: PageScaffold(
@@ -295,6 +386,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onChanged: (value) {
                             if (value != null) {
                               setState(() => _weekStart = value);
+                              _timeDirty = true;
                             }
                           },
                         ),
@@ -331,6 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onChanged: (value) {
                             if (value != null) {
                               setState(() => _reviewCadence = value);
+                              _timeDirty = true;
                             }
                           },
                         ),
@@ -381,7 +474,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       FilledButton(
-                        onPressed: _savingTime ? null : _saveTime,
+                        onPressed: _savingTime || !canSavePreferences
+                            ? null
+                            : _saveTime,
                         child: _savingTime
                             ? const SizedBox(
                                 width: 14,
@@ -433,7 +528,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: AppSpacing.sm),
                   SwitchListTile(
                     value: _redactUrls,
-                    onChanged: (value) => setState(() => _redactUrls = value),
+                    onChanged: (value) {
+                      setState(() => _redactUrls = value);
+                      _aiDirty = true;
+                    },
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Redact URLs and notes'),
@@ -572,7 +670,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       FilledButton(
-                        onPressed: _savingAi ? null : _saveAi,
+                        onPressed: _savingAi || !canSavePreferences
+                            ? null
+                            : _saveAi,
                         child: _savingAi
                             ? const SizedBox(
                                 width: 14,

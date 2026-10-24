@@ -499,6 +499,43 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Edit'), findsNothing);
   });
 
+  testWidgets('mark final cannot discard an open summary draft', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, 'Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '## Unsaved draft');
+
+    final markFinal = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Mark final'),
+    );
+    expect(markFinal.onPressed, isNull);
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Mark final'),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mark check-in as final?'), findsNothing);
+    expect(api.finalizeRequests, isEmpty);
+    // The draft is still in the editor rather than stranded behind a
+    // read-only final check-in.
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '## Unsaved draft',
+    );
+  });
+
   testWidgets('a final check-in hides the finalize action', (tester) async {
     final api = FakeCheckInApi(checkIns: [checkIn(state: CheckInState.final_)]);
     await pumpCheckIns(

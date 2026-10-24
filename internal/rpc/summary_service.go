@@ -353,58 +353,39 @@ func (s *SummaryService) resolveExportScope(userID, checkInID, fromDate, toDate 
 
 // exportInput gathers one consistent view of the scoped period. Aggregates come
 // from the authoritative report; the raw rows supply the CSV sheets and the
-// structured payload.
+// structured payload. Every read happens inside one store transaction so the
+// report, rows, taxonomy, milestones, check-ins and settings cannot disagree.
 func (s *SummaryService) exportInput(userID, fromDate, toDate string, checkIn *domain.CheckIn) (domain.ExportInput, error) {
-	report, err := s.store.PeriodReport(userID, fromDate, toDate)
+	checkInID := ""
+	if checkIn != nil {
+		checkInID = checkIn.ID
+	}
+	snapshot, err := s.store.ExportSnapshot(userID, fromDate, toDate, checkInID)
 	if err != nil {
 		return domain.ExportInput{}, err
-	}
-	entries, err := s.store.WorkEntriesInDateRange(userID, report.FromDate, report.ToDate)
-	if err != nil {
-		return domain.ExportInput{}, err
-	}
-	categories, err := s.store.Categories(userID)
-	if err != nil {
-		return domain.ExportInput{}, err
-	}
-	subcategories, err := s.store.Subcategories(userID, "")
-	if err != nil {
-		return domain.ExportInput{}, err
-	}
-	milestones, err := s.store.Milestones(userID, "")
-	if err != nil {
-		return domain.ExportInput{}, err
-	}
-
-	settings := domain.DefaultSettings(userID)
-	if stored, settingsErr := s.store.Settings(userID); settingsErr == nil {
-		settings = stored
 	}
 
 	var checkIns []domain.CheckIn
-	if checkIn != nil {
-		checkIns = []domain.CheckIn{*checkIn}
-	} else {
-		stored, err := s.store.CheckIns(userID, "")
-		if err != nil {
-			return domain.ExportInput{}, err
-		}
-		checkIns = checkInsInPeriod(stored, report.FromDate, report.ToDate)
-	}
-
 	focusNotes := ""
 	if checkIn != nil {
-		focusNotes = checkIn.FocusNotes
+		scoped := snapshot.ScopedCheckIn
+		if scoped == nil || scoped.ID != checkIn.ID {
+			return domain.ExportInput{}, store.ErrNotFound
+		}
+		checkIns = []domain.CheckIn{*scoped}
+		focusNotes = scoped.FocusNotes
+	} else {
+		checkIns = checkInsInPeriod(snapshot.CheckIns, snapshot.Report.FromDate, snapshot.Report.ToDate)
 	}
 
 	return domain.ExportInput{
-		Report:        report,
-		Entries:       entries,
-		Categories:    categories,
-		Subcategories: subcategories,
-		Milestones:    milestones,
+		Report:        snapshot.Report,
+		Entries:       snapshot.Entries,
+		Categories:    snapshot.Categories,
+		Subcategories: snapshot.Subcategories,
+		Milestones:    snapshot.Milestones,
 		CheckIns:      checkIns,
-		Settings:      settings,
+		Settings:      snapshot.Settings,
 		FocusNotes:    focusNotes,
 		GeneratedAt:   s.now().UTC(),
 	}, nil

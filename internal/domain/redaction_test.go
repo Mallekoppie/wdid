@@ -104,3 +104,53 @@ func TestBuildExportSummaryKeepsNotesAndURLsWithoutRedaction(t *testing.T) {
 		}
 	}
 }
+
+func TestRedactExportInputStripsEveryURLScheme(t *testing.T) {
+	links := []string{
+		"https://internal.example/runbook",
+		"ftp://user:pass@files.example/private",
+		"file:///home/dev/.ssh/config",
+		"ssh://git@internal.example/repo",
+		"mailto:dev@internal.example",
+	}
+
+	for _, link := range links {
+		t.Run(link, func(t *testing.T) {
+			input := redactionFixture()
+			input.Entries[0].Description = "See " + link + " for details"
+			input.Entries[0].Outcome = "Copied to " + link
+
+			redacted := domain.RedactExportInput(input)
+			for _, field := range []string{redacted.Entries[0].Description, redacted.Entries[0].Outcome} {
+				if strings.Contains(strings.ToLower(field), link) {
+					t.Fatalf("redacted field still holds %q: %q", link, field)
+				}
+				if !strings.Contains(field, "[link removed]") {
+					t.Fatalf("redacted field = %q, want a visible marker", field)
+				}
+			}
+		})
+	}
+
+	// Redaction is copy-on-write, so the export built from the same input keeps
+	// every original link.
+	input := redactionFixture()
+	input.Entries[0].Description = strings.Join(links, " ")
+	before, err := domain.BuildExportBundle(input)
+	if err != nil {
+		t.Fatalf("build export before redaction: %v", err)
+	}
+	_ = domain.RedactExportInput(input)
+	after, err := domain.BuildExportBundle(input)
+	if err != nil {
+		t.Fatalf("build export after redaction: %v", err)
+	}
+	for index := range before.Files {
+		if before.Files[index] != after.Files[index] {
+			t.Fatalf("redaction changed export file %q", before.Files[index].Name)
+		}
+	}
+	if !strings.Contains(before.Files[1].Content, links[1]) {
+		t.Fatalf("export data lost the unredacted link:\n%s", before.Files[1].Content)
+	}
+}

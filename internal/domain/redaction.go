@@ -9,9 +9,11 @@ import (
 // redaction visible to the user and to the model, without leaking the target.
 const redactedURL = "[link removed]"
 
-// urlPattern matches an http(s) URL up to whitespace or the punctuation that
-// commonly closes a Markdown link.
-var urlPattern = regexp.MustCompile(`(?i)https?://[^\s)>\]]+`)
+// urlPattern matches any URL scheme (http, https, ftp, file, ssh, …) plus a
+// mailto: address, up to whitespace or the punctuation that commonly closes a
+// Markdown link. Matching only http(s) would leave credentials or local paths
+// in the payload sent to a provider.
+var urlPattern = regexp.MustCompile(`(?i)(?:[a-z][a-z0-9+.-]*://|mailto:)[^\s)>\]]+`)
 
 // RedactExportInput strips URLs and notes from a bundle before it is sent to an
 // AI provider. It is a copy-on-write transformation: the stored export input is

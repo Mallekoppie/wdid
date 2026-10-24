@@ -166,10 +166,18 @@ class GrpcEntryApi implements EntryApi {
         ),
         (response) => response.nextPageToken,
       );
+      // A page boundary can overlap. De-duplicate by id with the first
+      // occurrence winning so a shifted page never double-counts minutes.
+      final entries = <WorkEntry>[];
+      final seen = <String>{};
+      for (final response in pages) {
+        for (final proto in response.entries) {
+          final entry = entryFromProto(proto);
+          if (seen.add(entry.id)) entries.add(entry);
+        }
+      }
       return EntryListing(
-        entries: [
-          for (final response in pages) ...response.entries.map(entryFromProto),
-        ],
+        entries: entries,
         overlappingIds: {
           for (final response in pages) ...response.overlappingEntryIds,
         },

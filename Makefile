@@ -41,8 +41,16 @@ WDID_JWT_SECRET           ?= local-dev-jwt-secret-change-me-32chars
 WDID_ALLOWED_ORIGINS      ?= http://127.0.0.1:5173,http://localhost:5173
 WDID_DEV_MODE             ?= true
 
+# Browser smoke credentials. The bootstrap secret must match the one the
+# running service was started with, so it defaults to the development default
+# above and makes `make run` + `make smoke-web` work against a fresh database.
+WDID_SMOKE_EMAIL             ?= smoke@example.com
+WDID_SMOKE_PASSWORD          ?= smoke-password-123
+WDID_SMOKE_BOOTSTRAP_SECRET  ?= $(WDID_BOOTSTRAP_SECRET)
+
 export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
+export WDID_SMOKE_EMAIL WDID_SMOKE_PASSWORD WDID_SMOKE_BOOTSTRAP_SECRET
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
         lint fmt tidy proto proto-check docker-build clean check smoke-web

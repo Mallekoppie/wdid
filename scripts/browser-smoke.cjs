@@ -46,6 +46,19 @@ function fail(message) {
   throw new Error(message);
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/// Flutter exposes semantics text in aria-label or the node's text content
+/// depending on the widget. Read whichever one the framework chose.
+async function accessibleName(locator) {
+  const label = await locator.getAttribute('aria-label');
+  if (label && label.trim()) return label.trim();
+  const text = await locator.textContent();
+  return (text || '').trim();
+}
+
 async function expectCount(locator, expected, label, timeout = 15000) {
   if (expected === '>0') {
     // Flutter renders asynchronously after a route change or an RPC. The
@@ -97,12 +110,33 @@ async function enableSemantics(page) {
   await page.waitForTimeout(800);
 }
 
+/// The config fetch decides whether the gate is a bootstrap form or a normal
+/// sign-in. Both render asynchronously, so wait for either instead of counting
+/// once after a fixed delay.
+async function waitForAuthGate(page, timeout = 15000) {
+  await enableSemantics(page);
+  const bootstrapInput = page.locator('input[aria-label="Bootstrap secret"]');
+  const signInButton = page.getByRole('button', {
+    name: 'Sign in',
+    exact: true,
+  });
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if ((await bootstrapInput.count()) > 0) return 'bootstrap';
+    if ((await signInButton.count()) > 0) return 'signin';
+    await page.waitForTimeout(250);
+  }
+  fail(
+    'auth gate: neither the bootstrap form nor the Sign in button appeared',
+  );
+}
+
 async function signIn(page) {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.waitForTimeout(2500);
-  await enableSemantics(page);
 
-  if (await page.locator('input[aria-label="Bootstrap secret"]').count()) {
+  const gate = await waitForAuthGate(page);
+  if (gate === 'bootstrap') {
     log('auth gate: bootstrap first admin account');
     await page.locator('input[aria-label="Display name"]').fill(DISPLAY_NAME);
     await page.locator('input[aria-label="Email"]').first().fill(EMAIL);
@@ -140,22 +174,46 @@ async function captureEntry(page) {
     .filter({ hasNotText: 'No subcategory' })
     .filter({ hasNotText: 'Add' })
     .first();
-  if (await categoryButton.count()) {
-    await categoryButton.click();
-    await page.waitForTimeout(500);
-    const option = page.getByRole('menuitem', { name: 'Initiatives' });
-    if (await option.count()) {
-      await option.first().click();
-      await page.waitForTimeout(400);
-    }
+  if (!(await categoryButton.count())) {
+    fail('capture: no category selector was found');
   }
+
+  // Choose whichever category the instance actually has; the smoke test must
+  // not assume the seed taxonomy. Remember its name for the confirmation.
+  await categoryButton.click();
+  await page.waitForTimeout(500);
+  const categoryOptions = page.getByRole('menuitem');
+  await categoryOptions
+    .first()
+    .waitFor({ state: 'attached', timeout: 5000 })
+    .catch(() => {});
+  if (!(await categoryOptions.count())) {
+    fail('capture: no category could be selected from the menu');
+  }
+  const categoryOption = categoryOptions.first();
+  const categoryName = await accessibleName(categoryOption);
+  if (!categoryName) {
+    fail('capture: could not read the selected category name');
+  }
+  await categoryOption.click();
+  // Wait for the menu to close before touching the form; a click landing on
+  // the dismissing overlay would silently drop the capture.
+  await categoryOptions
+    .first()
+    .waitFor({ state: 'detached', timeout: 3000 })
+    .catch(() => {});
+  await page.waitForTimeout(400);
 
   await page
     .locator('input[aria-label="What did you do?"]')
     .fill('Smoke capture entry');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.waitForTimeout(1500);
-  await waitForTextOrLabel(page, /Logged .*to Initiatives/, 'capture confirmation');
+  await waitForTextOrLabel(
+    page,
+    new RegExp(`Logged .*to ${escapeRegExp(categoryName)}`),
+    'capture confirmation',
+  );
 
   await page.goto(`${BASE}/#/log`, { waitUntil: 'load' });
   await page.waitForTimeout(2000);

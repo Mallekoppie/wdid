@@ -6,12 +6,14 @@ import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/state/app_state.dart';
+import 'package:wdid_web/utils/time_utils.dart';
 import 'package:wdid_web/widgets/searchable_dropdown.dart';
 import 'package:wdid_web/widgets/service_timer_card.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
 import 'fake_preferences_api.dart';
+import 'fake_summary_api.dart';
 import 'fake_timer_api.dart';
 
 Category category(
@@ -217,6 +219,67 @@ void main() {
     await expectLater(state.startTimer(), throwsA(isA<TimerFailure>()));
 
     expect(timerApi.timer, isNull);
+  });
+
+  test('stopping a timer refreshes the loaded Log and Support views', () async {
+    final timerApi = FakeTimerApi();
+    final entryApi = FakeEntryApi(entries: timerApi.savedEntries);
+    final summaryApi = FakeSummaryApi();
+    final state = AppState(
+      categoryApi: FakeCategoryApi(
+        categories: [
+          category('cat-1', 'Initiatives'),
+          category('cat-support', 'Support', role: CategoryRole.support),
+        ],
+        subcategories: [
+          subcategory('sub-1', 'cat-1', 'Billing migration'),
+          subcategory('mode-s', 'cat-support', 'Unblock'),
+        ],
+      ),
+      settingsApi: FakeSettingsApi(settings: const AppSettings()),
+      entryApi: entryApi,
+      timerApi: timerApi,
+      summaryApi: summaryApi,
+    );
+    addTearDown(state.dispose);
+
+    await state.load();
+    final today = isoDate(DateTime.now());
+    final quarterStart = isoDate(startOfQuarter(DateTime.now()));
+    await state.loadLog(LogQuery(fromDate: quarterStart, toDate: today));
+    await state.loadSupport(fromDate: quarterStart, toDate: today);
+    expect(state.logEntries, isEmpty);
+    expect(state.supportEntries, isEmpty);
+    expect(state.supportReport, isNotNull);
+    final supportRefreshes = summaryApi.requests
+        .where((request) => !request.currentWeek)
+        .length;
+
+    await state.startTimer(
+      categoryId: 'cat-support',
+      subcategoryId: 'mode-s',
+      person: 'Priya',
+      description: 'Helped Priya',
+    );
+    await state.stopTimer();
+    await pumpEventQueue();
+
+    final entry = timerApi.savedEntries.single;
+    expect(
+      state.logEntries.any((candidate) => candidate.id == entry.id),
+      isTrue,
+      reason: 'the saved timer block must appear in an already-loaded Log',
+    );
+    expect(
+      state.supportEntries.any((candidate) => candidate.id == entry.id),
+      isTrue,
+      reason: 'the saved timer block must appear in an already-loaded Support',
+    );
+    expect(
+      summaryApi.requests.where((request) => !request.currentWeek).length,
+      greaterThan(supportRefreshes),
+      reason: 'the Support rollups must be reloaded, not just its rows',
+    );
   });
 
   test('a reload follows the server timer instead of inventing one', () async {

@@ -19,6 +19,10 @@ class FakeTimerApi implements TimerApi {
   int startCalls = 0;
   int getActiveCalls = 0;
 
+  /// Every entry this fake's stop produced, in order. Tests can pass this list
+  /// to a fake entry service so a stopped timer is visible to reloads.
+  final List<WorkEntry> savedEntries = [];
+
   @override
   Future<TimerStatus> getActiveTimer() async {
     getActiveCalls++;
@@ -138,6 +142,7 @@ class FakeTimerApi implements TimerApi {
       updatedAt: DateTime.now().toUtc(),
     );
     timer = null;
+    savedEntries.add(entry);
     return StopTimerResult(entry: entry);
   }
 }

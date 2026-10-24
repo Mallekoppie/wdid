@@ -290,3 +290,28 @@ func TestCategoryWithReferencedChildCannotBeDeleted(t *testing.T) {
 		t.Fatalf("referenced child must survive: %v", err)
 	}
 }
+
+func TestActiveTimerProtectsItsCategoryAndSubcategory(t *testing.T) {
+	database, userID, categoryID, subcategoryID := newTimerOwner(t)
+	start := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	startTestTimer(t, database, userID, categoryID, subcategoryID, start)
+
+	if err := database.DeleteSubcategory(userID, subcategoryID); !errors.Is(err, store.ErrSubcategoryInUse) {
+		t.Fatalf("delete subcategory used by timer error = %v, want ErrSubcategoryInUse", err)
+	}
+	if err := database.DeleteCategory(userID, categoryID); !errors.Is(err, store.ErrCategoryInUse) {
+		t.Fatalf("delete category used by timer error = %v, want ErrCategoryInUse", err)
+	}
+
+	// Discarding the timer releases both attributions, so the active-timer
+	// guard does not permanently pin the taxonomy.
+	if _, _, err := database.StopTimer(userID, start.Add(time.Minute), domain.TimerStopDiscard, 240); err != nil {
+		t.Fatalf("discard timer: %v", err)
+	}
+	if err := database.DeleteSubcategory(userID, subcategoryID); err != nil {
+		t.Fatalf("delete subcategory after discard: %v", err)
+	}
+	if err := database.DeleteCategory(userID, categoryID); err != nil {
+		t.Fatalf("delete category after discard: %v", err)
+	}
+}

@@ -19,51 +19,60 @@ import (
 func (s *Store) PeriodReport(userID, fromDate, toDate string) (domain.PeriodReport, error) {
 	var report domain.PeriodReport
 	err := platform.Database.BoltDb.View(func(tx *bbolt.Tx) error {
-		settings := domain.DefaultSettings(userID)
-		_ = readTxObject(tx, userBucket(userID, settingsBucket), settingsKey, &settings)
-
-		// The day index selects the entries in range; categories, subcategories
-		// and notes are small enough to scan for their names and context.
-		entries, err := entriesInDateRangeTx(tx, userID, fromDate, toDate)
-		if err != nil {
-			return err
-		}
-		categories, err := readBucketTx[domain.Category](tx, userBucket(userID, categoriesBucket))
-		if err != nil {
-			return err
-		}
-		subcategories, err := readBucketTx[domain.Subcategory](tx, userBucket(userID, subcategoriesBucket))
-		if err != nil {
-			return err
-		}
-		notes, err := readBucketTx[domain.Note](tx, userBucket(userID, notesBucket))
-		if err != nil {
-			return err
-		}
-		milestones, err := readBucketTx[domain.Milestone](tx, userBucket(userID, milestonesBucket))
-		if err != nil {
-			return err
-		}
-
-		report, err = domain.BuildPeriodReport(
-			fromDate,
-			toDate,
-			userLocation(tx, userID),
-			settings.WeekStart,
-			entries,
-			categories,
-			subcategories,
-			notes,
-		)
-		if err != nil {
-			return err
-		}
-		report.Milestones = domain.BuildMilestoneProgress(milestones)
-		return nil
+		var err error
+		report, err = periodReportTx(tx, userID, fromDate, toDate)
+		return err
 	})
 	if err != nil {
 		return domain.PeriodReport{}, err
 	}
+	return report, nil
+}
+
+// periodReportTx builds the authoritative report inside the caller's read
+// transaction, so an export can read the report and its raw rows from one
+// consistent snapshot.
+func periodReportTx(tx *bbolt.Tx, userID, fromDate, toDate string) (domain.PeriodReport, error) {
+	settings := domain.DefaultSettings(userID)
+	_ = readTxObject(tx, userBucket(userID, settingsBucket), settingsKey, &settings)
+
+	// The day index selects the entries in range; categories, subcategories
+	// and notes are small enough to scan for their names and context.
+	entries, err := entriesInDateRangeTx(tx, userID, fromDate, toDate)
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+	categories, err := readBucketTx[domain.Category](tx, userBucket(userID, categoriesBucket))
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+	subcategories, err := readBucketTx[domain.Subcategory](tx, userBucket(userID, subcategoriesBucket))
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+	notes, err := readBucketTx[domain.Note](tx, userBucket(userID, notesBucket))
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+	milestones, err := readBucketTx[domain.Milestone](tx, userBucket(userID, milestonesBucket))
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+
+	report, err := domain.BuildPeriodReport(
+		fromDate,
+		toDate,
+		userLocation(tx, userID),
+		settings.WeekStart,
+		entries,
+		categories,
+		subcategories,
+		notes,
+	)
+	if err != nil {
+		return domain.PeriodReport{}, err
+	}
+	report.Milestones = domain.BuildMilestoneProgress(milestones)
 	return report, nil
 }
 

@@ -228,6 +228,10 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
   }
 
   Future<void> _finalize(AppState state, CheckIn checkIn) async {
+    // A final check-in is read-only, so an open summary draft would be
+    // stranded in an editor that can no longer save. Finish or cancel the
+    // draft first.
+    if (_editing) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -252,6 +256,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
     try {
       await state.finalizeCheckIn(checkIn);
       if (!mounted) return;
+      setState(() => _editing = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Check-in marked final')));
     } catch (error) {
@@ -415,7 +420,9 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                 if (state.canExport) const SizedBox(width: 6),
                 if (checkIn.canFinalize)
                   FilledButton.icon(
-                    onPressed: () => unawaited(_finalize(state, checkIn)),
+                    onPressed: _editing
+                        ? null
+                        : () => unawaited(_finalize(state, checkIn)),
                     icon: const Icon(Icons.flag_outlined, size: 16),
                     label: const Text('Mark final'),
                   ),
@@ -744,7 +751,9 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                   const Spacer(),
                   if (checkIn.canFinalize)
                     OutlinedButton.icon(
-                      onPressed: () => unawaited(_finalize(state, checkIn)),
+                      onPressed: _editing
+                          ? null
+                          : () => unawaited(_finalize(state, checkIn)),
                       icon: const Icon(Icons.flag_outlined, size: 16),
                       label: const Text('Mark as final'),
                     ),

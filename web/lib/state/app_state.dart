@@ -976,6 +976,10 @@ class AppState extends ChangeNotifier {
       entries = _newestFirst([entry, ...entries]);
       lastCategoryId = entry.categoryId;
       lastSubcategoryId = entry.subcategoryId;
+      // A saved block must appear in an already-loaded Log and Support view,
+      // not only in Today and the reports.
+      unawaited(refreshLog());
+      _refreshSupportIfLoaded();
     }
     _refreshTicker();
     _refreshReports();
