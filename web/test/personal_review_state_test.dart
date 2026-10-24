@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/drafts.dart';
@@ -32,7 +31,6 @@ Future<(AppState, FakeCheckInApi, FakeSettingsApi)> buildState({
     settings: AppSettings(reviewCadence: cadence),
   );
   final state = AppState(
-    DemoWdidRepository(latency: Duration.zero),
     settingsApi: settings,
     summaryApi: FakeSummaryApi(echoDates: true),
     checkInApi: api,

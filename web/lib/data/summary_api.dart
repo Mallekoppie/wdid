@@ -4,6 +4,7 @@ import 'package:protobuf/well_known_types/google/protobuf/duration.pb.dart'
 
 import '../models/check_in.dart';
 import '../models/enums.dart';
+import '../models/export_bundle.dart';
 import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../src/generated/categories.pbenum.dart' as categories_generated;
@@ -12,7 +13,6 @@ import '../src/generated/summaries.pbgrpc.dart' as generated;
 import 'checkin_api.dart';
 import 'grpc_channel.dart';
 import 'grpc_errors.dart';
-import 'repository.dart';
 
 /// A user-facing period-report failure.
 class SummaryFailure extends ServiceFailure {

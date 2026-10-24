@@ -1,78 +1,58 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wdid_web/models/enums.dart';
-import 'package:wdid_web/models/initiative.dart';
-import 'package:wdid_web/models/work_item.dart';
+
+import 'package:wdid_web/models/period_report.dart';
+import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/utils/analytics.dart';
 
 void main() {
-  final now = DateTime(2026, 10, 17, 9);
-
-  WorkItem item({
-    required String id,
-    required WorkType type,
-    String? initiativeId,
-    String? category,
-    String? categoryLabel,
-    String? person,
-    required int minutes,
-  }) {
-    return WorkItem(
-      id: id,
-      type: type,
-      initiativeId: initiativeId,
-      category: category,
-      categoryLabel: categoryLabel,
-      startedAt: now,
-      endedAt: now.add(Duration(minutes: minutes)),
-      minutes: minutes,
-      localDate: '2026-10-17',
-      summary: 'Entry $id',
-      person: person,
-      createdAt: now,
-      updatedAt: now,
+  test('report allocation uses service categories and subcategory tooltips', () {
+    const report = PeriodReport(
+      fromDate: '2026-10-17',
+      toDate: '2026-10-17',
+      totalMinutes: 100,
+      entryCount: 3,
+      categories: [
+        CategoryAllocation(
+          categoryId: 'cat-init',
+          name: 'Initiatives',
+          role: CategoryRole.initiative,
+          minutes: 60,
+          entryCount: 1,
+        ),
+        CategoryAllocation(
+          categoryId: 'cat-support',
+          name: 'Support',
+          role: CategoryRole.support,
+          minutes: 30,
+          entryCount: 1,
+        ),
+        CategoryAllocation(
+          categoryId: 'cat-other',
+          name: 'Meetings',
+          role: CategoryRole.other,
+          minutes: 10,
+          entryCount: 1,
+        ),
+      ],
+      subcategories: [
+        SubcategoryAllocation(
+          subcategoryId: 'sub-billing',
+          categoryId: 'cat-init',
+          name: 'Billing migration',
+          minutes: 60,
+          entryCount: 1,
+        ),
+      ],
     );
-  }
 
-  test('support stays separate from initiative allocation', () {
-    final billing = Initiative(
-      id: 'billing',
-      name: 'Billing migration',
-      createdAt: now,
-      updatedAt: now,
-    );
-    final items = [
-      item(
-        id: '1',
-        type: WorkType.initiative,
-        initiativeId: billing.id,
-        minutes: 60,
-      ),
-      item(
-        id: '2',
-        type: WorkType.category,
-        category: 'review',
-        categoryLabel: 'Review',
-        person: 'Priya',
-        minutes: 30,
-      ),
-      item(
-        id: '3',
-        type: WorkType.category,
-        category: 'meetings',
-        categoryLabel: 'Meetings',
-        minutes: 10,
-      ),
-    ];
-
-    final slices = allocationFor(items, [billing]);
+    final slices = allocationForReport(report);
 
     expect(slices.map((slice) => slice.label), [
-      'Billing migration',
+      'Initiatives',
       'Support',
       'Meetings',
     ]);
-    expect(totalMinutes(items), 100);
-    expect(supportMinutes(items), 30);
-    expect(supportPeople(items), {'Priya'});
+    expect(slices.map((slice) => slice.minutes), [60, 30, 10]);
+    expect(slices.first.tooltip, contains('Billing migration · 1h'));
   });
 }

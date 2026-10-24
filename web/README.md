@@ -11,15 +11,12 @@ documents in the repository root:
 - `GLOSSARY.md`
 - `.github/copilot-instructions.md`
 
-Login, first-account bootstrap, and invite-code registration call the generated
-`AuthService` gRPC-Web client in `lib/data/auth_api.dart`. The journal screens
-still run against `DemoWdidRepository`, an in-memory stand-in exposed through the
-`WdidRepository` seam in `lib/data/repository.dart`.
-
-The demo adapter exists only so screens and flows can be reviewed. It does not
-define the production contract, and it must be replaced by the gRPC-Web service
-client. UI actions never bypass the seam: exports, summaries, aggregation, and
-persistence all go through `WdidRepository`.
+Every screen reads and writes through the generated Connect clients in
+`lib/data/`: `AuthService`, `CategoryService`, `EntryService`, `TimerService`,
+`SettingsService`, `SummaryService`, `NoteService`, `MilestoneService`, and
+`CheckInService`. The service owns validation, aggregation, exports and
+summaries; the client never computes authoritative totals. The browser channel
+is gRPC-Web on the page origin unless `WDID_API_BASE_URL` points elsewhere.
 
 ## Run
 
@@ -54,7 +51,7 @@ flutter build web
 | `/checkins` | Check-in list and create flow |
 | `/checkins/:id` | Period report, summary generation/editing, export, finalize |
 | `/settings` | Data/backups, time, AI, appearance, about |
-| `/login` | Zitadel/invite sign-in shell (auth service pending) |
+| `/login` | Bootstrap admin, sign-in, and invite-code registration |
 
 ## Keyboard shortcuts
 
@@ -78,63 +75,40 @@ flutter build web
 
 ## Service contract status
 
-`plan.md` supersedes the model this UI slice was built against. The current
-service uses the earlier fixed `kind` shape (`initiative` / `support` / `other`);
-the plan replaces it with per-user categories, subcategories, and reporting
-roles. The service must migrate; `plan.md` is the target, not the current code.
-
 The Go service transport is Connect, which serves Connect, native gRPC, and
 gRPC-Web for the browser. `/healthz` is the only non-RPC route; there is no REST
-surface.
+surface. The Go service embeds this client and serves it from `/`, so the app and
+the RPC surface share one origin by default.
 
-- **Implemented by the service:** the auth RPCs. Login, invite-code registration,
-  and first-account bootstrap call them via generated gRPC-Web stubs. The earlier
-  Initiative and Work entry model still exists internally but is no longer
-  exposed.
-- **Not implemented by the service yet:** categories and subcategories,
-  milestones, check-in records, personal reviews, notes, settings, and
-  backup/restore. Those screens run on the demo adapter and surface the gap
-  rather than inventing a persistence model.
-- **Shape differences:** the earlier service shape used `kind`
-  (`initiative`/`support`/`other`), `description`, and a nested `support` object.
-  The plan replaces this with `categoryId` plus an optional `subcategoryId`. The
-  protobuf contract is the source of truth; keep any temporary mapping in the
-  repository adapter, not in screens.
-- **Auth:** protected RPCs need `authorization: Bearer <token>` metadata from the
-  local login RPC or a Zitadel token. The sign-in screen stores the session in
-  memory; the browser OIDC redirect flow is still pending.
+`plan.md` is the canonical contract. The generated clients in `lib/data/` cover
+the full domain:
 
-The UI demo currently uses the earlier `Initiative` / `WorkItem` shape. It must
-migrate to the plan's model:
-
-- `Category` (`name`, `role`, archived)
-- `Subcategory` (`categoryId`, optional project fields, milestones)
-- `Work entry` (`categoryId`, optional `subcategoryId`, `minutes`, `localDate`,
-  `outcome`, `person` for support, links, tags)
+- `Category` / `Subcategory` (reporting roles, project fields, archiving)
+- `Work entry` (`categoryId`, optional `subcategoryId`, authoritative minutes,
+  outcome, support person/team, links, tags)
 - `Milestone`
-- `CheckIn` (`kind`: `manager` or `personal`, `periodStart`, `periodEnd`, `state`,
-  `summaryMarkdown`, `totals`)
-- `Note`
-- `AppSettings`
+- `CheckIn` (`kind`: `manager` or `personal`, period, state, summary, totals)
+- `Note`, `AppSettings`, snapshots and restore
 
-Known gaps, surfaced in the UI rather than invented locally:
+Auth uses the generated `AuthService`: first-account bootstrap, local login and
+invite-code registration. Protected RPCs carry `authorization: Bearer <token>`
+metadata. The browser OIDC redirect flow is still pending and is explained in
+the UI.
 
-- **Milestones** are defined in `plan.md` but have no service method yet. The
-  project detail tab states this.
-- **Categories and subcategories** are defined in `plan.md` but not implemented
-  by the service yet.
-- **Restore** is a host-level backup operation with no documented endpoint yet.
-- **Auth** (Zitadel login and invite-code registration) has no service client in
-  this slice; the login screen explains that.
+## Browser smoke test
 
-Next steps for integration:
+`scripts/browser-smoke.cjs` (also `make smoke-web`) drives the served app in a
+real Chromium through sign-in, capture, personal review, manager check-in and
+finalize, export/copy prompt, and backup/restore. It enables Flutter's semantics
+tree and asserts on the accessibility DOM. Run it against a freshly built
+service:
 
-1. Run `make proto` and add `ServiceWdidRepository` over the generated Dart
-   clients with a `GrpcWebClientChannel.xhr` channel, bearer-token metadata, and
-   explicit deadlines.
-2. Add the remaining RPCs for check-ins, notes, settings, and backup/restore, or
-   keep those features demo-only until the contract exists.
-3. Map `GrpcError` codes and `errdetails.BadRequest` field violations onto the
-   existing loading, empty, error, and validation states.
-4. Switch `main.dart` to the service repository. No screen changes should be
-   required.
+```bash
+make buildweb build
+WDID_HTTP_ADDR=127.0.0.1:19101 WDID_DB_PATH=/tmp/wdid.db \
+WDID_BOOTSTRAP_SECRET=smoke-bootstrap-secret \
+WDID_JWT_SECRET=smoke-jwt-secret-change-me-32chars \
+./bin/wdid &
+npm install --no-save playwright
+WDID_BASE_URL=http://127.0.0.1:19101 node scripts/browser-smoke.cjs
+```

@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:wdid_web/data/repository.dart';
 import 'package:wdid_web/data/summary_api.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
+import 'package:wdid_web/models/export_bundle.dart';
 import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 

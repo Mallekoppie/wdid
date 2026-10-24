@@ -2,9 +2,49 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
+import 'package:wdid_web/models/check_in.dart';
+import 'package:wdid_web/models/enums.dart';
+import 'package:wdid_web/models/taxonomy.dart';
 
 import 'fake_auth_api.dart';
+import 'fake_checkin_api.dart';
+import 'fake_entry_api.dart';
+import 'fake_milestone_api.dart';
+import 'fake_note_api.dart';
+import 'fake_preferences_api.dart';
+import 'fake_summary_api.dart';
+
+Category _category(
+  String id,
+  String name, {
+  CategoryRole role = CategoryRole.initiative,
+}) => Category(
+  id: id,
+  name: name,
+  role: role,
+  createdAt: DateTime.utc(2026, 10, 23),
+  updatedAt: DateTime.utc(2026, 10, 23),
+);
+
+Subcategory _project(String id, String categoryId, String name) => Subcategory(
+  id: id,
+  categoryId: categoryId,
+  name: name,
+  createdAt: DateTime.utc(2026, 10, 23),
+  updatedAt: DateTime.utc(2026, 10, 23),
+);
+
+CheckIn _checkIn() => CheckIn(
+  id: 'checkin-1',
+  kind: CheckInKind.manager,
+  state: CheckInState.draft,
+  audience: CheckInAudience.oneOnOne,
+  focusNotes: 'Smoke focus',
+  periodStart: DateTime(2026, 10, 1),
+  periodEnd: DateTime(2026, 10, 23),
+  createdAt: DateTime.utc(2026, 10, 23, 12),
+  totals: const CheckInTotals(minutes: 90),
+);
 
 void main() {
   Future<void> pumpRoute(
@@ -19,10 +59,25 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: route == '/login' ? null : signedInSession(),
         initialRoute: route,
+        categoryApiBuilder: (_) => FakeCategoryApi(
+          categories: [
+            _category('cat-init', 'Initiatives'),
+            _category('cat-support', 'Support', role: CategoryRole.support),
+          ],
+          subcategories: [
+            _project('sub-1', 'cat-init', 'Billing migration'),
+            _project('sub-support', 'cat-support', 'Unblock'),
+          ],
+        ),
+        settingsApiBuilder: (_) => FakeSettingsApi(),
+        entryApiBuilder: (_) => FakeEntryApi(),
+        summaryApiBuilder: (_) => FakeSummaryApi(),
+        noteApiBuilder: (_) => FakeNoteApi(),
+        milestoneApiBuilder: (_) => FakeMilestoneApi(),
+        checkInApiBuilder: (_) => FakeCheckInApi(checkIns: [_checkIn()]),
       ),
     );
     await tester.pumpAndSettle();
@@ -30,12 +85,12 @@ void main() {
 
   final cases = <String, String>{
     '/today': 'Start a timer',
-    '/log': 'Export period',
-    '/initiatives': 'New initiative',
-    '/initiatives/init-billing': 'Billing migration',
+    '/log': 'Add entry',
+    '/initiatives': 'New project',
+    '/initiatives/sub-1': 'Billing migration',
     '/support': 'Log support',
     '/checkins': 'Create check-in',
-    '/checkins/checkin-generated': 'Summary',
+    '/checkins/checkin-1': 'Summary',
     '/settings': 'Data & backups',
     '/login': 'Sign in',
   };

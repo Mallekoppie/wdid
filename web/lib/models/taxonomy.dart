@@ -1,4 +1,4 @@
-import 'initiative.dart';
+import 'link_ref.dart';
 
 /// What a category means for reporting and validation.
 ///

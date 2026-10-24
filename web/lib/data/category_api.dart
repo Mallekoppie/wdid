@@ -1,6 +1,6 @@
 import 'package:grpc/grpc_or_grpcweb.dart';
 
-import '../models/initiative.dart' show LinkRef;
+import '../models/link_ref.dart';
 import '../models/taxonomy.dart';
 import '../src/generated/categories.pbgrpc.dart' as generated;
 import 'grpc_channel.dart';

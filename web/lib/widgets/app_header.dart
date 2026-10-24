@@ -4,18 +4,16 @@ import 'package:go_router/go_router.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import 'checkin_pill.dart';
-import 'forms/entry_dialog.dart';
+import 'forms/entry_form.dart';
 import 'forms/shortcuts_dialog.dart';
 import 'forms/support_dialog.dart';
-import 'status_badge.dart';
 import 'timer_pill.dart';
 
 class AppHeader extends StatelessWidget {
   const AppHeader({super.key});
 
   Future<void> _newEntry(BuildContext context) async {
-    final state = AppStateScope.read(context);
-    final item = await showEntryDialog(context, state: state);
+    final item = await showServiceEntryDialog(context);
     if (item != null && context.mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Entry saved')));
@@ -24,9 +22,7 @@ class AppHeader extends StatelessWidget {
 
   Future<void> _logSupport(BuildContext context) async {
     final state = AppStateScope.read(context);
-    final saved = state.hasEntryService
-        ? await showServiceSupportDialog(context, state: state)
-        : await showSupportDialog(context, state: state);
+    final saved = await showServiceSupportDialog(context, state: state);
     if (saved != null && context.mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Support entry saved')));
@@ -37,7 +33,6 @@ class AppHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final state = AppStateScope.of(context);
     return Container(
       height: AppSizes.headerHeight,
       decoration: BoxDecoration(
@@ -85,16 +80,6 @@ class AppHeader extends StatelessWidget {
                 ),
               ],
               const Spacer(),
-              if (state.isDemo)
-                Tooltip(
-                  message: 'Demo adapter — the Go service contract is not connected yet',
-                  child: StatusBadge(
-                    label: 'Demo data',
-                    color: scheme.secondary,
-                    icon: Icons.science_outlined,
-                  ),
-                ),
-              if (state.isDemo) const SizedBox(width: AppSpacing.md),
               const TimerPill(),
               const SizedBox(width: AppSpacing.sm),
               if (wide) ...[

@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/data/category_api.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/settings_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
@@ -45,7 +44,6 @@ void main() {
     );
     final settings = FakeSettingsApi();
     final state = AppState(
-      DemoWdidRepository(latency: Duration.zero),
       categoryApi: categories,
       settingsApi: settings,
     );
@@ -54,22 +52,15 @@ void main() {
     return (state, categories, settings);
   }
 
-  test(
-    'entry selectors are built from the live taxonomy, not the demo',
-    () async {
-      final (state, _, _) = await buildState();
+  test('entry selectors are built from the live taxonomy', () async {
+    final (state, _, _) = await buildState();
 
-      final keys = state.attributionChoices
-          .map((choice) => choice.key)
-          .toList();
-      expect(keys, ['category:cat-1', 'category:cat-2']);
-      expect(state.attributionChoices.map((choice) => choice.label), [
-        'Initiatives',
-        'Support',
-      ]);
-      expect(state.subcategoriesFor('cat-1').single.name, 'Billing migration');
-    },
-  );
+    expect(state.selectableCategories.map((category) => category.name), [
+      'Initiatives',
+      'Support',
+    ]);
+    expect(state.subcategoriesFor('cat-1').single.name, 'Billing migration');
+  });
 
   test(
     'creating and renaming a category updates the entry selectors',
@@ -81,18 +72,20 @@ void main() {
         role: CategoryRole.other,
       );
       expect(
-        state.attributionChoices.map((choice) => choice.label),
+        state.selectableCategories.map((category) => category.name),
         contains('Deep work'),
       );
 
       await state.renameCategory(created, 'Focused work');
-      final labels = state.attributionChoices.map((choice) => choice.label);
+      final labels = state.selectableCategories.map(
+        (category) => category.name,
+      );
       expect(labels, contains('Focused work'));
       expect(labels, isNot(contains('Deep work')));
 
       await state.archiveCategory(created);
       expect(
-        state.attributionChoices.map((choice) => choice.label),
+        state.selectableCategories.map((category) => category.name),
         isNot(contains('Focused work')),
       );
     },
@@ -159,7 +152,6 @@ void main() {
     final categories = FakeCategoryApi()
       ..failure = const CategoryFailure('The service is unreachable.');
     final state = AppState(
-      DemoWdidRepository(latency: Duration.zero),
       categoryApi: categories,
       settingsApi: FakeSettingsApi(),
     );
@@ -168,7 +160,7 @@ void main() {
 
     expect(state.status, AppStatus.ready);
     expect(state.taxonomyError, 'The service is unreachable.');
-    // No live taxonomy loaded, so the demo initiatives still drive capture.
-    expect(state.attributionChoices, isNotEmpty);
+    // No taxonomy loaded, so no capture choices are fabricated.
+    expect(state.selectableCategories, isEmpty);
   });
 }

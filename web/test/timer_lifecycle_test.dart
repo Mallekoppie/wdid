@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
@@ -55,7 +54,6 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/today',
@@ -202,7 +200,6 @@ void main() {
   test('the global start asks for a category instead of guessing', () async {
     final timerApi = FakeTimerApi();
     final state = AppState(
-      DemoWdidRepository(latency: Duration.zero),
       categoryApi: FakeCategoryApi(
         categories: [
           category('cat-support', 'Support', role: CategoryRole.support),
@@ -231,7 +228,6 @@ void main() {
     );
 
     final state = AppState(
-      DemoWdidRepository(latency: Duration.zero),
       categoryApi: FakeCategoryApi(
         categories: [category('cat-1', 'Initiatives')],
         subcategories: [subcategory('sub-1', 'cat-1', 'Billing migration')],

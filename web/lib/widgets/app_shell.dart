@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
 import 'app_header.dart';
-import 'forms/entry_dialog.dart';
+import 'forms/entry_form.dart';
 import 'forms/shortcuts_dialog.dart';
 import 'forms/support_dialog.dart';
 import 'nav_rail.dart';
@@ -75,8 +75,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _newEntry() async {
-    final state = AppStateScope.read(context);
-    final item = await showEntryDialog(context, state: state);
+    final item = await showServiceEntryDialog(context);
     if (item != null && mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Entry saved')));
@@ -85,9 +84,7 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _logSupport() async {
     final state = AppStateScope.read(context);
-    final saved = state.hasEntryService
-        ? await showServiceSupportDialog(context, state: state)
-        : await showSupportDialog(context, state: state);
+    final saved = await showServiceSupportDialog(context, state: state);
     if (saved != null && mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Support entry saved')));

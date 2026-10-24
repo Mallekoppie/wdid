@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/category_api.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 
 import 'fake_auth_api.dart';
@@ -32,7 +31,6 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/settings',

@@ -1,0 +1,431 @@
+import 'package:flutter/material.dart';
+
+import '../../models/drafts.dart';
+import '../../models/enums.dart';
+import '../../models/taxonomy.dart';
+import '../../models/work_entry.dart';
+import '../../state/app_state_scope.dart';
+import '../../theme/app_tokens.dart';
+import '../../utils/time_utils.dart';
+import '../app_dropdown.dart';
+import 'dialog_frame.dart';
+
+/// The service-backed work-entry form used inline by the Log and inside
+/// [showServiceEntryDialog] for the shell's "New entry" action.
+class EntryForm extends StatefulWidget {
+  const EntryForm({
+    super.key,
+    required this.entry,
+    this.initialStart,
+    required this.onCancel,
+    required this.onSaved,
+  });
+
+  /// Null creates a new entry; otherwise the entry is edited in place.
+  final WorkEntry? entry;
+  final DateTime? initialStart;
+  final VoidCallback onCancel;
+  final ValueChanged<WorkEntry> onSaved;
+
+  @override
+  State<EntryForm> createState() => _EntryFormState();
+}
+
+class _EntryFormState extends State<EntryForm> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _description;
+  late final TextEditingController _outcome;
+  late final TextEditingController _minutes;
+  late final TextEditingController _person;
+  late String _categoryId;
+  late String _subcategoryId;
+  late DateTime _date;
+  late TimeOfDay _time;
+  bool _initialized = false;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final entry = widget.entry;
+    final start = entry?.startedLocal ?? widget.initialStart ?? DateTime.now();
+    _description = TextEditingController(text: entry?.description ?? '');
+    _outcome = TextEditingController(text: entry?.outcome ?? '');
+    _minutes = TextEditingController(text: (entry?.minutes ?? 30).toString());
+    _person = TextEditingController(text: entry?.person ?? '');
+    _categoryId = entry?.categoryId ?? '';
+    _subcategoryId = entry?.subcategoryId ?? '';
+    _date = start;
+    _time = TimeOfDay.fromDateTime(start);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+    if (widget.entry != null) return;
+
+    // A new entry starts from the user's defaults and last capture pair.
+    final state = AppStateScope.of(context);
+    _minutes.text = state.settings.defaultDurationMinutes.toString();
+    final preferred = state.lastCategoryId;
+    _categoryId = preferred != null && state.categoryById(preferred) != null
+        ? preferred
+        : state.selectableCategories.isEmpty
+        ? ''
+        : state.selectableCategories.first.id;
+    final lastSubcategory = state.lastSubcategoryId ?? '';
+    _subcategoryId =
+        state.subcategoryById(lastSubcategory)?.categoryId == _categoryId
+        ? lastSubcategory
+        : '';
+  }
+
+  @override
+  void dispose() {
+    _description.dispose();
+    _outcome.dispose();
+    _minutes.dispose();
+    _person.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(context: context, initialTime: _time);
+    if (picked != null) setState(() => _time = picked);
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final state = AppStateScope.read(context);
+    final startedAt = DateTime(
+      _date.year,
+      _date.month,
+      _date.day,
+      _time.hour,
+      _time.minute,
+    );
+    final minutes = int.parse(_minutes.text.trim());
+    final description = _description.text.trim();
+    final outcome = _outcome.text.trim();
+    final person = _person.text.trim();
+    if (state.categoryById(_categoryId)?.role == CategoryRole.support &&
+        person.isEmpty) {
+      setState(() => _error = 'Who are you supporting? Add a person.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final existing = widget.entry;
+      final WorkEntry saved;
+      if (existing == null) {
+        saved = await state.createWorkEntry(
+          EntryDraft(
+            categoryId: _categoryId,
+            subcategoryId: _subcategoryId,
+            description: description,
+            outcome: outcome,
+            startedAt: startedAt,
+            minutes: minutes,
+            person: person,
+            source: EntrySource.manual,
+          ),
+        );
+      } else {
+        saved = await state.updateWorkEntry(
+          existing.copyWith(
+            categoryId: _categoryId,
+            subcategoryId: _subcategoryId,
+            description: description,
+            outcome: outcome,
+            startedAt: startedAt,
+            endedAt: startedAt.add(Duration(minutes: minutes)),
+            minutes: minutes,
+            localDate: isoDate(startedAt),
+            person: person,
+          ),
+        );
+      }
+      await state.refreshLog();
+      if (!mounted) return;
+      widget.onSaved(saved);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'Could not save the entry. $error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppStateScope.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final subcategories = _categoryId.isEmpty
+        ? <Subcategory>[]
+        : state.subcategoriesFor(_categoryId);
+    final support =
+        state.categoryById(_categoryId)?.role == CategoryRole.support;
+
+    return Container(
+      width: double.infinity,
+      color: widget.entry == null
+          ? Colors.transparent
+          : scheme.surfaceContainerLow.withValues(alpha: 0.6),
+      padding: widget.entry == null
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(112, 12, 16, 14),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _description,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'Backfill script skeleton',
+              ),
+              validator: (value) => (value == null || value.trim().isEmpty)
+                  ? 'A short description is required.'
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 560;
+                final categoryField = AppDropdown<String>(
+                  value: _categoryId,
+                  label: 'Category',
+                  items: [
+                    if (state.categoryById(_categoryId) == null &&
+                        _categoryId.isNotEmpty)
+                      const DropdownMenuItem(
+                        value: '',
+                        enabled: false,
+                        child: Text('Unknown category'),
+                      ),
+                    for (final category in state.categories)
+                      DropdownMenuItem(
+                        value: category.id,
+                        child: Text(category.name),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _categoryId = value;
+                      if (state.subcategoryById(_subcategoryId)?.categoryId !=
+                          value) {
+                        _subcategoryId = '';
+                      }
+                    });
+                  },
+                );
+                final subcategoryField = AppDropdown<String>(
+                  value: _subcategoryId,
+                  label: 'Subcategory',
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('No subcategory'),
+                    ),
+                    for (final subcategory in subcategories)
+                      DropdownMenuItem(
+                        value: subcategory.id,
+                        child: Text(subcategory.name),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() => _subcategoryId = value);
+                    }
+                  },
+                );
+                if (stacked) {
+                  return Column(
+                    children: [
+                      categoryField,
+                      const SizedBox(height: AppSpacing.sm),
+                      subcategoryField,
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: categoryField),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(child: subcategoryField),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDate,
+                    icon: const Icon(Icons.calendar_today_outlined, size: 15),
+                    label: Text(formatDayHeader(_date)),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickTime,
+                    icon: const Icon(Icons.schedule, size: 15),
+                    label: Text(formatTimeOfDay24(_time)),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                SizedBox(
+                  width: 110,
+                  child: TextFormField(
+                    controller: _minutes,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Minutes'),
+                    validator: (value) {
+                      final minutes = int.tryParse(value?.trim() ?? '');
+                      if (minutes == null || minutes < 1 || minutes > 1440) {
+                        return '1–1440';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (support || _person.text.isNotEmpty) ...[
+              TextFormField(
+                controller: _person,
+                decoration: const InputDecoration(
+                  labelText: 'Person',
+                  hintText: 'Priya',
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            TextFormField(
+              controller: _outcome,
+              decoration: const InputDecoration(
+                labelText: 'Outcome or evidence',
+                hintText: 'Script runs against staging',
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                _error!,
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _saving ? null : widget.onCancel,
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 6),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check, size: 16),
+                  label: const Text('Save entry'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the service-backed entry form as a modal dialog. Used by the shell's
+/// "New entry" action, which must write through the generated EntryService.
+Future<WorkEntry?> showServiceEntryDialog(
+  BuildContext context, {
+  WorkEntry? entry,
+}) {
+  return showDialog<WorkEntry>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      final theme = Theme.of(dialogContext);
+      return Dialog(
+        insetPadding: const EdgeInsets.all(AppSpacing.xl),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 620,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.88,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.edit_note,
+                      size: 20,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        entry == null ? 'New entry' : 'Edit entry',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ],
+                ),
+                const Divider(height: 1),
+                const SizedBox(height: AppSpacing.md),
+                EntryForm(
+                  entry: entry,
+                  onCancel: () => Navigator.of(dialogContext).pop(),
+                  onSaved: (saved) => Navigator.of(dialogContext).pop(saved),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}

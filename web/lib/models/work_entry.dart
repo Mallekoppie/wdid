@@ -1,5 +1,5 @@
 import 'enums.dart';
-import 'initiative.dart';
+import 'link_ref.dart';
 
 /// A recorded block of work time. This mirrors the service's `WorkEntry`: one
 /// category, an optional subcategory, and an authoritative duration.

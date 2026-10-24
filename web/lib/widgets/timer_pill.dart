@@ -91,7 +91,7 @@ class _TimerPillState extends State<TimerPill> {
     }
 
     final elapsed = timer.elapsedAt(DateTime.now());
-    final initiative = state.initiativeById(state.timerInitiativeId(timer));
+    final projectId = state.timerInitiativeId(timer);
     return Container(
       height: 34,
       padding: const EdgeInsets.only(left: 10, right: 4),
@@ -121,9 +121,9 @@ class _TimerPillState extends State<TimerPill> {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 220),
             child: InkWell(
-              onTap: initiative == null
+              onTap: projectId == null
                   ? null
-                  : () => context.go('/initiatives/${initiative.id}'),
+                  : () => context.go('/initiatives/$projectId'),
               borderRadius: BorderRadius.circular(4),
               child: Text(
                 state.timerLabel(timer),

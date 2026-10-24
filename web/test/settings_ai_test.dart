@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
 
@@ -23,7 +22,6 @@ void main() {
     final settings = FakeSettingsApi();
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/settings',

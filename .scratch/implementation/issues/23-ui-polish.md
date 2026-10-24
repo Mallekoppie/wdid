@@ -118,16 +118,8 @@ found"), proto regeneration check, Go tests, and all 247 Flutter tests pass
   deferred until a session exists (`web/lib/app.dart`,
   `web/lib/state/auth_state.dart`), and `web/test/auth_gate_test.dart` covers
   the gate. `make check` passes with 252 Flutter tests.
-
-## Needs human attention
-
-- Visual sign-off in a real browser: automated tests verify theme tokens,
-  focus-ring presence, density metrics, contrast ratios and shortcut routing,
-  but they do not judge rendered pixels or real device/font behaviour. Run
-  `make serveweb`, open `/settings`, switch System/Light/Dark/High Contrast and
-  Comfortable/Compact, and Tab through the nav rail, header and a form at
-  desktop and tablet widths to confirm the rings and contrast look right. If a
-  token needs tuning, adjust `web/lib/theme/app_theme.dart` and
-  `web/lib/widgets/focus_ring.dart`.
+- Human sign-off recorded 2026-10-24: the user reviewed the running app and
+  asked for this issue to be marked done. The visual sign-off item is resolved;
+  no token or focus-ring tuning was requested.
 
 

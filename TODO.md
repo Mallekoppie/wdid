@@ -14,8 +14,8 @@
    screens; they do not reshape the store.
 4. **Work in vertical slices.** Each milestone runs
    `proto → domain/store → service → generated Dart client → owning screen`.
-5. **The UI consumes generated clients.** `DemoWdidRepository` survives only for
-   screens whose slice has not landed and is deleted in M8.
+5. **The UI consumes generated clients.** Every screen reads and writes through
+   a generated Connect client; there is no local adapter.
 6. **No client-side authoritative totals.** Period aggregates come from
    `SummaryService.GetPeriodReport`.
 7. **Every slice ships** Connect tests (unary and gRPC-Web), domain tests, and the
@@ -35,9 +35,8 @@
   (with day/category/subcategory/person indexes), `milestones`, `notes`,
   `checkins`, `settings`, and `timer`. New accounts are seeded with the default
   taxonomy and settings.
-- The Flutter client runs on `DemoWdidRepository` for journal screens; login,
-  invite registration, and first-account bootstrap use the generated auth
-  gRPC-Web client. There are no REST calls from `web/lib`.
+- The Flutter client uses the generated Connect clients for every capability;
+  there is no demo adapter, hand-written JSON path, or REST call in `web/lib`.
 - No backup persistence exists.
 - No `data/` or `backups/` directory exists, so there is nothing to migrate.
 - The dev container still has Go 1.26.9; the Makefile exports `GOTOOLCHAIN=auto`.
@@ -109,7 +108,7 @@ Goal: the full data layer, bootstrap/invite auth, categories RPC, and no REST.
       archive, subcategories, role selection).
 - [x] Wire Settings → Time, Appearance, and About to `SettingsService`; live
       categories feed the entry selectors.
-- [ ] Keep the demo adapter for screens without a service yet.
+- [x] Remove the demo adapter once every screen has a generated client.
 
 ### Acceptance
 
@@ -223,8 +222,8 @@ works.
 - [ ] Themes (System/Light/Dark/High Contrast), density, tabular figures.
 - [ ] Keyboard shortcuts and visible focus rings.
 - [ ] Empty, loading, and error states everywhere; accessibility pass (AA).
-- [ ] Delete `DemoWdidRepository`; every screen uses generated clients.
-- [ ] Browser gRPC-Web smoke test against the running service.
+- [x] Delete `DemoWdidRepository`; every screen uses generated clients.
+- [x] Browser gRPC-Web smoke test against the running service.
 
 **Acceptance:** keyboard-only manager check-in flow; AA contrast verified.
 

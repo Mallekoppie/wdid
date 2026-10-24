@@ -9,7 +9,6 @@ import 'data/checkin_api.dart';
 import 'data/entry_api.dart';
 import 'data/milestone_api.dart';
 import 'data/note_api.dart';
-import 'data/repository.dart';
 import 'data/settings_api.dart';
 import 'data/summary_api.dart';
 import 'data/timer_api.dart';
@@ -23,7 +22,6 @@ import 'theme/app_theme.dart';
 class WdidApp extends StatefulWidget {
   const WdidApp({
     super.key,
-    required this.repository,
     required this.authApi,
     this.initialSession,
     this.initialRoute,
@@ -38,7 +36,6 @@ class WdidApp extends StatefulWidget {
     this.isAdmin,
   });
 
-  final WdidRepository repository;
   final AuthApi authApi;
 
   /// A session to start with. Production leaves this null and signs in; tests
@@ -46,8 +43,7 @@ class WdidApp extends StatefulWidget {
   final AuthSession? initialSession;
   final String? initialRoute;
 
-  /// Builds the service-backed taxonomy client with a token accessor. Tests
-  /// leave this null and exercise the demo adapter.
+  /// Builds the service-backed taxonomy client with a token accessor.
   final CategoryApi Function(String? Function() token)? categoryApiBuilder;
 
   /// Builds the service-backed settings client with a token accessor.
@@ -90,7 +86,6 @@ class _WdidAppState extends State<WdidApp> {
     _auth = AuthState(widget.authApi, initialSession: widget.initialSession);
     String? token() => _auth.session?.token;
     _state = AppState(
-      widget.repository,
       categoryApi: widget.categoryApiBuilder?.call(token),
       settingsApi: widget.settingsApiBuilder?.call(token),
       entryApi: widget.entryApiBuilder?.call(token),

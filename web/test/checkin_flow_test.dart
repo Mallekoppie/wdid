@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/checkin_api.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/summary_api.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
@@ -132,7 +131,6 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: route,
@@ -437,17 +435,19 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/checkins',
         summaryApiBuilder: (_) => FakeSummaryApi(report: report),
+        checkInApiBuilder: (_) => FakeCheckInApi(),
       ),
     );
     await tester.pumpAndSettle();
 
     // Create a check-in through the dialog, then generate a first summary.
-    await tester.tap(find.widgetWithText(FilledButton, 'Create check-in'));
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Create check-in').first,
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Create check-in').last);
     await tester.pumpAndSettle();

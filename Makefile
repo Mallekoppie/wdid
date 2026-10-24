@@ -45,7 +45,7 @@ export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
-        lint fmt tidy proto proto-check docker-build clean check
+        lint fmt tidy proto proto-check docker-build clean check smoke-web
 
 help: ## Show this help
 	@printf 'wdid targets:\n\n'
@@ -96,6 +96,17 @@ tidy: ## Tidy go.mod and go.sum
 	$(GO) mod tidy
 
 check: lint proto-check test ## Run proto-check, lint and both test suites
+
+smoke-web: ## Drive the served app end to end in a browser (WDID_BASE_URL, Node + Playwright)
+	@command -v node >/dev/null 2>&1 || { \
+		echo "node is required for the browser smoke test" >&2; \
+		exit 1; \
+	}
+	@node -e "require('playwright')" 2>/dev/null || { \
+		echo "playwright is required: npm install --no-save playwright (or set NODE_PATH)" >&2; \
+		exit 1; \
+	}
+	node scripts/browser-smoke.cjs
 
 proto: ## Generate message, Connect, and Dart stubs from internal/contracts/*.proto
 	@command -v protoc >/dev/null 2>&1 || { \

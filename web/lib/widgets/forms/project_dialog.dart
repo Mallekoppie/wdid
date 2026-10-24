@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/initiative.dart' show LinkRef;
+import '../../models/link_ref.dart';
 import '../../models/taxonomy.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_tokens.dart';

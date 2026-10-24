@@ -4,11 +4,10 @@ import 'package:flutter/foundation.dart' hide Category;
 
 import '../data/category_api.dart';
 import '../data/checkin_api.dart';
-import '../data/demo_repository.dart';
 import '../data/entry_api.dart';
+import '../data/grpc_errors.dart';
 import '../data/milestone_api.dart';
 import '../data/note_api.dart';
-import '../data/repository.dart';
 import '../data/settings_api.dart';
 import '../data/summary_api.dart';
 import '../data/timer_api.dart';
@@ -16,15 +15,14 @@ import '../models/app_settings.dart';
 import '../models/check_in.dart';
 import '../models/drafts.dart';
 import '../models/enums.dart';
-import '../models/initiative.dart';
+import '../models/export_bundle.dart';
+import '../models/link_ref.dart';
 import '../models/milestone.dart';
 import '../models/note.dart';
 import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
-import '../models/work_item.dart';
 import '../utils/analytics.dart';
-import '../utils/attribution.dart';
 import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 
@@ -36,8 +34,6 @@ class ActiveTimer {
   ActiveTimer({
     required this.categoryId,
     this.subcategoryId = '',
-    this.initiativeId,
-    this.attribution,
     this.person = '',
     required this.description,
     required this.startedAt,
@@ -50,16 +46,12 @@ class ActiveTimer {
 
   final String categoryId;
   final String subcategoryId;
-  final String? initiativeId;
 
   /// Elapsed time at the moment the server built the snapshot, paired with
   /// [observedAt] so the UI ticks from server time instead of trusting the
   /// device clock.
   final Duration? baseElapsed;
   final DateTime? observedAt;
-
-  /// Demo attribution, kept so the demo adapter can build a WorkItemDraft.
-  final AttributionChoice? attribution;
 
   /// Required for support-role categories.
   final String person;
@@ -123,8 +115,7 @@ class LogQuery {
 }
 
 class AppState extends ChangeNotifier {
-  AppState(
-    this.repository, {
+  AppState({
     this.categoryApi,
     this.settingsApi,
     this.entryApi,
@@ -136,39 +127,33 @@ class AppState extends ChangeNotifier {
     this.roleCheck,
   });
 
-  final WdidRepository repository;
-
   /// Resolves the signed-in account's admin role. Backups are instance-wide, so
   /// only an administrator may list, take or restore them.
   final bool Function()? roleCheck;
 
-  /// Service-backed taxonomy, preferences and work entries. Null keeps the
-  /// demo adapter, which is how screens without a service contract still run.
+  /// The generated Connect clients. Production wires every one of them from
+  /// `main.dart`; tests inject the in-memory fakes that implement the same
+  /// interfaces.
   final CategoryApi? categoryApi;
   final SettingsApi? settingsApi;
   final EntryApi? entryApi;
   final TimerApi? timerApi;
 
-  /// Authoritative period aggregation. Null while a screen still runs on the
-  /// demo adapter; Today then falls back to the demo's local week rollup.
+  /// Authoritative period aggregation.
   final SummaryApi? summaryApi;
 
-  /// Day notes and project notes. Null keeps the demo adapter's note store.
+  /// Day notes and project notes.
   final NoteApi? noteApi;
 
-  /// Project milestones. Null keeps the detail's milestone tab read-only in
-  /// demo mode, which has no milestone store.
+  /// Project milestones.
   final MilestoneApi? milestoneApi;
 
-  /// Manager check-ins and personal reviews. Null keeps the demo adapter's
-  /// in-memory check-ins and its locally composed detail.
+  /// Manager check-ins and personal reviews.
   final CheckInApi? checkInApi;
 
   AppStatus status = AppStatus.loading;
   String? loadError;
 
-  List<Initiative> initiatives = const [];
-  List<WorkItem> workItems = const [];
   List<CheckIn> checkIns = const [];
   bool checkInsLoading = false;
   String? checkInsError;
@@ -222,14 +207,12 @@ class AppState extends ChangeNotifier {
 
   AppSettings settings = const AppSettings();
 
-  /// Instance-wide snapshots and status. Only administrators load them; the
-  /// demo adapter derives them from the local settings.
+  /// Instance-wide snapshots and status. Only administrators load them.
   List<BackupSnapshot> backups = const [];
   BackupStatusInfo? backupStatus;
   bool backupsLoading = false;
   String? backupsError;
   bool _backupsLoaded = false;
-  List<BackupSnapshot> _demoBackups = const [];
 
   List<Category> categories = const [];
   List<Subcategory> subcategories = const [];
@@ -238,7 +221,6 @@ class AppState extends ChangeNotifier {
   bool preferencesLoading = false;
   String? preferencesError;
   AboutInfo? about;
-  bool _taxonomyLoaded = false;
 
   /// The signed-in user's entries for today, newest first.
   List<WorkEntry> entries = const [];
@@ -302,7 +284,6 @@ class AppState extends ChangeNotifier {
 
   /// The block limit reported by the service, used by the stop prompt.
   int blockLimitMinutes = 240;
-  AttributionChoice? lastAttribution;
 
   /// Screens listen to this to focus their search field on `/`.
   final ValueNotifier<int> searchFocusRequest = ValueNotifier<int>(0);
@@ -310,17 +291,13 @@ class AppState extends ChangeNotifier {
   Timer? _ticker;
   bool _disposed = false;
 
-  bool get isDemo => repository is DemoWdidRepository;
-
   /// True when the account carries the admin role. Backups cover the whole
   /// instance, so only an administrator manages them.
   bool get isAdmin => roleCheck?.call() ?? false;
 
-  /// Settings → Data & backups uses the service contract when connected. The
-  /// demo adapter keeps its local preview, so it is always manageable.
   bool get hasBackupService => settingsApi != null;
 
-  bool get canManageBackups => !hasBackupService || isAdmin;
+  bool get canManageBackups => hasBackupService && isAdmin;
 
   DateTime get today => dateOnly(DateTime.now());
   String get todayIso => isoDate(today);
@@ -330,38 +307,14 @@ class AppState extends ChangeNotifier {
     loadError = null;
     _notify();
     try {
-      final results = await Future.wait<dynamic>([
-        repository.listInitiatives(),
-        repository.listWorkItems(),
-        noteApi == null
-            ? repository.listNotes()
-            : Future<List<Note>>.value(const []),
-        checkInApi == null
-            ? repository.listCheckIns()
-            : Future<List<CheckIn>>.value(const []),
-        repository.getSettings(),
-      ]);
-      initiatives = List<Initiative>.from(results[0] as List<Initiative>);
-      workItems = List<WorkItem>.from(results[1] as List<WorkItem>);
-      if (noteApi == null) {
-        notes = List<Note>.from(results[2] as List<Note>);
-      }
-      checkIns = List<CheckIn>.from(results[3] as List<CheckIn>);
-      settings = results[4] as AppSettings;
-      if (noteApi != null) {
-        await loadNotes();
-      }
-      if (checkInApi != null) {
-        await loadCheckIns(force: true);
-      }
-      if (categoryApi != null || settingsApi != null) {
-        await Future.wait([loadTaxonomy(), loadPreferences()]);
-      }
+      if (categoryApi != null) await loadTaxonomy();
+      if (settingsApi != null) await loadPreferences();
+      if (noteApi != null) await loadNotes();
+      if (checkInApi != null) await loadCheckIns(force: true);
       if (timerApi != null) {
         await syncTimer();
         _startTicker();
       }
-      _ensureAttribution();
       status = AppStatus.ready;
       _notify();
       unawaited(loadEntries());
@@ -391,12 +344,10 @@ class AppState extends ChangeNotifier {
       ]);
       categories = List<Category>.from(results[0] as List<Category>);
       subcategories = List<Subcategory>.from(results[1] as List<Subcategory>);
-      _taxonomyLoaded = true;
     } catch (error) {
       taxonomyError = error.toString();
     } finally {
       taxonomyLoading = false;
-      _ensureAttribution();
       _notify();
     }
   }
@@ -624,24 +575,6 @@ class AppState extends ChangeNotifier {
     if (_initiativesLoaded) unawaited(loadInitiativesReport());
   }
 
-  /// Presentation-only choices for capture forms. Once a live taxonomy is
-  /// loaded it is the source, so a newly created or renamed category appears
-  /// in every entry selector immediately.
-  List<AttributionChoice> get attributionChoices {
-    if (categoryApi != null && _taxonomyLoaded) {
-      return [
-        for (final category in categories)
-          if (!category.archived)
-            AttributionChoice.category(
-              category.id,
-              category.name,
-              categoryLabel: category.name,
-            ),
-      ];
-    }
-    return AttributionChoice.forInitiatives(initiatives);
-  }
-
   List<Subcategory> subcategoriesFor(String categoryId) => subcategories
       .where((subcategory) => subcategory.categoryId == categoryId)
       .toList();
@@ -690,54 +623,19 @@ class AppState extends ChangeNotifier {
   int get todayEntryMinutes =>
       todayEntries.fold(0, (total, entry) => total + entry.minutes);
 
-  Initiative? initiativeById(String? id) {
-    if (id == null) return null;
-    for (final initiative in initiatives) {
-      if (initiative.id == id) return initiative;
-    }
-    return null;
-  }
-
-  Initiative? get lastUsedInitiative {
-    final choice = lastAttribution;
-    if (choice == null || !choice.isInitiative) return null;
-    return initiativeById(choice.initiativeId);
-  }
-
-  List<WorkItem> get todayItems => entriesOnDay(workItems, today);
-
-  int get todayMinutes => totalMinutes(todayItems);
-
-  /// The current week's total. In service mode this is only ever the report's
-  /// total: while the report is missing, the header shows zero rather than a
-  /// locally composed number. The demo adapter keeps its local rollup.
-  int get weekMinutes {
-    if (summaryApi != null) return weekReport?.totalMinutes ?? 0;
-    return totalMinutes(
-      entriesForWeek(workItems, today, weekStart: settings.weekStart),
-    );
-  }
+  /// The current week's total. It is only ever the report's total: while the
+  /// report is missing, the header shows zero rather than a locally composed
+  /// number.
+  int get weekMinutes => weekReport?.totalMinutes ?? 0;
 
   /// Week bars in the shape the AllocationBars widget renders. The categories
   /// and minutes are the service's, never a recomputation from entries.
   List<AllocationSlice> get weekAllocation {
-    if (summaryApi != null) {
-      final report = weekReport;
-      return report == null ? const [] : allocationForReport(report);
-    }
-    return allocationFor(
-      entriesForWeek(workItems, today, weekStart: settings.weekStart),
-      initiatives,
-    );
+    final report = weekReport;
+    return report == null ? const [] : allocationForReport(report);
   }
 
-  List<Initiative> get openInitiatives =>
-      initiatives.where((initiative) => !initiative.isArchived).toList();
-
-  List<Initiative> get archivedInitiatives =>
-      initiatives.where((initiative) => initiative.isArchived).toList();
-
-  /// True when screens must read the live taxonomy instead of the demo seed.
+  /// True when the live taxonomy client is wired.
   bool get hasTaxonomyService => categoryApi != null;
 
   /// Categories whose reporting role makes their subcategories projects.
@@ -883,8 +781,8 @@ class AppState extends ChangeNotifier {
     return days < 0 ? 0 : days;
   }
 
-  /// The demo adapter's local boundary: the day after the last final manager
-  /// check-in, or the journal start date, or today.
+  /// The local boundary: the day after the last final manager check-in, or
+  /// the journal start date, or today.
   DateTime get defaultCheckInStart {
     final latest = latestFinalManagerCheckIn;
     if (latest != null) return addDays(latest.periodEnd, 1);
@@ -900,41 +798,17 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  List<Note> notesForInitiative(String initiativeId) =>
-      notes.where((note) => note.initiativeId == initiativeId).toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-  /// A project's notes, newest first. In service mode this is the per-project
-  /// listing; the demo adapter keeps every note in [notes].
+  /// A project's notes, newest first, from the per-project listing.
   List<Note> notesForProject(String projectId) {
-    if (noteApi != null) {
-      return projectNotesProjectId == projectId
-          ? List<Note>.unmodifiable(projectNotes)
-          : const [];
-    }
-    return notesForInitiative(projectId);
+    return projectNotesProjectId == projectId
+        ? List<Note>.unmodifiable(projectNotes)
+        : const [];
   }
-
-  List<WorkItem> itemsForInitiative(String initiativeId) =>
-      workItems.where((item) => item.initiativeId == initiativeId).toList()
-        ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-
-  int minutesForInitiative(String initiativeId) =>
-      initiativeMinutesIn(workItems, initiativeId);
 
   // --- Timer -------------------------------------------------------------
 
-  void setAttribution(AttributionChoice choice) {
-    lastAttribution = choice;
-    _notify();
-  }
-
-  /// The timer's display label, resolved from the live taxonomy. Demo timers
-  /// carry their attribution label directly.
+  /// The timer's display label, resolved from the live taxonomy.
   String timerLabel(ActiveTimer timer) {
-    final attribution = timer.attribution;
-    if (attribution != null) return attribution.label;
-
     final category = categoryById(timer.categoryId);
     final subcategory = timer.subcategoryId.isEmpty
         ? null
@@ -949,30 +823,39 @@ class AppState extends ChangeNotifier {
   }
 
   bool timerIsInitiative(ActiveTimer timer) =>
-      timer.attribution?.isInitiative ??
       categoryById(timer.categoryId)?.role == CategoryRole.initiative;
 
-  String? timerInitiativeId(ActiveTimer timer) =>
-      timer.attribution?.initiativeId;
+  /// The initiative project the running timer is filed under, when its
+  /// subcategory is one.
+  String? timerInitiativeId(ActiveTimer timer) {
+    final subcategoryId = timer.subcategoryId;
+    if (subcategoryId.isEmpty) return null;
+    return projectById(subcategoryId) == null ? null : subcategoryId;
+  }
 
   Future<void> startTimer({
-    AttributionChoice? attribution,
     String description = '',
     String categoryId = '',
     String subcategoryId = '',
     String person = '',
   }) async {
     final api = timerApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'TimerService',
+        'Starting a timer needs the service contract.',
+      );
+    }
     if (activeTimer != null) {
       // The snapshot may lag another tab by one poll. Ask the server before
       // refusing, otherwise a stopped timer blocks a legitimate start.
-      if (api != null) await syncTimer();
+      await syncTimer();
       if (activeTimer != null) {
         throw const TimerFailure('A timer is already running.');
       }
     }
 
-    if (api != null) {
+    {
       final resolvedCategory = categoryId.isNotEmpty
           ? categoryId
           : (lastCategoryId ?? '');
@@ -1011,29 +894,7 @@ class AppState extends ChangeNotifier {
       lastSubcategoryId = resolvedSubcategory;
       _startTicker();
       _notify();
-      return;
     }
-
-    final choice = attribution ?? lastAttribution ?? _firstChoice();
-    if (choice == null) {
-      throw StateError(
-        'Create an initiative or category before starting a timer.',
-      );
-    }
-    lastAttribution = choice;
-    final now = DateTime.now();
-    activeTimer = ActiveTimer(
-      categoryId: choice.category ?? choice.initiativeId ?? '',
-      initiativeId: choice.initiativeId,
-      attribution: choice,
-      description: description.trim().isEmpty
-          ? 'Focus block'
-          : description.trim(),
-      startedAt: now,
-      segmentStartedAt: now,
-    );
-    _startTicker();
-    _notify();
   }
 
   void updateTimerDescription(String description) {
@@ -1048,18 +909,17 @@ class AppState extends ChangeNotifier {
     if (timer == null || timer.isPaused) return;
 
     final api = timerApi;
-    if (api != null) {
-      try {
-        _applySnapshot(await api.pauseTimer());
-      } catch (_) {
-        await syncTimer();
-        rethrow;
-      }
-    } else {
-      timer.accumulatedPaused += DateTime.now().difference(
-        timer.segmentStartedAt,
+    if (api == null) {
+      throw const ServicePendingException(
+        'TimerService',
+        'Pausing a timer needs the service contract.',
       );
-      timer.pausedAt = DateTime.now();
+    }
+    try {
+      _applySnapshot(await api.pauseTimer());
+    } catch (_) {
+      await syncTimer();
+      rethrow;
     }
     _refreshTicker();
     _notify();
@@ -1070,16 +930,17 @@ class AppState extends ChangeNotifier {
     if (timer == null || !timer.isPaused) return;
 
     final api = timerApi;
-    if (api != null) {
-      try {
-        _applySnapshot(await api.resumeTimer());
-      } catch (_) {
-        await syncTimer();
-        rethrow;
-      }
-    } else {
-      timer.pausedAt = null;
-      timer.segmentStartedAt = DateTime.now();
+    if (api == null) {
+      throw const ServicePendingException(
+        'TimerService',
+        'Resuming a timer needs the service contract.',
+      );
+    }
+    try {
+      _applySnapshot(await api.resumeTimer());
+    } catch (_) {
+      await syncTimer();
+      rethrow;
     }
     _refreshTicker();
     _notify();
@@ -1092,58 +953,39 @@ class AppState extends ChangeNotifier {
     if (timer == null) return null;
 
     final api = timerApi;
-    if (api != null) {
-      final StopTimerResult result;
-      try {
-        result = await api.stopTimer(action: action);
-      } on TimerConflict {
-        // The timer is still running; the caller asks the user what to do.
-        rethrow;
-      } catch (_) {
-        await syncTimer();
-        rethrow;
-      }
-
-      activeTimer = null;
-      final entry = result.entry;
-      if (entry != null) {
-        entries = _newestFirst([entry, ...entries]);
-        lastCategoryId = entry.categoryId;
-        lastSubcategoryId = entry.subcategoryId;
-      }
-      _refreshTicker();
-      _refreshReports();
-      if (entry != null) _refreshProjectIfOpen(entry.subcategoryId);
-      _notify();
-      return StoppedTimer(
-        minutes: entry?.minutes ?? 0,
-        summary: entry?.description ?? '',
-        discarded: result.discarded,
+    if (api == null) {
+      throw const ServicePendingException(
+        'TimerService',
+        'Stopping a timer needs the service contract.',
       );
     }
+    final StopTimerResult result;
+    try {
+      result = await api.stopTimer(action: action);
+    } on TimerConflict {
+      // The timer is still running; the caller asks the user what to do.
+      rethrow;
+    } catch (_) {
+      await syncTimer();
+      rethrow;
+    }
 
-    final now = DateTime.now();
-    final elapsed = timer.elapsedAt(now);
-    final minutes = elapsed.inMinutes < 1 ? 1 : elapsed.inMinutes;
-    final attribution = timer.attribution;
-    final draft = WorkItemDraft(
-      type: attribution?.type ?? WorkType.category,
-      initiativeId: attribution?.initiativeId,
-      category: attribution?.category ?? timer.categoryId,
-      categoryLabel: attribution?.categoryLabel ?? timer.categoryId,
-      startedAt: timer.startedAt,
-      minutes: minutes,
-      summary: timer.description,
-      source: 'timer',
-    );
-    final item = await repository.createWorkItem(draft);
     activeTimer = null;
-    _stopTicker();
-    lastAttribution = attribution ?? lastAttribution;
-    workItems = [...workItems, item]
-      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    final entry = result.entry;
+    if (entry != null) {
+      entries = _newestFirst([entry, ...entries]);
+      lastCategoryId = entry.categoryId;
+      lastSubcategoryId = entry.subcategoryId;
+    }
+    _refreshTicker();
+    _refreshReports();
+    if (entry != null) _refreshProjectIfOpen(entry.subcategoryId);
     _notify();
-    return StoppedTimer(minutes: item.minutes, summary: item.summary);
+    return StoppedTimer(
+      minutes: entry?.minutes ?? 0,
+      summary: entry?.description ?? '',
+      discarded: result.discarded,
+    );
   }
 
   Future<void> toggleTimer() async {
@@ -1222,49 +1064,6 @@ class AppState extends ChangeNotifier {
   void _stopTicker() {
     _ticker?.cancel();
     _ticker = null;
-  }
-
-  // --- Entry CRUD --------------------------------------------------------
-
-  Future<WorkItem> createEntry(WorkItemDraft draft) async {
-    final item = await repository.createWorkItem(draft);
-    workItems = [...workItems, item]
-      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    if (draft.type == WorkType.initiative && draft.initiativeId != null) {
-      lastAttribution = AttributionChoice.initiative(
-        draft.initiativeId!,
-        initiativeById(draft.initiativeId!)?.name ?? 'Initiative',
-      );
-    } else if (draft.category != null) {
-      lastAttribution = AttributionChoice.category(
-        draft.category!,
-        draft.categoryLabel ?? draft.category!,
-      );
-    }
-    _notify();
-    return item;
-  }
-
-  Future<WorkItem> quickAdd({
-    required AttributionChoice attribution,
-    required int minutes,
-    required String summary,
-    String outcome = '',
-  }) {
-    final startedAt = DateTime.now().subtract(Duration(minutes: minutes));
-    return createEntry(
-      WorkItemDraft(
-        type: attribution.type,
-        initiativeId: attribution.initiativeId,
-        category: attribution.category,
-        categoryLabel: attribution.categoryLabel ?? attribution.label,
-        startedAt: startedAt,
-        minutes: minutes,
-        summary: summary,
-        outcome: outcome,
-        source: 'manual',
-      ),
-    );
   }
 
   // --- Service-backed entries -------------------------------------------
@@ -1685,85 +1484,6 @@ class AppState extends ChangeNotifier {
     ]);
   }
 
-  Future<WorkItem> updateEntry(WorkItem item) async {
-    final updated = await repository.updateWorkItem(item);
-    workItems = [
-      for (final existing in workItems)
-        if (existing.id == updated.id) updated else existing,
-    ]..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    _notify();
-    return updated;
-  }
-
-  Future<void> deleteEntry(String id) async {
-    await repository.deleteWorkItem(id);
-    workItems = workItems.where((item) => item.id != id).toList();
-    _notify();
-  }
-
-  Future<WorkItem> logSupport({
-    required SupportMode mode,
-    required String person,
-    String? team,
-    required int minutes,
-    required String summary,
-    String outcome = '',
-    String? initiativeId,
-    DateTime? startedAt,
-  }) {
-    return createEntry(
-      WorkItemDraft(
-        type: WorkType.category,
-        initiativeId: initiativeId,
-        category: mode.name,
-        categoryLabel: mode.label,
-        startedAt:
-            startedAt ?? DateTime.now().subtract(Duration(minutes: minutes)),
-        minutes: minutes,
-        summary: summary,
-        outcome: outcome,
-        person: person,
-        team: team,
-        source: 'manual',
-      ),
-    );
-  }
-
-  // --- Initiatives -------------------------------------------------------
-
-  Future<Initiative> createInitiative(InitiativeDraft draft) async {
-    final initiative = await repository.createInitiative(draft);
-    initiatives = [...initiatives, initiative];
-    _notify();
-    return initiative;
-  }
-
-  Future<Initiative> updateInitiative(Initiative initiative) async {
-    final updated = await repository.updateInitiative(initiative);
-    initiatives = [
-      for (final existing in initiatives)
-        if (existing.id == updated.id) updated else existing,
-    ];
-    _notify();
-    return updated;
-  }
-
-  Future<Initiative> setInitiativeStatus(
-    Initiative initiative,
-    InitiativeStatus status,
-  ) {
-    return updateInitiative(initiative.copyWith(status: status));
-  }
-
-  Future<Initiative> setInitiativeProgress(
-    Initiative initiative,
-    int progress,
-  ) {
-    return updateInitiative(
-      initiative.copyWith(progress: progress.clamp(0, 100)),
-    );
-  }
-
   // --- Notes -------------------------------------------------------------
 
   Future<Note> addNote({
@@ -1776,9 +1496,14 @@ class AppState extends ChangeNotifier {
       initiativeId: initiativeId,
       text: text,
     );
-    final note = noteApi != null
-        ? await noteApi!.createNote(draft)
-        : await repository.createNote(draft);
+    final api = noteApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'NoteService',
+        'Saving a note needs the service contract.',
+      );
+    }
+    final note = await api.createNote(draft);
     _upsertNote(note);
     return note;
   }
@@ -1794,34 +1519,40 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Note> updateNote(Note note) async {
-    final updated = noteApi != null
-        ? await noteApi!.updateNote(note)
-        : await repository.updateNote(note);
+    final api = noteApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'NoteService',
+        'Saving a note needs the service contract.',
+      );
+    }
+    final updated = await api.updateNote(note);
     _upsertNote(updated);
     return updated;
   }
 
   Future<void> deleteNote(String id) async {
-    if (noteApi != null) {
-      await noteApi!.deleteNote(id);
-    } else {
-      await repository.deleteNote(id);
+    final api = noteApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'NoteService',
+        'Deleting a note needs the service contract.',
+      );
     }
+    await api.deleteNote(id);
     notes = notes.where((note) => note.id != id).toList();
     projectNotes = projectNotes.where((note) => note.id != id).toList();
     _notify();
   }
 
   /// Replaces a note in both listings, or adds it at the top. Every listing is
-  /// kept newest first so the UI never has to sort. In service mode [notes] is
-  /// today's day-note listing, so a project note joins it only when it already
-  /// belongs there; the demo adapter keeps every note in one list.
+  /// kept newest first so the UI never has to sort. [notes] is today's
+  /// day-note listing, so a project note joins it only when it already belongs
+  /// there.
   void _upsertNote(Note note) {
     final dayNoteForToday = note.initiativeId == null && note.date == todayIso;
     final tracked =
-        noteApi == null ||
-        dayNoteForToday ||
-        notes.any((existing) => existing.id == note.id);
+        dayNoteForToday || notes.any((existing) => existing.id == note.id);
     if (tracked) {
       notes = _newestFirstNotes(_replaceNote(notes, note));
     }
@@ -1931,22 +1662,31 @@ class AppState extends ChangeNotifier {
 
   bool get hasCheckInService => checkInApi != null;
 
-  /// The server-computed period a new check-in starts with. Demo mode builds
-  /// the same boundary locally from the last final manager check-in.
+  /// The server-computed period a new check-in starts with.
   Future<CheckInDefaults> getCheckInDefaults({
     CheckInKind kind = CheckInKind.manager,
   }) async {
     final api = checkInApi;
-    if (api != null) return api.getCheckInDefaults(kind: kind);
-    return CheckInDefaults(periodStart: defaultCheckInStart, periodEnd: today);
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'Creating a check-in needs the service contract.',
+      );
+    }
+    return api.getCheckInDefaults(kind: kind);
   }
 
   Future<CheckIn> createCheckIn(CheckInDraft draft) async {
-    final checkIn = checkInApi != null
-        ? await checkInApi!.createCheckIn(draft)
-        : await repository.createCheckIn(draft);
+    final api = checkInApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'Creating a check-in needs the service contract.',
+      );
+    }
+    final checkIn = await api.createCheckIn(draft);
     _upsertCheckIn(checkIn);
-    if (checkInApi != null) _checkInsLoaded = true;
+    _checkInsLoaded = true;
     _notify();
     return checkIn;
   }
@@ -1959,13 +1699,18 @@ class AppState extends ChangeNotifier {
     CheckInSummarySource source = CheckInSummarySource.manual,
     bool overwriteManualEdits = false,
   }) async {
-    final updated = checkInApi != null
-        ? await checkInApi!.updateCheckIn(
-            checkIn,
-            source: source,
-            overwriteManualEdits: overwriteManualEdits,
-          )
-        : await repository.updateCheckIn(checkIn);
+    final api = checkInApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'Saving a check-in needs the service contract.',
+      );
+    }
+    final updated = await api.updateCheckIn(
+      checkIn,
+      source: source,
+      overwriteManualEdits: overwriteManualEdits,
+    );
     if (checkInDetail?.id == updated.id) checkInDetail = updated;
     _upsertCheckIn(updated);
     _notify();
@@ -1993,10 +1738,9 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  /// Whether the connected service (or the demo adapter) can generate a
-  /// summary. The check-in service alone is not enough: generation belongs to
-  /// the summary contract.
-  bool get canGenerateSummary => summaryApi != null || isDemo;
+  /// Whether the connected service can generate a summary. The check-in
+  /// service alone is not enough: generation belongs to the summary contract.
+  bool get canGenerateSummary => summaryApi != null;
 
   /// Streams a generated summary. Text deltas drive the editor; the final
   /// delta carries the persisted check-in with its model and prompt version.
@@ -2007,23 +1751,11 @@ class AppState extends ChangeNotifier {
   }) {
     final api = summaryApi;
     if (api == null) {
-      if (checkInApi != null) {
-        return Stream<SummaryDelta>.error(
-          const ServicePendingException(
-            'SummaryService',
-            'AI summaries need the summary service contract.',
-          ),
-        );
-      }
-      return Stream<SummaryDelta>.fromFuture(
-        repository.generateSummary(checkIn.id).then((updated) {
-          _applyGeneratedCheckIn(updated);
-          return SummaryDelta(
-            checkIn: updated,
-            model: updated.summaryModel ?? '',
-            promptVersion: updated.promptVersion,
-          );
-        }),
+      return Stream<SummaryDelta>.error(
+        const ServicePendingException(
+          'SummaryService',
+          'AI summaries need the summary service contract.',
+        ),
       );
     }
     return api
@@ -2068,24 +1800,31 @@ class AppState extends ChangeNotifier {
   }
 
   Future<CheckIn> finalizeCheckIn(CheckIn checkIn) async {
-    if (checkInApi != null) {
-      final updated = await checkInApi!.finalizeCheckIn(checkIn.id);
-      if (checkInDetail?.id == updated.id) checkInDetail = updated;
-      _upsertCheckIn(updated);
-      _notify();
-      return updated;
+    final api = checkInApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'Finalizing a check-in needs the service contract.',
+      );
     }
-    return updateCheckIn(checkIn.copyWith(state: CheckInState.final_));
+    final updated = await api.finalizeCheckIn(checkIn.id);
+    if (checkInDetail?.id == updated.id) checkInDetail = updated;
+    _upsertCheckIn(updated);
+    _notify();
+    return updated;
   }
 
   /// Removes a saved personal review. The manager boundary is derived only
   /// from final manager check-ins, so a deletion never moves it.
   Future<void> deleteCheckIn(String id) async {
-    if (checkInApi != null) {
-      await checkInApi!.deleteCheckIn(id);
-    } else {
-      await repository.deleteCheckIn(id);
+    final api = checkInApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'Deleting a check-in needs the service contract.',
+      );
     }
+    await api.deleteCheckIn(id);
     checkIns = [
       for (final checkIn in checkIns)
         if (checkIn.id != id) checkIn,
@@ -2113,26 +1852,24 @@ class AppState extends ChangeNotifier {
     checkIns = next..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
-  /// The variant prompt block for one check-in. The service owns the text when
-  /// connected; the demo adapter mirrors the same variants locally.
+  /// The variant prompt block for one check-in. The service owns the text.
   Future<CheckInPrompt> buildCheckInPrompt(CheckIn checkIn) async {
-    if (checkInApi != null) return checkInApi!.buildPrompt(checkIn.id);
-    return repository.buildPrompt(
-      checkIn.periodStart,
-      checkIn.periodEnd,
-      kind: checkIn.kind,
-      audience: checkIn.audience,
-    );
+    final api = checkInApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'CheckInService',
+        'The check-in prompt needs the service contract.',
+      );
+    }
+    return api.buildPrompt(checkIn.id);
   }
 
-  /// The service-backed export and prompt capability. Demo mode keeps the
-  /// local adapter so the UI still runs before a service is connected.
+  /// The service-backed export and prompt capability.
   bool get hasSummaryService => summaryApi != null;
-  bool get canExport => hasSummaryService || isDemo;
+  bool get canExport => hasSummaryService;
 
   /// The prompt block for the same scope as [buildExport]. The service owns
-  /// the instruction text and appends summary.md; the demo adapter mirrors
-  /// the same shape locally.
+  /// the instruction text and appends summary.md.
   Future<String> buildPrompt(
     DateTime start,
     DateTime end, {
@@ -2141,21 +1878,19 @@ class AppState extends ChangeNotifier {
     CheckInAudience? audience,
   }) async {
     final api = summaryApi;
-    if (api != null) {
-      final prompt = await api.buildPrompt(
-        fromDate: isoDate(start),
-        toDate: isoDate(end),
-        checkInId: checkInId,
-        variant: checkInId.isEmpty ? _promptVariantFor(kind, audience) : null,
+    if (api == null) {
+      throw const ServicePendingException(
+        'SummaryService',
+        'The export prompt needs the summary service contract.',
       );
-      return prompt.prompt;
     }
-    return (await repository.buildPrompt(
-      start,
-      end,
-      kind: kind,
-      audience: audience,
-    )).prompt;
+    final prompt = await api.buildPrompt(
+      fromDate: isoDate(start),
+      toDate: isoDate(end),
+      checkInId: checkInId,
+      variant: checkInId.isEmpty ? _promptVariantFor(kind, audience) : null,
+    );
+    return prompt.prompt;
   }
 
   Future<ExportBundle> buildExport(
@@ -2164,14 +1899,17 @@ class AppState extends ChangeNotifier {
     String checkInId = '',
   }) {
     final api = summaryApi;
-    if (api != null) {
-      return api.buildExport(
-        fromDate: isoDate(start),
-        toDate: isoDate(end),
-        checkInId: checkInId,
+    if (api == null) {
+      throw const ServicePendingException(
+        'SummaryService',
+        'Export needs the summary service contract.',
       );
     }
-    return repository.buildExport(start, end);
+    return api.buildExport(
+      fromDate: isoDate(start),
+      toDate: isoDate(end),
+      checkInId: checkInId,
+    );
   }
 
   CheckInPromptVariant? _promptVariantFor(
@@ -2333,9 +2071,14 @@ class AppState extends ChangeNotifier {
     settings = updated;
     _notify();
     try {
-      final saved = settingsApi != null
-          ? await settingsApi!.updateSettings(updated)
-          : await repository.updateSettings(updated);
+      final api = settingsApi;
+      if (api == null) {
+        throw const ServicePendingException(
+          'SettingsService',
+          'Saving preferences needs the service contract.',
+        );
+      }
+      final saved = await api.updateSettings(updated);
       settings = saved.copyWith(
         version: about?.version,
         schemaVersion: about?.schemaVersion,
@@ -2373,10 +2116,7 @@ class AppState extends ChangeNotifier {
 
     final api = settingsApi;
     if (api == null) {
-      _setDemoBackupStatus();
-      backups = List.unmodifiable(_demoBackups);
-      backupsError = null;
-      _backupsLoaded = true;
+      backupsError = 'Backups need the settings service contract.';
       _notify();
       return;
     }
@@ -2404,23 +2144,10 @@ class AppState extends ChangeNotifier {
   Future<BackupStatusInfo> backupNow() async {
     final api = settingsApi;
     if (api == null) {
-      final status = await repository.backupNow();
-      final snapshot = BackupSnapshot(
-        name: 'wdid-${status.createdAt.toUtc().toIso8601String()}-manual.db',
-        createdAt: status.createdAt,
-        sizeBytes: status.bytes,
-        manual: true,
+      throw const ServicePendingException(
+        'SettingsService',
+        'Taking a backup needs the service contract.',
       );
-      _demoBackups = [snapshot, ..._demoBackups];
-      settings = settings.copyWith(
-        lastBackupAt: status.createdAt,
-        lastBackupBytes: status.bytes,
-      );
-      _setDemoBackupStatus();
-      backups = List.unmodifiable(_demoBackups);
-      _backupsLoaded = true;
-      _notify();
-      return backupStatus!;
     }
 
     final result = await api.backupNow();
@@ -2444,24 +2171,9 @@ class AppState extends ChangeNotifier {
   Future<RestoreBackupResult> restoreBackup(String name) async {
     final api = settingsApi;
     if (api == null) {
-      final selected = _demoBackups.firstWhere(
-        (snapshot) => snapshot.name == name,
-        orElse: () => _demoBackups.first,
-      );
-      settings = settings.copyWith(
-        lastBackupAt: selected.createdAt,
-        lastBackupBytes: selected.sizeBytes,
-      );
-      _demoBackups = _demoBackups
-          .where((snapshot) => !snapshot.createdAt.isAfter(selected.createdAt))
-          .toList();
-      _setDemoBackupStatus();
-      backups = List.unmodifiable(_demoBackups);
-      _notify();
-      return RestoreBackupResult(
-        backup: selected,
-        status: backupStatus!,
-        preRestorePath: '',
+      throw const ServicePendingException(
+        'SettingsService',
+        'Restoring a backup needs the service contract.',
       );
     }
 
@@ -2475,20 +2187,6 @@ class AppState extends ChangeNotifier {
     await reload();
     await loadBackups(force: true);
     return result;
-  }
-
-  void _setDemoBackupStatus() {
-    backupStatus = BackupStatusInfo(
-      lastBackupAt: settings.lastBackupAt,
-      lastBackupSizeBytes: settings.lastBackupBytes,
-      overdue: settings.lastBackupAt == null,
-      backupDirectory: settings.backupDir,
-      backupIntervalHours: settings.backupIntervalHours,
-      backupRetention: settings.retentionCount,
-      scheduledCount: 0,
-      manualCount: _demoBackups.length,
-      lastBackupManual: _demoBackups.isNotEmpty,
-    );
   }
 
   void requestSearchFocus() {
@@ -2510,30 +2208,6 @@ class AppState extends ChangeNotifier {
       for (final existing in subcategories)
         if (existing.id == updated.id) updated else existing,
     ];
-  }
-
-  AttributionChoice? _firstChoice() {
-    final choices = attributionChoices;
-    if (choices.isEmpty) return null;
-    for (final choice in choices) {
-      if (choice.isInitiative) return choice;
-    }
-    return choices.first;
-  }
-
-  void _ensureAttribution() {
-    final choices = attributionChoices;
-    if (choices.isEmpty) {
-      lastAttribution = null;
-      return;
-    }
-    final current = lastAttribution;
-    if (current == null) {
-      lastAttribution = _firstChoice();
-      return;
-    }
-    final valid = choices.any((choice) => choice.key == current.key);
-    if (!valid) lastAttribution = _firstChoice();
   }
 
   void _notify() {

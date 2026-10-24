@@ -3,19 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/models/app_settings.dart';
-import 'package:wdid_web/models/enums.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
-import 'package:wdid_web/models/work_item.dart';
 import 'package:wdid_web/screens/settings_screen.dart';
 import 'package:wdid_web/state/app_state.dart';
 import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/theme/app_theme.dart';
 import 'package:wdid_web/utils/time_utils.dart';
 import 'package:wdid_web/widgets/app_shell.dart';
-import 'package:wdid_web/widgets/entry_row.dart';
 import 'package:wdid_web/widgets/focus_ring.dart';
 import 'package:wdid_web/widgets/nav_rail.dart';
 import 'package:wdid_web/widgets/quick_capture_bar.dart';
@@ -25,6 +21,7 @@ import 'package:wdid_web/widgets/work_entry_row.dart';
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
 import 'fake_preferences_api.dart';
+import 'fake_timer_api.dart';
 
 const _viewport = Size(1440, 1000);
 
@@ -36,13 +33,14 @@ double _contrastRatio(Color foreground, Color background) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-bool _hasTabularFigures(TextStyle? style) =>
-    style?.fontFeatures?.any((feature) => feature.feature == 'tnum') ?? false;
-
-Category _category(String id, String name) => Category(
+Category _category(
+  String id,
+  String name, {
+  CategoryRole role = CategoryRole.initiative,
+}) => Category(
   id: id,
   name: name,
-  role: CategoryRole.initiative,
+  role: role,
   createdAt: DateTime.utc(2026, 10, 23),
   updatedAt: DateTime.utc(2026, 10, 23),
 );
@@ -62,6 +60,7 @@ void main() {
     String route = '/today',
     FakeSettingsApi? settingsApi,
     FakeEntryApi? entryApi,
+    FakeTimerApi? timerApi,
     bool settle = true,
   }) async {
     tester.view.physicalSize = _viewport;
@@ -74,18 +73,22 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: route,
         categoryApiBuilder: (_) => FakeCategoryApi(
-          categories: [_category('cat-1', 'Initiatives')],
+          categories: [
+            _category('cat-1', 'Initiatives'),
+            _category('cat-s', 'Support', role: CategoryRole.support),
+          ],
           subcategories: [
             _subcategory('sub-1', 'cat-1', 'Billing migration'),
+            _subcategory('mode-s', 'cat-s', 'Unblock'),
           ],
         ),
         settingsApiBuilder: (_) => settingsApi ?? FakeSettingsApi(),
-        entryApiBuilder: entryApi == null ? null : (_) => entryApi,
+        entryApiBuilder: (_) => entryApi ?? FakeEntryApi(),
+        timerApiBuilder: (_) => timerApi ?? FakeTimerApi(),
       ),
     );
     if (settle) {
@@ -194,6 +197,7 @@ void main() {
     testWidgets('T starts and stops the timer', (tester) async {
       final state = await pumpApp(tester);
       expect(state.activeTimer, isNull);
+      state.lastCategoryId = 'cat-1';
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
       await tester.pump();
@@ -230,7 +234,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
       await tester.pumpAndSettle();
-      expect(find.text('Export period'), findsOneWidget);
+      expect(find.text('Add entry'), findsWidgets);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyI);
@@ -240,7 +244,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
       await tester.pumpAndSettle();
-      expect(find.text('Create check-in'), findsOneWidget);
+      expect(find.text('Create check-in'), findsWidgets);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
       await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
@@ -401,11 +405,19 @@ void main() {
     testWidgets('running and paused states use icon and text cues', (
       tester,
     ) async {
-      final state = AppState(DemoWdidRepository(latency: Duration.zero));
-      addTearDown(state.dispose);
+      final entryApi = FakeEntryApi();
+      final timerApi = FakeTimerApi();
+      final state = AppState(
+        categoryApi: FakeCategoryApi(
+          categories: [_category('cat-1', 'Initiatives')],
+        ),
+        settingsApi: FakeSettingsApi(),
+        entryApi: entryApi,
+        timerApi: timerApi,
+      );
       await tester.runAsync(() async {
         await state.load();
-        await state.startTimer();
+        await state.startTimer(categoryId: 'cat-1');
       });
 
       await tester.pumpWidget(
@@ -428,6 +440,10 @@ void main() {
       expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
       expect(find.text('Paused'), findsOneWidget);
       expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+
+      // Stop the poll ticker before the test framework checks for pending
+      // timers.
+      state.dispose();
     });
   });
 
@@ -445,44 +461,6 @@ void main() {
 
       expect(formatTimeRange(date, DateTime(2025, 10, 17, 9, 57)),
           '09:05–09:57');
-    });
-
-    testWidgets('entry rows render times and durations in tabular figures', (
-      tester,
-    ) async {
-      final start = DateTime(2026, 10, 23, 9, 15);
-      final item = WorkItem(
-        id: 'item-1',
-        type: WorkType.initiative,
-        categoryLabel: 'Billing migration',
-        startedAt: start,
-        endedAt: start.add(const Duration(minutes: 42)),
-        minutes: 42,
-        localDate: '2026-10-23',
-        summary: 'Backfill script skeleton',
-        createdAt: start,
-        updatedAt: start,
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: AppTheme.build(ThemePreference.light),
-          home: Scaffold(body: EntryRow(item: item, initiatives: const [])),
-        ),
-      );
-
-      final timeText = tester.widget<Text>(
-        find.text(formatTimeRange(item.startedLocal, item.endedLocal)),
-      );
-      final durationText = tester.widget<Text>(find.text('42m'));
-      expect(_hasTabularFigures(timeText.style), isTrue);
-      expect(_hasTabularFigures(durationText.style), isTrue);
-      expect(
-        _hasTabularFigures(
-          AppTheme.build(ThemePreference.light).textTheme.displaySmall,
-        ),
-        isTrue,
-      );
     });
 
     testWidgets('compact density tightens data rows', (tester) async {

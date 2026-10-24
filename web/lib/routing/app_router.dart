@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 
 import '../screens/checkin_detail_screen.dart';
 import '../screens/checkins_screen.dart';
-import '../screens/initiative_detail_screen.dart';
 import '../screens/initiatives_screen.dart';
 import '../screens/log_screen.dart';
 import '../screens/login_screen.dart';
@@ -63,9 +62,7 @@ GoRouter buildRouter(
                 path: ':id',
                 builder: (context, routerState) {
                   final id = routerState.pathParameters['id']!;
-                  return state.hasTaxonomyService
-                      ? ProjectDetailScreen(projectId: id)
-                      : InitiativeDetailScreen(initiativeId: id);
+                  return ProjectDetailScreen(projectId: id);
                 },
               ),
             ],

@@ -2,9 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
+import 'package:wdid_web/models/taxonomy.dart';
 
 import 'fake_auth_api.dart';
+import 'fake_entry_api.dart';
+import 'fake_preferences_api.dart';
+
+Category _category(String id, String name) => Category(
+  id: id,
+  name: name,
+  role: CategoryRole.initiative,
+  createdAt: DateTime.utc(2026, 10, 23),
+  updatedAt: DateTime.utc(2026, 10, 23),
+);
+
+Subcategory _subcategory(String id, String categoryId, String name) =>
+    Subcategory(
+      id: id,
+      categoryId: categoryId,
+      name: name,
+      createdAt: DateTime.utc(2026, 10, 23),
+      updatedAt: DateTime.utc(2026, 10, 23),
+    );
 
 void main() {
   testWidgets('renders Today and navigates to Log', (tester) async {
@@ -15,21 +34,28 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
+        categoryApiBuilder: (_) => FakeCategoryApi(
+          categories: [_category('cat-1', 'Initiatives')],
+          subcategories: [
+            _subcategory('sub-1', 'cat-1', 'Billing migration'),
+          ],
+        ),
+        settingsApiBuilder: (_) => FakeSettingsApi(),
+        entryApiBuilder: (_) => FakeEntryApi(),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Today'), findsWidgets);
     expect(find.text('Start a timer'), findsOneWidget);
-    expect(find.text('Billing migration'), findsWidgets);
+    expect(find.text('Nothing logged yet'), findsOneWidget);
 
     await tester.tap(find.text('Log').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('Export period'), findsOneWidget);
+    expect(find.text('Add entry'), findsWidgets);
     expect(find.text('Week by attribution'), findsNothing);
   });
 }

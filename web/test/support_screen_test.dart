@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/entry_api.dart';
-import 'package:wdid_web/models/initiative.dart' show LinkRef;
+import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
@@ -90,7 +89,6 @@ Future<FakeEntryApi> pumpSupport(
   await tester.pumpWidget(
     WdidApp(
       key: UniqueKey(),
-      repository: DemoWdidRepository(latency: Duration.zero),
       authApi: FakeAuthApi(),
       initialSession: signedInSession(),
       initialRoute: '/support',

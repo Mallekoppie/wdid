@@ -713,11 +713,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: '${settings.schemaVersion}',
                   ),
                   _AboutRow(label: 'License', value: settings.license),
-                  _AboutRow(
+                  const _AboutRow(
                     label: 'Data adapter',
-                    value: state.isDemo
-                        ? 'Demo adapter (service contract pending)'
-                        : 'Service connected',
+                    value: 'Connect service',
                   ),
                   _AboutRow(
                     label: 'Auth',

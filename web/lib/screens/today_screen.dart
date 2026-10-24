@@ -5,24 +5,16 @@ import 'package:go_router/go_router.dart';
 
 import '../models/app_settings.dart';
 import '../models/work_entry.dart';
-import '../models/work_item.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
-import '../utils/attribution.dart';
 import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 import '../widgets/allocation_bars.dart';
-import '../widgets/app_dropdown.dart';
-import '../widgets/entry_row.dart';
-import '../widgets/forms/entry_dialog.dart';
-import '../widgets/forms/support_dialog.dart';
 import '../widgets/panel.dart';
-import '../widgets/quick_add_bar.dart';
 import '../widgets/quick_capture_bar.dart';
 import '../widgets/screen_states.dart';
 import '../widgets/service_timer_card.dart';
-import '../widgets/timer_actions.dart';
 import '../widgets/work_entry_row.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -33,56 +25,6 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  void _edit(WorkItem item) {
-    unawaited(_editAsync(item));
-  }
-
-  Future<void> _editAsync(WorkItem item) async {
-    final state = AppStateScope.read(context);
-    final saved = item.isSupport
-        ? await showSupportDialog(context, state: state, existing: item)
-        : await showEntryDialog(context, state: state, existing: item);
-    if (saved != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Entry updated')));
-    }
-  }
-
-  Future<void> _delete(WorkItem item) async {
-    final state = AppStateScope.read(context);
-    try {
-      await state.deleteEntry(item.id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Entry deleted')));
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete the entry: $error')),
-      );
-    }
-  }
-
-  Future<void> _openEntryForm() async {
-    final state = AppStateScope.read(context);
-    final saved = await showEntryDialog(context, state: state);
-    if (saved != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Entry saved')));
-    }
-  }
-
-  Future<void> _logSupport() async {
-    final state = AppStateScope.read(context);
-    final saved = state.hasEntryService
-        ? await showServiceSupportDialog(context, state: state)
-        : await showSupportDialog(context, state: state);
-    if (saved != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Support entry saved')));
-    }
-  }
-
   Future<void> _editOutcome(WorkEntry entry) async {
     final state = AppStateScope.read(context);
     final outcome = await showDialog<String>(
@@ -200,7 +142,6 @@ class _TodayScreenState extends State<TodayScreen> {
     final state = AppStateScope.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final serviceMode = state.hasEntryService;
     final hasSummary = state.summaryApi != null;
     final weekPending = hasSummary && state.weekReport == null;
     final weekLabel = !weekPending
@@ -208,10 +149,6 @@ class _TodayScreenState extends State<TodayScreen> {
         : state.weekReportError != null
         ? 'This week unavailable'
         : 'Loading this week…';
-    final items = state.todayItems;
-    final todayMinutes = serviceMode
-        ? state.todayEntryMinutes
-        : state.todayMinutes;
 
     return ScreenBody(
       child: PageScaffold(
@@ -250,95 +187,25 @@ class _TodayScreenState extends State<TodayScreen> {
               const _ReviewPrompt(),
             ],
             const SizedBox(height: AppSpacing.lg),
-            if (!serviceMode) ...[
-              const _TimerCard(),
-              const SizedBox(height: AppSpacing.md),
-              QuickAddBar(onOpenFullForm: _openEntryForm),
-            ] else ...[
-              const ServiceTimerCard(),
-              const SizedBox(height: AppSpacing.md),
-              const QuickCaptureBar(),
-            ],
+            const ServiceTimerCard(),
+            const SizedBox(height: AppSpacing.md),
+            const QuickCaptureBar(),
             const SizedBox(height: AppSpacing.xl),
             Row(
               children: [
                 Text('Today', style: theme.textTheme.titleMedium),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
-                  formatDuration(todayMinutes),
+                  formatDuration(state.todayEntryMinutes),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                     fontFeatures: tabularFigures,
                   ),
                 ),
-                const Spacer(),
-                if (!serviceMode)
-                  TextButton.icon(
-                    onPressed: _openEntryForm,
-                    icon: const Icon(Icons.add, size: 15),
-                    label: const Text('Add entry'),
-                  ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            if (serviceMode)
-              _serviceTodayList(state)
-            else
-              Panel(
-                padding: EdgeInsets.zero,
-                child: items.isEmpty
-                    ? EmptyState(
-                        icon: Icons.timelapse_outlined,
-                        title: 'Nothing logged yet',
-                        message: 'Start a timer above, or add an entry after the fact.',
-                        action: FilledButton.icon(
-                          onPressed: _openEntryForm,
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Add entry'),
-                        ),
-                      )
-                    : Column(
-                        children: [
-                          for (final item in items)
-                            EntryRow(
-                              item: item,
-                              initiatives: state.initiatives,
-                              onEdit: _edit,
-                              onDelete: (item) => unawaited(_delete(item)),
-                              onOpenInitiative: (item) {
-                                if (item.initiativeId != null) {
-                                  context.go(
-                                    '/initiatives/${item.initiativeId}',
-                                  );
-                                }
-                              },
-                            ),
-                        ],
-                      ),
-              ),
-            if (!serviceMode) ...[
-              const SizedBox(height: AppSpacing.lg),
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: _logSupport,
-                    icon: const Icon(
-                      Icons.volunteer_activism_outlined,
-                      size: 16,
-                    ),
-                    label: const Text('Log support'),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${items.where((item) => item.isSupport).length} support interactions today',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontFeatures: tabularFigures,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            _serviceTodayList(state),
             const SizedBox(height: AppSpacing.lg),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -501,256 +368,6 @@ class _OutcomeDialogState extends State<_OutcomeDialog> {
           child: const Text('Save outcome'),
         ),
       ],
-    );
-  }
-}
-
-class _TimerCard extends StatefulWidget {
-  const _TimerCard();
-
-  @override
-  State<_TimerCard> createState() => _TimerCardState();
-}
-
-class _TimerCardState extends State<_TimerCard> {
-  final _description = TextEditingController();
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _description.dispose();
-    super.dispose();
-  }
-
-  Future<void> _start() async {
-    final state = AppStateScope.read(context);
-    setState(() => _busy = true);
-    try {
-      await state.startTimer(description: _description.text);
-      if (!mounted) return;
-      setState(() => _busy = false);
-      _description.clear();
-      final timer = state.activeTimer;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Timer started · ${timer == null ? 'timer' : state.timerLabel(timer)}',
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
-    }
-  }
-
-  Future<void> _togglePause(bool paused) async {
-    final state = AppStateScope.read(context);
-    try {
-      if (paused) {
-        await state.resumeTimer();
-      } else {
-        await state.pauseTimer();
-      }
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not change the timer: $error')),
-      );
-    }
-  }
-
-  Future<void> _stop() async {
-    final state = AppStateScope.read(context);
-    setState(() => _busy = true);
-    try {
-      final result = await stopTimerWithDecision(context, state: state);
-      if (!mounted) return;
-      setState(() => _busy = false);
-      if (result != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
-      }
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.toString())));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = AppStateScope.of(context);
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final timer = state.activeTimer;
-    final running = timer != null;
-    final elapsed = timer?.elapsedAt(DateTime.now()) ?? Duration.zero;
-    final choices = state.attributionChoices;
-    final choice =
-        state.lastAttribution ?? (choices.isEmpty ? null : choices.first);
-
-    return Panel(
-      tone: running ? PanelTone.accent : PanelTone.normal,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          PanelHeader(
-            title: running
-                ? timer.isPaused
-                      ? 'Timer paused'
-                      : 'Running'
-                : 'Start a timer',
-            subtitle: running ? 'Since ${formatTime(timer.startedAt)}' : 'Pick an attribution and start working. Last choice is remembered.',
-            icon: running ? Icons.timer_outlined : Icons.play_circle_outline,
-            trailing: running
-                ? Text(
-                    formatClock(elapsed),
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
-                      fontFeatures: tabularFigures,
-                    ),
-                  )
-                : null,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (timer == null)
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final narrow = constraints.maxWidth < 720;
-                final description = TextField(
-                  controller: _description,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _start(),
-                  decoration: const InputDecoration(
-                    hintText: 'What are you working on?',
-                    prefixIcon: Icon(Icons.edit_note, size: 18),
-                  ),
-                );
-                final attribution = AppDropdown<AttributionChoice>(
-                  value: choice ?? (choices.isEmpty ? null : choices.first),
-                  label: 'Attribution',
-                  enabled: choices.isNotEmpty,
-                  items: [
-                    for (final option in choices)
-                      DropdownMenuItem(
-                        value: option,
-                        child: Text(option.label),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) state.setAttribution(value);
-                  },
-                );
-                if (narrow) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      description,
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Expanded(child: attribution),
-                          const SizedBox(width: AppSpacing.sm),
-                          FilledButton.icon(
-                            onPressed: _busy ? null : _start,
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: const Text('Start'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    Expanded(flex: 3, child: description),
-                    const SizedBox(width: AppSpacing.sm),
-                    SizedBox(width: 220, child: attribution),
-                    const SizedBox(width: AppSpacing.sm),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : _start,
-                      icon: const Icon(Icons.play_arrow, size: 18),
-                      label: const Text('Start'),
-                    ),
-                  ],
-                );
-              },
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      state.timerIsInitiative(timer)
-                          ? Icons.flag_outlined
-                          : Icons.category_outlined,
-                      size: 15,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      state.timerLabel(timer),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text('·', style: TextStyle(color: scheme.onSurfaceVariant)),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        timer.description,
-                        style: theme.textTheme.bodyMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => unawaited(_togglePause(timer.isPaused)),
-                      icon: Icon(
-                        timer.isPaused ? Icons.play_arrow : Icons.pause,
-                        size: 16,
-                      ),
-                      label: Text(timer.isPaused ? 'Resume' : 'Pause'),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : _stop,
-                      icon: _busy
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.stop, size: 16),
-                      label: const Text('Stop & save'),
-                    ),
-                    if (state.timerInitiativeId(timer) != null)
-                      TextButton.icon(
-                        onPressed: () => context.go(
-                          '/initiatives/${state.timerInitiativeId(timer)}',
-                        ),
-                        icon: const Icon(Icons.arrow_outward, size: 15),
-                        label: const Text('Open initiative'),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-        ],
-      ),
     );
   }
 }

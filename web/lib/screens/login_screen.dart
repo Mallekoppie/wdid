@@ -281,11 +281,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               label: const Text('Continue with Zitadel'),
                             ),
                           ],
-                          const SizedBox(height: AppSpacing.lg),
-                          TextButton(
-                            onPressed: () => context.go('/today'),
-                            child: const Text('Open the demo journal'),
-                          ),
                         ],
                       );
                     },

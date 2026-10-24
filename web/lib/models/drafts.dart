@@ -1,5 +1,5 @@
 import 'enums.dart';
-import 'initiative.dart';
+import 'link_ref.dart';
 
 /// Inputs accepted by the service when creating records. IDs and timestamps are
 /// always assigned by the service.

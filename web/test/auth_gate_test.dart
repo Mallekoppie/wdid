@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/auth_api.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 
 import 'fake_auth_api.dart';
 
@@ -20,7 +19,6 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
         initialSession: session,
         initialRoute: route,

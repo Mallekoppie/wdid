@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/category_api.dart';
-import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/entry_api.dart';
 import 'package:wdid_web/data/milestone_api.dart';
 import 'package:wdid_web/data/note_api.dart';
@@ -190,7 +189,6 @@ Future<void> pumpDetail(
 
   await tester.pumpWidget(
     WdidApp(
-      repository: DemoWdidRepository(latency: Duration.zero),
       authApi: FakeAuthApi(),
       initialSession: signedInSession(),
       initialRoute: route,

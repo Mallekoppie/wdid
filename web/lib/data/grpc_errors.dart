@@ -1,5 +1,18 @@
 import 'package:grpc/grpc_or_grpcweb.dart';
 
+/// Raised when the UI reaches a capability whose service is not wired into
+/// this build. The client must surface this instead of inventing local
+/// behaviour.
+class ServicePendingException implements Exception {
+  const ServicePendingException(this.service, this.message);
+
+  final String service;
+  final String message;
+
+  @override
+  String toString() => '$service: $message';
+}
+
 /// A user-facing service failure, optionally naming the rejected field.
 class ServiceFailure implements Exception {
   const ServiceFailure(this.message, {this.field});

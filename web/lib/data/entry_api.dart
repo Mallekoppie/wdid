@@ -6,7 +6,7 @@ import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
 import '../models/drafts.dart';
 import '../models/enums.dart';
-import '../models/initiative.dart' show LinkRef;
+import '../models/link_ref.dart';
 import '../models/work_entry.dart';
 import '../src/generated/categories.pb.dart' as categories_generated;
 import '../src/generated/entries.pbgrpc.dart' as generated;
