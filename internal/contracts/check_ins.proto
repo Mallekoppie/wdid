@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// CheckInKind separates manager-facing check-ins from personal reviews.
+enum CheckInKind {
+  CHECK_IN_KIND_UNSPECIFIED = 0;
+  CHECK_IN_KIND_MANAGER = 1;
+  CHECK_IN_KIND_PERSONAL = 2;
+}
+
+// CheckInState is where a check-in sits in its editing lifecycle. Only a
+// manager check-in can become final.
+enum CheckInState {
+  CHECK_IN_STATE_UNSPECIFIED = 0;
+  CHECK_IN_STATE_DRAFT = 1;
+  CHECK_IN_STATE_GENERATED = 2;
+  CHECK_IN_STATE_EDITED = 3;
+  CHECK_IN_STATE_FINAL = 4;
+}
+
+// CheckInAudience is who a manager check-in is prepared for. It is ignored for
+// a personal review, which never carries an audience.
+enum CheckInAudience {
+  CHECK_IN_AUDIENCE_UNSPECIFIED = 0;
+  CHECK_IN_AUDIENCE_ONE_ON_ONE = 1;
+  CHECK_IN_AUDIENCE_PERFORMANCE_REVIEW = 2;
+}
+
+// CheckInPromptVariant names the prompt template a check-in uses. The audience
+// selects a manager variant; a personal review always uses the personal one.
+// The variant changes the prompt only, never the stored data.
+enum CheckInPromptVariant {
+  CHECK_IN_PROMPT_VARIANT_UNSPECIFIED = 0;
+  CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE = 1;
+  CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW = 2;
+  CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW = 3;
+}
+
+// CheckInSummarySource tells the service whether a summary update is the
+// user's own text or generated output. A generated summary never replaces a
+// summary the user edited by hand unless the client confirms the overwrite.
+enum CheckInSummarySource {
+  CHECK_IN_SUMMARY_SOURCE_UNSPECIFIED = 0;
+  CHECK_IN_SUMMARY_SOURCE_MANUAL = 1;
+  CHECK_IN_SUMMARY_SOURCE_GENERATED = 2;
+}
+
+// CheckInTotal is one keyed allocation in the period snapshot taken when a
+// check-in is created.
+message CheckInTotal {
+  // A category id, a subcategory id, or a person's display name, depending on
+  // which totals list holds it.
+  string key = 1;
+  google.protobuf.Duration duration = 2;
+}
+
+// CheckInTotals is the period snapshot stored with a check-in. It is taken
+// from the authoritative period report at creation time; the detail screen
+// still reads the report for its live category, project, support and rhythm
+// aggregates.
+message CheckInTotals {
+  google.protobuf.Duration total = 1;
+  repeated CheckInTotal by_category = 2;
+  repeated CheckInTotal by_subcategory = 3;
+  repeated CheckInTotal support_by_person = 4;
+}
+
+// CheckIn is a saved artifact covering a period, with focus notes, aggregates
+// and an optional summary. A final manager check-in is read-only and moves the
+// boundary for the next manager check-in.
+message CheckIn {
+  string id = 1;
+  CheckInKind kind = 2;
+  // Inclusive local calendar dates in YYYY-MM-DD form.
+  string period_start = 3;
+  string period_end = 4;
+  CheckInState state = 5;
+  // Empty for a personal review.
+  CheckInAudience audience = 6;
+  string focus_notes = 7;
+  string summary_markdown = 8;
+  string summary_model = 9;
+  string prompt_version = 10;
+  CheckInTotals totals = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// ListCheckInsRequest narrows the caller's check-ins. An unspecified kind
+// lists both manager check-ins and personal reviews, newest first.
+message ListCheckInsRequest {
+  CheckInKind kind = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListCheckInsResponse {
+  repeated CheckIn check_ins = 1;
+  string next_page_token = 2;
+}
+
+message GetCheckInRequest {
+  string id = 1;
+}
+
+message GetCheckInResponse {
+  CheckIn check_in = 1;
+}
+
+// GetCheckInDefaultsRequest asks for the period a new check-in should start
+// with. Both kinds resume from the last final manager check-in; a personal
+// review never moves that boundary itself.
+message GetCheckInDefaultsRequest {
+  CheckInKind kind = 1;
+}
+
+// GetCheckInDefaultsResponse is the server-computed boundary. The client may
+// edit both dates before creating the check-in.
+message GetCheckInDefaultsResponse {
+  // The day after the last final manager check-in, or the journal start date,
+  // or today when neither exists.
+  string period_start = 1;
+  // Today in the user's configured timezone.
+  string period_end = 2;
+  // Empty when no final manager check-in exists.
+  string last_final_check_in_id = 3;
+}
+
+// CreateCheckInRequest opens a draft check-in. The service snapshots the
+// period's aggregates from the authoritative report.
+message CreateCheckInRequest {
+  CheckInKind kind = 1;
+  string period_start = 2;
+  string period_end = 3;
+  CheckInAudience audience = 4;
+  string focus_notes = 5;
+}
+
+message CreateCheckInResponse {
+  CheckIn check_in = 1;
+}
+
+// UpdateCheckInRequest replaces the mutable fields. The kind, owner and
+// creation time always come from the stored record. A final manager check-in
+// rejects every update. Changing only the audience leaves the summary
+// untouched, because the audience selects the prompt variant rather than the
+// underlying data.
+message UpdateCheckInRequest {
+  string id = 1;
+  string period_start = 2;
+  string period_end = 3;
+  CheckInAudience audience = 4;
+  string focus_notes = 5;
+  string summary_markdown = 6;
+  string summary_model = 7;
+  string prompt_version = 8;
+  // Unspecified behaves like manual for compatibility: the text is the
+  // user's own.
+  CheckInSummarySource summary_source = 9;
+  // Confirms replacing a summary the user edited by hand. Required when a
+  // generated summary would replace one, and rejected otherwise.
+  bool overwrite_manual_edits = 10;
+}
+
+message UpdateCheckInResponse {
+  CheckIn check_in = 1;
+}
+
+// BuildCheckInPromptRequest asks for the ready-to-paste prompt for one
+// check-in. The audience recorded on the check-in selects the variant.
+message BuildCheckInPromptRequest {
+  string id = 1;
+}
+
+// BuildCheckInPromptResponse is the prompt block prepended to summary.md. It
+// is an instruction, not a generated summary; generation is a separate step.
+message BuildCheckInPromptResponse {
+  string prompt = 1;
+  string prompt_version = 2;
+  CheckInPromptVariant variant = 3;
+}
+
+// FinalizeCheckInRequest makes a manager check-in read-only and moves the
+// boundary for the next manager check-in.
+message FinalizeCheckInRequest {
+  string id = 1;
+}
+
+message FinalizeCheckInResponse {
+  CheckIn check_in = 1;
+}
+
+// DeleteCheckInRequest removes a saved personal review. A final manager
+// check-in is the boundary for the next period and cannot be deleted.
+message DeleteCheckInRequest {
+  string id = 1;
+}
+
+message DeleteCheckInResponse {}
+
+// CheckInService owns manager check-ins and personal reviews. Every RPC
+// requires a bearer token; the account is derived from that token, never from
+// a request field. Only a final manager check-in moves the next boundary.
+service CheckInService {
+  rpc ListCheckIns(ListCheckInsRequest) returns (ListCheckInsResponse);
+  rpc GetCheckIn(GetCheckInRequest) returns (GetCheckInResponse);
+  rpc GetCheckInDefaults(GetCheckInDefaultsRequest) returns (GetCheckInDefaultsResponse);
+  rpc CreateCheckIn(CreateCheckInRequest) returns (CreateCheckInResponse);
+  rpc UpdateCheckIn(UpdateCheckInRequest) returns (UpdateCheckInResponse);
+  // The prompt variant follows the check-in's kind and audience.
+  rpc BuildCheckInPrompt(BuildCheckInPromptRequest) returns (BuildCheckInPromptResponse);
+  rpc FinalizeCheckIn(FinalizeCheckInRequest) returns (FinalizeCheckInResponse);
+  rpc DeleteCheckIn(DeleteCheckInRequest) returns (DeleteCheckInResponse);
+}

@@ -46,6 +46,86 @@ enum EntrySource {
       value?.toString() == 'timer' ? EntrySource.timer : EntrySource.manual;
 }
 
+/// Manager-facing check-in or personal self-review.
+enum CheckInKind {
+  manager,
+  personal;
+
+  static CheckInKind parse(Object? value) =>
+      value?.toString().toLowerCase() == 'personal'
+      ? CheckInKind.personal
+      : CheckInKind.manager;
+
+  String get label => this == CheckInKind.manager ? 'Manager' : 'Personal';
+}
+
+/// Who a manager check-in is prepared for. A personal review has no audience.
+enum CheckInAudience {
+  oneOnOne,
+  performanceReview;
+
+  static CheckInAudience? parse(Object? value) {
+    final normalized = value?.toString().toLowerCase();
+    return switch (normalized) {
+      'one_on_one' || 'oneonone' => CheckInAudience.oneOnOne,
+      'performance_review' ||
+      'performancereview' => CheckInAudience.performanceReview,
+      _ => null,
+    };
+  }
+
+  String get wireName =>
+      this == CheckInAudience.oneOnOne ? 'one_on_one' : 'performance_review';
+
+  String get label => switch (this) {
+    CheckInAudience.oneOnOne => '1:1',
+    CheckInAudience.performanceReview => 'Performance review',
+  };
+}
+
+/// Which prompt template a check-in uses. The audience selects the manager
+/// variant; a personal review always uses the personal one. The variant
+/// changes the prompt only, never the stored data.
+enum CheckInPromptVariant {
+  managerOneOnOne,
+  managerPerformanceReview,
+  personalReview;
+
+  static CheckInPromptVariant parse(Object? value) {
+    final normalized = value?.toString().toLowerCase();
+    return switch (normalized) {
+      'manager_performance_review' || 'managerperformancereview' =>
+        CheckInPromptVariant.managerPerformanceReview,
+      'personal_review' ||
+      'personalreview' => CheckInPromptVariant.personalReview,
+      _ => CheckInPromptVariant.managerOneOnOne,
+    };
+  }
+
+  String get wireName => switch (this) {
+    CheckInPromptVariant.managerOneOnOne => 'manager_one_on_one',
+    CheckInPromptVariant.managerPerformanceReview =>
+      'manager_performance_review',
+    CheckInPromptVariant.personalReview => 'personal_review',
+  };
+
+  String get label => switch (this) {
+    CheckInPromptVariant.managerOneOnOne => '1:1',
+    CheckInPromptVariant.managerPerformanceReview => 'Performance review',
+    CheckInPromptVariant.personalReview => 'Personal review',
+  };
+}
+
+/// Whether a summary update is the user's own text or generated output. Only
+/// generated text is blocked from replacing a manual edit without confirmation.
+enum CheckInSummarySource {
+  manual,
+  generated;
+
+  String get wireName =>
+      this == CheckInSummarySource.manual ? 'manual' : 'generated';
+}
+
 enum CheckInState {
   draft,
   generated,

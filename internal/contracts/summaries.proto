@@ -3,6 +3,7 @@ syntax = "proto3";
 package wdid.v1;
 
 import "categories.proto";
+import "check_ins.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -67,6 +68,15 @@ message PeriodNote {
   google.protobuf.Timestamp created_at = 5;
 }
 
+// MilestoneProgress is the completion count for one project. Completion is a
+// property of the project rather than the period, so the report includes every
+// project with milestones, even one with no time inside the period.
+message MilestoneProgress {
+  string subcategory_id = 1;
+  int32 total = 2;
+  int32 done = 3;
+}
+
 // PeriodReport is the single authoritative aggregate for an inclusive range of
 // local calendar dates. Escaping the period is impossible: the service resolves
 // the day boundaries in the user's configured timezone.
@@ -81,6 +91,7 @@ message PeriodReport {
   repeated SupportModeAllocation support_modes = 8;
   repeated WeekRhythm weeks = 9;
   repeated PeriodNote notes = 10;
+  repeated MilestoneProgress milestone_progress = 11;
 }
 
 message GetPeriodReportRequest {
@@ -98,9 +109,97 @@ message GetPeriodReportResponse {
   PeriodReport report = 1;
 }
 
+// ExportFile is one file in a generated export bundle. The bundle is returned
+// to the caller and is never written into the database directory.
+message ExportFile {
+  string name = 1;
+  string content = 2;
+}
+
+// BuildExportRequest scopes a bundle to a period or to a saved check-in. When
+// check_in_id is set, the check-in's period scopes the bundle and the dates are
+// ignored.
+message BuildExportRequest {
+  // Inclusive local calendar dates in YYYY-MM-DD form.
+  string from_date = 1;
+  string to_date = 2;
+  string check_in_id = 3;
+}
+
+message BuildExportResponse {
+  // Directory name the client presents, for example
+  // wdid-export-2026-07-01_2026-10-02.
+  string directory = 1;
+  // summary.md, data.json, entries.csv and support.csv, in that order.
+  repeated ExportFile files = 2;
+}
+
+// BuildPromptRequest returns the ready-to-paste prompt block followed by
+// summary.md for the same scope as BuildExport.
+message BuildPromptRequest {
+  string from_date = 1;
+  string to_date = 2;
+  string check_in_id = 3;
+  // Overrides the template. Unspecified follows the check-in's kind and
+  // audience, or the manager 1:1 default for a bare period.
+  CheckInPromptVariant variant = 4;
+}
+
+message BuildPromptResponse {
+  // The versioned instruction followed by summary.md.
+  string prompt = 1;
+  string prompt_version = 2;
+  CheckInPromptVariant variant = 3;
+}
+
+// GetPromptTemplateRequest asks for one versioned instruction. The text lives
+// in a single place in the service; the client only previews it in Settings.
+message GetPromptTemplateRequest {
+  // Unspecified returns the manager 1:1 default.
+  CheckInPromptVariant variant = 1;
+}
+
+message GetPromptTemplateResponse {
+  // The instruction alone, without any period data.
+  string template = 1;
+  string prompt_version = 2;
+  CheckInPromptVariant variant = 3;
+}
+
+// GenerateSummaryRequest streams a model response into one check-in's summary.
+// Only the check-in's selected period is sent to the provider.
+message GenerateSummaryRequest {
+  string check_in_id = 1;
+  // Confirms replacing a summary the user edited by hand. Required when the
+  // stored summary was edited; a final check-in is always rejected.
+  bool overwrite_manual_edits = 2;
+}
+
+// GenerateSummaryDelta is one streamed chunk. Text arrives incrementally; the
+// final message carries the persisted check-in, the model name and the prompt
+// version. A failure ends the stream without persisting anything.
+message GenerateSummaryDelta {
+  string text = 1;
+  // Set on the final message only, after the summary is saved.
+  CheckIn check_in = 2;
+  string model = 3;
+  string prompt_version = 4;
+}
+
 // SummaryService owns authoritative period aggregates. Today's week bars,
 // initiative time, support rollups and check-in detail all read the same
 // report; no client composes its own period totals.
 service SummaryService {
   rpc GetPeriodReport(GetPeriodReportRequest) returns (GetPeriodReportResponse);
+  // Builds the on-demand export bundle. Nothing is written to disk.
+  rpc BuildExport(BuildExportRequest) returns (BuildExportResponse);
+  // The prompt block (versioned instruction followed by summary.md) for the
+  // same period or check-in scope.
+  rpc BuildPrompt(BuildPromptRequest) returns (BuildPromptResponse);
+  // The versioned instruction alone, for Settings → AI preview.
+  rpc GetPromptTemplate(GetPromptTemplateRequest) returns (GetPromptTemplateResponse);
+  // Streams provider output into the check-in's editable summary. The stored
+  // summary is replaced only after a complete, successful response, together
+  // with the model name and prompt version.
+  rpc GenerateSummary(GenerateSummaryRequest) returns (stream GenerateSummaryDelta);
 }

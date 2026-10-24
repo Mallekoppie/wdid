@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 (Category taxonomy data core), 04 (Category management end-to-end), 05 (Settings preferences end-to-end)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] An entry can be created from one line with a category, optional subcategory, description, and duration.
 - [x] The default duration comes from settings.
@@ -14,3 +14,8 @@
 - [x] Validation errors appear on the right fields.
 - [x] The screen handles loading, empty, error, and success states.
 - [x] Connect and gRPC-Web tests cover create, list, and validation.
+
+## Comments
+
+- Implemented and committed in `2e140da` ("implement quick capture and today's list"); every box was ticked at implementation time.
+- Bookkeeping reconciliation (2026-10-23): the issue file never received a Comments entry or the post-implementation status when the work landed, so both were added during a status sweep. No code changes were made during reconciliation.

@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' hide Category;
 
 import '../data/category_api.dart';
+import '../data/checkin_api.dart';
 import '../data/demo_repository.dart';
 import '../data/entry_api.dart';
+import '../data/milestone_api.dart';
+import '../data/note_api.dart';
 import '../data/repository.dart';
 import '../data/settings_api.dart';
 import '../data/summary_api.dart';
@@ -14,6 +17,7 @@ import '../models/check_in.dart';
 import '../models/drafts.dart';
 import '../models/enums.dart';
 import '../models/initiative.dart';
+import '../models/milestone.dart';
 import '../models/note.dart';
 import '../models/period_report.dart';
 import '../models/taxonomy.dart';
@@ -21,6 +25,7 @@ import '../models/work_entry.dart';
 import '../models/work_item.dart';
 import '../utils/analytics.dart';
 import '../utils/attribution.dart';
+import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 
 enum AppStatus { loading, ready, error }
@@ -125,9 +130,17 @@ class AppState extends ChangeNotifier {
     this.entryApi,
     this.timerApi,
     this.summaryApi,
+    this.noteApi,
+    this.milestoneApi,
+    this.checkInApi,
+    this.roleCheck,
   });
 
   final WdidRepository repository;
+
+  /// Resolves the signed-in account's admin role. Backups are instance-wide, so
+  /// only an administrator may list, take or restore them.
+  final bool Function()? roleCheck;
 
   /// Service-backed taxonomy, preferences and work entries. Null keeps the
   /// demo adapter, which is how screens without a service contract still run.
@@ -140,14 +153,83 @@ class AppState extends ChangeNotifier {
   /// demo adapter; Today then falls back to the demo's local week rollup.
   final SummaryApi? summaryApi;
 
+  /// Day notes and project notes. Null keeps the demo adapter's note store.
+  final NoteApi? noteApi;
+
+  /// Project milestones. Null keeps the detail's milestone tab read-only in
+  /// demo mode, which has no milestone store.
+  final MilestoneApi? milestoneApi;
+
+  /// Manager check-ins and personal reviews. Null keeps the demo adapter's
+  /// in-memory check-ins and its locally composed detail.
+  final CheckInApi? checkInApi;
+
   AppStatus status = AppStatus.loading;
   String? loadError;
 
   List<Initiative> initiatives = const [];
   List<WorkItem> workItems = const [];
   List<CheckIn> checkIns = const [];
+  bool checkInsLoading = false;
+  String? checkInsError;
+  CheckInKind? checkInKindFilter;
+  bool _checkInsLoaded = false;
+  int _checkInsRequest = 0;
+
+  /// The open check-in and the authoritative report for its period. The report
+  /// owns category, project, support-by-person and weekly-rhythm aggregates, so
+  /// the detail never adds entries up itself.
+  CheckIn? checkInDetail;
+  String? checkInDetailId;
+  PeriodReport? checkInReport;
+  bool checkInDetailLoading = false;
+  String? checkInDetailError;
+  int _checkInDetailRequest = 0;
+
+  /// The live, unsaved review's authoritative report. It is keyed by its
+  /// inclusive dates so a previous period never flashes while the next loads.
+  PeriodReport? reviewReport;
+  String? _reviewFromDate;
+  String? _reviewToDate;
+  bool reviewLoading = false;
+  String? reviewError;
+  int _reviewRequest = 0;
+
+  /// The cadence period whose review prompt the user dismissed in this
+  /// session. A dismissal lasts until the next weekly or monthly period.
+  String? _dismissedReviewPromptPeriod;
+
+  /// Today's notes loaded from the service, or every demo note. Day notes and
+  /// project notes share the [Note] model.
   List<Note> notes = const [];
+  bool notesLoading = false;
+  String? notesError;
+
+  /// The open project's notes, newest first, and the project they belong to.
+  /// The id guard stops a previous project's notes from flashing while the
+  /// next project loads.
+  List<Note> projectNotes = const [];
+  String? projectNotesProjectId;
+  bool projectNotesLoading = false;
+  String? projectNotesError;
+
+  /// The open project's milestones, sorted by due date with undated ones last.
+  /// The id guard stops a previous project's milestones from flashing.
+  List<Milestone> projectMilestones = const [];
+  String? projectMilestonesProjectId;
+  bool projectMilestonesLoading = false;
+  String? projectMilestonesError;
+
   AppSettings settings = const AppSettings();
+
+  /// Instance-wide snapshots and status. Only administrators load them; the
+  /// demo adapter derives them from the local settings.
+  List<BackupSnapshot> backups = const [];
+  BackupStatusInfo? backupStatus;
+  bool backupsLoading = false;
+  String? backupsError;
+  bool _backupsLoaded = false;
+  List<BackupSnapshot> _demoBackups = const [];
 
   List<Category> categories = const [];
   List<Subcategory> subcategories = const [];
@@ -191,9 +273,26 @@ class AppState extends ChangeNotifier {
   String? logError;
   LogQuery? _logQuery;
   int _logRequest = 0;
+
+  /// The Support screen's entries for its selected period, newest first. The
+  /// listing is fetched per support-role category, so support work never mixes
+  /// with an initiative's project timeline.
+  List<WorkEntry> supportEntries = const [];
+
+  /// The authoritative report for the Support screen's selected period. Its
+  /// person and mode allocations are the rollups, so the screen never composes
+  /// them from the loaded entries. Null until the first report arrives.
+  PeriodReport? supportReport;
+  bool supportLoading = false;
+  String? supportError;
+  String? _supportFromDate;
+  String? _supportToDate;
+  int _supportRequest = 0;
   int _weekRequest = 0;
   int _initiativesRequest = 0;
   int _projectEntriesRequest = 0;
+  int _projectNotesRequest = 0;
+  int _projectMilestonesRequest = 0;
 
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
@@ -213,6 +312,16 @@ class AppState extends ChangeNotifier {
 
   bool get isDemo => repository is DemoWdidRepository;
 
+  /// True when the account carries the admin role. Backups cover the whole
+  /// instance, so only an administrator manages them.
+  bool get isAdmin => roleCheck?.call() ?? false;
+
+  /// Settings → Data & backups uses the service contract when connected. The
+  /// demo adapter keeps its local preview, so it is always manageable.
+  bool get hasBackupService => settingsApi != null;
+
+  bool get canManageBackups => !hasBackupService || isAdmin;
+
   DateTime get today => dateOnly(DateTime.now());
   String get todayIso => isoDate(today);
 
@@ -224,15 +333,27 @@ class AppState extends ChangeNotifier {
       final results = await Future.wait<dynamic>([
         repository.listInitiatives(),
         repository.listWorkItems(),
-        repository.listNotes(),
-        repository.listCheckIns(),
+        noteApi == null
+            ? repository.listNotes()
+            : Future<List<Note>>.value(const []),
+        checkInApi == null
+            ? repository.listCheckIns()
+            : Future<List<CheckIn>>.value(const []),
         repository.getSettings(),
       ]);
       initiatives = List<Initiative>.from(results[0] as List<Initiative>);
       workItems = List<WorkItem>.from(results[1] as List<WorkItem>);
-      notes = List<Note>.from(results[2] as List<Note>);
+      if (noteApi == null) {
+        notes = List<Note>.from(results[2] as List<Note>);
+      }
       checkIns = List<CheckIn>.from(results[3] as List<CheckIn>);
       settings = results[4] as AppSettings;
+      if (noteApi != null) {
+        await loadNotes();
+      }
+      if (checkInApi != null) {
+        await loadCheckIns(force: true);
+      }
       if (categoryApi != null || settingsApi != null) {
         await Future.wait([loadTaxonomy(), loadPreferences()]);
       }
@@ -410,6 +531,84 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Loads today's notes from the service. Today's end-of-day note is one of
+  /// them; a failure stays local to the note card instead of taking down the
+  /// journal.
+  Future<void> loadNotes() async {
+    final api = noteApi;
+    if (api == null) return;
+
+    notesLoading = true;
+    notesError = null;
+    _notify();
+    try {
+      notes = _newestFirstNotes(await api.listNotes(date: todayIso));
+    } catch (error) {
+      notesError = error.toString();
+    } finally {
+      notesLoading = false;
+      _notify();
+    }
+  }
+
+  /// Loads one project's notes, newest first. NoteService filters by
+  /// subcategory, so the detail never sifts through unrelated notes.
+  Future<void> loadProjectNotes(String subcategoryId) async {
+    final api = noteApi;
+    if (api == null) return;
+
+    final request = ++_projectNotesRequest;
+    if (projectNotesProjectId != subcategoryId) {
+      projectNotes = const [];
+      projectNotesProjectId = subcategoryId;
+    }
+    projectNotesLoading = true;
+    projectNotesError = null;
+    _notify();
+    try {
+      final loaded = await api.listNotes(subcategoryId: subcategoryId);
+      if (request != _projectNotesRequest) return;
+      projectNotes = _newestFirstNotes(loaded);
+    } catch (error) {
+      if (request != _projectNotesRequest) return;
+      projectNotesError = error.toString();
+    } finally {
+      if (request == _projectNotesRequest) {
+        projectNotesLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Loads one project's milestones. Completion counts come from the
+  /// authoritative report, so this listing only carries the checkpoints.
+  Future<void> loadProjectMilestones(String subcategoryId) async {
+    final api = milestoneApi;
+    if (api == null) return;
+
+    final request = ++_projectMilestonesRequest;
+    if (projectMilestonesProjectId != subcategoryId) {
+      projectMilestones = const [];
+      projectMilestonesProjectId = subcategoryId;
+    }
+    projectMilestonesLoading = true;
+    projectMilestonesError = null;
+    _notify();
+    try {
+      final loaded = await api.listMilestones(subcategoryId: subcategoryId);
+      if (request != _projectMilestonesRequest) return;
+      projectMilestones = _sortedMilestones(loaded);
+    } catch (error) {
+      if (request != _projectMilestonesRequest) return;
+      projectMilestonesError = error.toString();
+    } finally {
+      if (request == _projectMilestonesRequest) {
+        projectMilestonesLoading = false;
+        _notify();
+      }
+    }
+  }
+
   /// Reloads the open project's timeline only when [subcategoryId] is that
   /// project, so unrelated mutations do not clear what the user is reading.
   void _refreshProjectIfOpen(String subcategoryId) {
@@ -549,6 +748,47 @@ class AppState extends ChangeNotifier {
       if (category.role == CategoryRole.initiative) category,
   ];
 
+  /// Support is a reporting role, not a category name. Every support-role
+  /// category stays here so its history is readable after archiving.
+  List<Category> get supportCategories => [
+    for (final category in categories)
+      if (category.role == CategoryRole.support) category,
+  ];
+
+  /// Support modes are the subcategories of support-role categories, ordered
+  /// as the taxonomy is. A mode's category decides how the entry is filed.
+  List<Subcategory> get supportModes {
+    final ordered = <Subcategory>[];
+    for (final category in supportCategories) {
+      final modes = subcategoriesFor(category.id)
+        ..sort((first, second) {
+          if (first.sortOrder != second.sortOrder) {
+            return first.sortOrder.compareTo(second.sortOrder);
+          }
+          return first.name.toLowerCase().compareTo(second.name.toLowerCase());
+        });
+      ordered.addAll(modes);
+    }
+    return ordered;
+  }
+
+  /// The support modes a new entry can use, excluding archived rows.
+  List<Subcategory> get selectableSupportModes => [
+    for (final mode in supportModes)
+      if (!mode.archived) mode,
+  ];
+
+  /// True when the category is a support-role category, so the caller can
+  /// require a person and keep the entry off project timelines.
+  bool isSupportCategory(String categoryId) =>
+      categoryById(categoryId)?.role == CategoryRole.support;
+
+  /// The mode label for an entry, resolved from the live taxonomy.
+  String supportModeLabel(String subcategoryId) {
+    if (subcategoryId.isEmpty) return 'No mode';
+    return subcategoryById(subcategoryId)?.name ?? 'No mode';
+  }
+
   /// Initiative categories a new project can be filed under.
   List<Category> get selectableInitiativeCategories => [
     for (final category in initiativeCategories)
@@ -588,6 +828,18 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// The report's milestone completion for one project, or null when the
+  /// project has no milestones. The report owns these counts so the UI never
+  /// recomputes completion from the milestone listing.
+  MilestoneProgress? milestoneProgressForProject(String subcategoryId) {
+    for (final progress
+        in initiativesReport?.milestoneProgress ??
+            const <MilestoneProgress>[]) {
+      if (progress.subcategoryId == subcategoryId) return progress;
+    }
+    return null;
+  }
+
   /// Time the report attributes to initiative-role categories. It never
   /// includes support or other work, so it matches the portfolio's cards.
   int get initiativeMinutes {
@@ -611,6 +863,19 @@ class AppState extends ChangeNotifier {
     return latest;
   }
 
+  /// The boundary for the next manager check-in. Only a final manager check-in
+  /// counts; personal reviews and drafts never move it.
+  CheckIn? get latestFinalManagerCheckIn {
+    CheckIn? latest;
+    for (final checkIn in checkIns) {
+      if (!checkIn.isManager || !checkIn.isFinal) continue;
+      if (latest == null || checkIn.periodEnd.isAfter(latest.periodEnd)) {
+        latest = checkIn;
+      }
+    }
+    return latest;
+  }
+
   int get daysSinceCheckIn {
     final latest = latestCheckIn;
     if (latest == null) return 0;
@@ -618,10 +883,14 @@ class AppState extends ChangeNotifier {
     return days < 0 ? 0 : days;
   }
 
+  /// The demo adapter's local boundary: the day after the last final manager
+  /// check-in, or the journal start date, or today.
   DateTime get defaultCheckInStart {
-    final latest = latestCheckIn;
-    if (latest != null) return dateOnly(latest.periodEnd);
-    return startOfQuarter(today);
+    final latest = latestFinalManagerCheckIn;
+    if (latest != null) return addDays(latest.periodEnd, 1);
+    final journal = DateTime.tryParse(settings.journalStartDate);
+    if (journal != null) return dateOnly(journal);
+    return today;
   }
 
   Note? get todayNote {
@@ -634,6 +903,17 @@ class AppState extends ChangeNotifier {
   List<Note> notesForInitiative(String initiativeId) =>
       notes.where((note) => note.initiativeId == initiativeId).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// A project's notes, newest first. In service mode this is the per-project
+  /// listing; the demo adapter keeps every note in [notes].
+  List<Note> notesForProject(String projectId) {
+    if (noteApi != null) {
+      return projectNotesProjectId == projectId
+          ? List<Note>.unmodifiable(projectNotes)
+          : const [];
+    }
+    return notesForInitiative(projectId);
+  }
 
   List<WorkItem> itemsForInitiative(String initiativeId) =>
       workItems.where((item) => item.initiativeId == initiativeId).toList()
@@ -1040,6 +1320,266 @@ class AppState extends ChangeNotifier {
     await loadLog(query);
   }
 
+  /// Loads the Support screen's entries for an inclusive local-date range and
+  /// the authoritative report that owns its rollups. Support is one or more
+  /// support-role categories, so each is listed and the results are merged
+  /// newest first. Archived categories stay included so their history remains
+  /// readable.
+  Future<void> loadSupport({
+    required String fromDate,
+    required String toDate,
+  }) async {
+    final api = entryApi;
+    if (api == null) return;
+
+    _supportFromDate = fromDate;
+    _supportToDate = toDate;
+    final request = ++_supportRequest;
+    final categoryCount = supportCategories.length;
+    supportLoading = true;
+    supportError = null;
+    supportReport = null;
+    _notify();
+    try {
+      // The listings and the report are independent, so one round trip each
+      // runs in parallel; Future.wait also attaches an error handler to both.
+      final results = await Future.wait<Object?>([
+        for (final category in supportCategories)
+          api.listEntries(
+            categoryId: category.id,
+            fromDate: fromDate,
+            toDate: toDate,
+          ),
+        if (summaryApi != null)
+          summaryApi!.getPeriodReport(fromDate: fromDate, toDate: toDate),
+      ]);
+      if (request != _supportRequest) return;
+      final listings = results.take(categoryCount).cast<EntryListing>();
+      supportEntries = _newestFirst(
+        listings.expand((listing) => listing.entries),
+      );
+      if (summaryApi != null) {
+        supportReport = results.last as PeriodReport;
+      }
+    } catch (error) {
+      if (request != _supportRequest) return;
+      supportError = error.toString();
+    } finally {
+      if (request == _supportRequest) {
+        supportLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Reloads the Support screen's last period after a support entry changes.
+  Future<void> refreshSupport() async {
+    final from = _supportFromDate;
+    final to = _supportToDate;
+    if (from == null || to == null) return;
+    await loadSupport(fromDate: from, toDate: to);
+  }
+
+  void _refreshSupportIfLoaded() {
+    final from = _supportFromDate;
+    final to = _supportToDate;
+    if (from == null || to == null) return;
+    unawaited(loadSupport(fromDate: from, toDate: to));
+  }
+
+  /// Loads the caller's check-ins from the service, newest first. A null
+  /// [checkInKindFilter] lists both manager check-ins and personal reviews;
+  /// the filter itself is applied by the service.
+  Future<void> loadCheckIns({bool force = false}) async {
+    final api = checkInApi;
+    if (api == null) return;
+    if (!force && _checkInsLoaded && !checkInsLoading) return;
+
+    final request = ++_checkInsRequest;
+    checkInsLoading = true;
+    checkInsError = null;
+    _notify();
+    try {
+      final loaded = await api.listCheckIns(kind: checkInKindFilter);
+      if (request != _checkInsRequest) return;
+      checkIns = [...loaded]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      _checkInsLoaded = true;
+    } catch (error) {
+      if (request != _checkInsRequest) return;
+      checkInsError = error.toString();
+    } finally {
+      if (request == _checkInsRequest) {
+        checkInsLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// Narrows the check-in listing and reloads it from the service.
+  Future<void> setCheckInKindFilter(CheckInKind? kind) async {
+    if (checkInKindFilter == kind) return;
+    checkInKindFilter = kind;
+    _notify();
+    await loadCheckIns(force: true);
+  }
+
+  /// Loads one check-in and the authoritative period report for its period.
+  /// The report is what the detail renders; the client never composes its
+  /// category, project, support or weekly totals from entries.
+  Future<void> loadCheckInDetail(String id, {bool force = false}) async {
+    final api = checkInApi;
+    if (api == null) return;
+    if (!force &&
+        checkInDetailId == id &&
+        (checkInDetail?.id == id || checkInDetailLoading)) {
+      return;
+    }
+
+    final request = ++_checkInDetailRequest;
+    if (checkInDetailId != id) {
+      checkInDetail = null;
+      checkInReport = null;
+    }
+    checkInDetailId = id;
+    checkInDetailLoading = true;
+    checkInDetailError = null;
+    _notify();
+    try {
+      final loaded = await api.getCheckIn(id);
+      PeriodReport? report;
+      if (summaryApi != null) {
+        report = await summaryApi!.getPeriodReport(
+          fromDate: isoDate(loaded.periodStart),
+          toDate: isoDate(loaded.periodEnd),
+        );
+      }
+      if (request != _checkInDetailRequest) return;
+      checkInDetail = loaded;
+      checkInReport = report;
+      _upsertCheckIn(loaded);
+    } catch (error) {
+      if (request != _checkInDetailRequest) return;
+      checkInDetailError = error.toString();
+    } finally {
+      if (request == _checkInDetailRequest) {
+        checkInDetailLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  CheckIn? checkInById(String id) {
+    if (checkInDetail?.id == id) return checkInDetail;
+    for (final checkIn in checkIns) {
+      if (checkIn.id == id) return checkIn;
+    }
+    return null;
+  }
+
+  /// Loads the authoritative report for an unsaved review period. It is the
+  /// same aggregate source a saved check-in detail reads, so the live review
+  /// and the saved artifact agree. When no summary service is connected the
+  /// screen explains that aggregates are unavailable; nothing is fabricated.
+  Future<void> loadReviewReport(
+    DateTime start,
+    DateTime end, {
+    bool force = false,
+  }) async {
+    final from = isoDate(start);
+    final to = isoDate(end);
+    if (from == _reviewFromDate &&
+        to == _reviewToDate &&
+        reviewReport != null &&
+        !force) {
+      return;
+    }
+
+    final api = summaryApi;
+    final request = ++_reviewRequest;
+    _reviewFromDate = from;
+    _reviewToDate = to;
+    reviewReport = null;
+    reviewError = null;
+    reviewLoading = api != null;
+    _notify();
+    if (api == null) return;
+
+    try {
+      final report = await api.getPeriodReport(fromDate: from, toDate: to);
+      if (request != _reviewRequest) return;
+      reviewReport = report;
+    } catch (error) {
+      if (request != _reviewRequest) return;
+      reviewError = error.toString();
+    } finally {
+      if (request == _reviewRequest) {
+        reviewLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  /// The saved personal review with the latest creation time, if any.
+  CheckIn? get latestPersonalReview {
+    CheckIn? latest;
+    for (final checkIn in checkIns) {
+      if (!checkIn.isPersonal) continue;
+      if (latest == null || checkIn.createdAt.isAfter(latest.createdAt)) {
+        latest = checkIn;
+      }
+    }
+    return latest;
+  }
+
+  /// The current weekly or monthly cadence period, keyed by its first day.
+  /// Dismissals and due-checks compare this key, so the prompt appears once
+  /// per period rather than every time Today rebuilds.
+  String get reviewPromptPeriodKey {
+    switch (settings.reviewCadence) {
+      case ReviewCadence.weekly:
+        return 'week:${isoDate(startOfWeek(today, weekStart: settings.weekStart))}';
+      case ReviewCadence.monthly:
+        return 'month:${today.year}-${today.month.toString().padLeft(2, '0')}';
+      case ReviewCadence.off:
+        return '';
+    }
+  }
+
+  /// True when the configured cadence has not yet produced a personal review
+  /// in the current period and the prompt has not been dismissed. It is only a
+  /// hint: nothing is created until the user saves a review.
+  bool get reviewPromptDue {
+    if (settings.reviewCadence == ReviewCadence.off) return false;
+    if (!hasCheckInService) return false;
+    final key = reviewPromptPeriodKey;
+    if (key.isEmpty || _dismissedReviewPromptPeriod == key) return false;
+
+    final periodStart = switch (settings.reviewCadence) {
+      ReviewCadence.weekly => startOfWeek(today, weekStart: settings.weekStart),
+      _ => DateTime(today.year, today.month, 1),
+    };
+    for (final checkIn in checkIns) {
+      if (!checkIn.isPersonal) continue;
+      if (!dateOnly(checkIn.createdAt).isBefore(periodStart)) return false;
+    }
+    return true;
+  }
+
+  /// The range the cadence prompt opens when the user accepts it.
+  ReviewPeriod get reviewPromptPeriod => reviewPromptPeriodFor(
+    settings.reviewCadence,
+    today: today,
+    boundaryStart: defaultCheckInStart,
+    weekStart: settings.weekStart,
+  );
+
+  /// Silences the review prompt for the current cadence period only.
+  void dismissReviewPrompt() {
+    _dismissedReviewPromptPeriod = reviewPromptPeriodKey;
+    _notify();
+  }
+
   /// Captures one line of work against a category and optional subcategory.
   /// The pair is remembered for the next capture.
   Future<WorkEntry> quickCapture({
@@ -1074,6 +1614,7 @@ class AppState extends ChangeNotifier {
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
     _refreshProjectIfOpen(entry.subcategoryId);
+    _refreshSupportIfLoaded();
     _refreshReports();
     _notify();
     return entry;
@@ -1089,6 +1630,7 @@ class AppState extends ChangeNotifier {
     } else {
       _refreshProjectIfOpen(updated.subcategoryId);
     }
+    _refreshSupportIfLoaded();
     _refreshReports();
     _notify();
     return updated;
@@ -1101,6 +1643,7 @@ class AppState extends ChangeNotifier {
     }
     entries = entries.where((entry) => entry.id != id).toList();
     logEntries = logEntries.where((entry) => entry.id != id).toList();
+    _refreshSupportIfLoaded();
     _refreshReports();
     _notify();
   }
@@ -1114,6 +1657,7 @@ class AppState extends ChangeNotifier {
     }
     entries = _replaceWithHalves(entries, id, halves);
     logEntries = _replaceWithHalves(logEntries, id, halves);
+    _refreshSupportIfLoaded();
     _refreshReports();
     _notify();
     return halves;
@@ -1227,50 +1771,214 @@ class AppState extends ChangeNotifier {
     String? initiativeId,
     DateTime? date,
   }) async {
-    final note = await repository.createNote(
-      NoteDraft(
-        date: isoDate(date ?? today),
-        initiativeId: initiativeId,
-        text: text,
-      ),
+    final draft = NoteDraft(
+      date: isoDate(date ?? today),
+      initiativeId: initiativeId,
+      text: text,
     );
-    notes = [note, ...notes];
-    _notify();
+    final note = noteApi != null
+        ? await noteApi!.createNote(draft)
+        : await repository.createNote(draft);
+    _upsertNote(note);
     return note;
   }
 
+  /// Saves the end-of-day note for today. A day note is attached to the date
+  /// only; it shares its model with project notes.
   Future<Note> saveDayNote(String text) async {
     final existing = todayNote;
     if (existing == null) {
       return addNote(text: text);
     }
-    final updated = await repository.updateNote(existing.copyWith(text: text));
-    notes = [
-      for (final note in notes)
-        if (note.id == updated.id) updated else note,
+    return updateNote(existing.copyWith(text: text));
+  }
+
+  Future<Note> updateNote(Note note) async {
+    final updated = noteApi != null
+        ? await noteApi!.updateNote(note)
+        : await repository.updateNote(note);
+    _upsertNote(updated);
+    return updated;
+  }
+
+  Future<void> deleteNote(String id) async {
+    if (noteApi != null) {
+      await noteApi!.deleteNote(id);
+    } else {
+      await repository.deleteNote(id);
+    }
+    notes = notes.where((note) => note.id != id).toList();
+    projectNotes = projectNotes.where((note) => note.id != id).toList();
+    _notify();
+  }
+
+  /// Replaces a note in both listings, or adds it at the top. Every listing is
+  /// kept newest first so the UI never has to sort. In service mode [notes] is
+  /// today's day-note listing, so a project note joins it only when it already
+  /// belongs there; the demo adapter keeps every note in one list.
+  void _upsertNote(Note note) {
+    final dayNoteForToday = note.initiativeId == null && note.date == todayIso;
+    final tracked =
+        noteApi == null ||
+        dayNoteForToday ||
+        notes.any((existing) => existing.id == note.id);
+    if (tracked) {
+      notes = _newestFirstNotes(_replaceNote(notes, note));
+    }
+    if (projectNotesProjectId != null &&
+        note.initiativeId == projectNotesProjectId) {
+      projectNotes = _newestFirstNotes(_replaceNote(projectNotes, note));
+    }
+    _notify();
+  }
+
+  static List<Note> _replaceNote(List<Note> source, Note note) {
+    final found = source.any((existing) => existing.id == note.id);
+    if (!found) return [note, ...source];
+    return [
+      for (final existing in source)
+        if (existing.id == note.id) note else existing,
     ];
+  }
+
+  static List<Note> _newestFirstNotes(Iterable<Note> source) =>
+      [...source]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  // --- Milestones --------------------------------------------------------
+
+  MilestoneApi _milestoneApi() {
+    final api = milestoneApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'MilestoneService',
+        'Project milestones need the service contract.',
+      );
+    }
+    return api;
+  }
+
+  /// A project's milestones. The service orders them by due date with undated
+  /// milestones last; the id guard keeps another project's list off screen.
+  List<Milestone> milestonesForProject(String projectId) {
+    if (projectMilestonesProjectId != projectId) return const [];
+    return List<Milestone>.unmodifiable(projectMilestones);
+  }
+
+  Future<Milestone> addMilestone({
+    required String projectId,
+    required String title,
+    String dueDate = '',
+    bool done = false,
+  }) async {
+    final milestone = await _milestoneApi().createMilestone(
+      MilestoneDraft(
+        subcategoryId: projectId,
+        title: title,
+        dueDate: dueDate,
+        done: done,
+      ),
+    );
+    if (projectMilestonesProjectId == projectId) {
+      projectMilestones = _sortedMilestones([...projectMilestones, milestone]);
+    }
+    _refreshReports();
+    _notify();
+    return milestone;
+  }
+
+  Future<Milestone> updateMilestone(Milestone milestone) async {
+    final updated = await _milestoneApi().updateMilestone(milestone);
+    if (projectMilestonesProjectId == updated.subcategoryId) {
+      projectMilestones = _sortedMilestones([
+        for (final existing in projectMilestones)
+          if (existing.id == updated.id) updated else existing,
+      ]);
+    }
+    _refreshReports();
     _notify();
     return updated;
+  }
+
+  /// Marks a milestone done or not done. It is the same update path, so the
+  /// service stays the single writer.
+  Future<Milestone> setMilestoneDone(Milestone milestone, bool done) =>
+      updateMilestone(milestone.copyWith(done: done));
+
+  Future<void> deleteMilestone(String id) async {
+    await _milestoneApi().deleteMilestone(id);
+    projectMilestones = projectMilestones
+        .where((milestone) => milestone.id != id)
+        .toList();
+    _refreshReports();
+    _notify();
+  }
+
+  static List<Milestone> _sortedMilestones(Iterable<Milestone> source) {
+    return [...source]..sort((first, second) {
+      final firstUndated = first.dueDate.isEmpty;
+      final secondUndated = second.dueDate.isEmpty;
+      if (firstUndated != secondUndated) return firstUndated ? 1 : -1;
+      if (first.dueDate != second.dueDate) {
+        return first.dueDate.compareTo(second.dueDate);
+      }
+      final created = first.createdAt.compareTo(second.createdAt);
+      if (created != 0) return created;
+      return first.id.compareTo(second.id);
+    });
   }
 
   // --- Check-ins ---------------------------------------------------------
 
+  bool get hasCheckInService => checkInApi != null;
+
+  /// The server-computed period a new check-in starts with. Demo mode builds
+  /// the same boundary locally from the last final manager check-in.
+  Future<CheckInDefaults> getCheckInDefaults({
+    CheckInKind kind = CheckInKind.manager,
+  }) async {
+    final api = checkInApi;
+    if (api != null) return api.getCheckInDefaults(kind: kind);
+    return CheckInDefaults(periodStart: defaultCheckInStart, periodEnd: today);
+  }
+
   Future<CheckIn> createCheckIn(CheckInDraft draft) async {
-    final checkIn = await repository.createCheckIn(draft);
-    checkIns = [...checkIns, checkIn]
-      ..sort((a, b) => b.periodEnd.compareTo(a.periodEnd));
+    final checkIn = checkInApi != null
+        ? await checkInApi!.createCheckIn(draft)
+        : await repository.createCheckIn(draft);
+    _upsertCheckIn(checkIn);
+    if (checkInApi != null) _checkInsLoaded = true;
     _notify();
     return checkIn;
   }
 
-  Future<CheckIn> updateCheckIn(CheckIn checkIn) async {
-    final updated = await repository.updateCheckIn(checkIn);
-    checkIns = [
-      for (final existing in checkIns)
-        if (existing.id == updated.id) updated else existing,
-    ];
+  /// Replaces the mutable fields. [source] tells the service whether the
+  /// summary text is the user's own or generated; a generated summary needs
+  /// [overwriteManualEdits] to replace a summary edited by hand.
+  Future<CheckIn> updateCheckIn(
+    CheckIn checkIn, {
+    CheckInSummarySource source = CheckInSummarySource.manual,
+    bool overwriteManualEdits = false,
+  }) async {
+    final updated = checkInApi != null
+        ? await checkInApi!.updateCheckIn(
+            checkIn,
+            source: source,
+            overwriteManualEdits: overwriteManualEdits,
+          )
+        : await repository.updateCheckIn(checkIn);
+    if (checkInDetail?.id == updated.id) checkInDetail = updated;
+    _upsertCheckIn(updated);
     _notify();
     return updated;
+  }
+
+  /// Changes the audience preset without touching the summary or the stored
+  /// totals. The audience only selects the prompt variant.
+  Future<CheckIn> setCheckInAudience(
+    CheckIn checkIn,
+    CheckInAudience audience,
+  ) {
+    return updateCheckIn(checkIn.copyWith(audience: audience));
   }
 
   Future<CheckIn> saveSummary(CheckIn checkIn, String markdown) {
@@ -1281,28 +1989,203 @@ class AppState extends ChangeNotifier {
             ? CheckInState.final_
             : CheckInState.edited,
       ),
+      source: CheckInSummarySource.manual,
     );
   }
 
-  Future<CheckIn> generateSummary(CheckIn checkIn) async {
-    final updated = await repository.generateSummary(checkIn.id);
-    checkIns = [
-      for (final existing in checkIns)
-        if (existing.id == updated.id) updated else existing,
-    ];
-    _notify();
-    return updated;
+  /// Whether the connected service (or the demo adapter) can generate a
+  /// summary. The check-in service alone is not enough: generation belongs to
+  /// the summary contract.
+  bool get canGenerateSummary => summaryApi != null || isDemo;
+
+  /// Streams a generated summary. Text deltas drive the editor; the final
+  /// delta carries the persisted check-in with its model and prompt version.
+  /// A failure ends the stream and leaves the stored summary untouched.
+  Stream<SummaryDelta> generateSummaryStream(
+    CheckIn checkIn, {
+    bool overwriteManualEdits = false,
+  }) {
+    final api = summaryApi;
+    if (api == null) {
+      if (checkInApi != null) {
+        return Stream<SummaryDelta>.error(
+          const ServicePendingException(
+            'SummaryService',
+            'AI summaries need the summary service contract.',
+          ),
+        );
+      }
+      return Stream<SummaryDelta>.fromFuture(
+        repository.generateSummary(checkIn.id).then((updated) {
+          _applyGeneratedCheckIn(updated);
+          return SummaryDelta(
+            checkIn: updated,
+            model: updated.summaryModel ?? '',
+            promptVersion: updated.promptVersion,
+          );
+        }),
+      );
+    }
+    return api
+        .generateSummary(checkIn.id, overwriteManualEdits: overwriteManualEdits)
+        .map((delta) {
+          final updated = delta.checkIn;
+          if (updated != null) _applyGeneratedCheckIn(updated);
+          return delta;
+        });
   }
 
-  Future<CheckIn> finalizeCheckIn(CheckIn checkIn) {
+  Future<CheckIn> generateSummary(CheckIn checkIn) async {
+    CheckIn? generated;
+    await for (final delta in generateSummaryStream(
+      checkIn,
+      overwriteManualEdits: true,
+    )) {
+      generated = delta.checkIn ?? generated;
+    }
+    if (generated == null) {
+      throw StateError('The summary generation returned no check-in.');
+    }
+    return generated;
+  }
+
+  void _applyGeneratedCheckIn(CheckIn updated) {
+    if (checkInDetail?.id == updated.id) checkInDetail = updated;
+    _upsertCheckIn(updated);
+    _notify();
+  }
+
+  /// The versioned instruction for one variant, previewed in Settings → AI.
+  Future<PromptTemplate> promptTemplate(CheckInPromptVariant variant) async {
+    final api = summaryApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SummaryService',
+        'The prompt template is owned by the service.',
+      );
+    }
+    return api.getPromptTemplate(variant);
+  }
+
+  Future<CheckIn> finalizeCheckIn(CheckIn checkIn) async {
+    if (checkInApi != null) {
+      final updated = await checkInApi!.finalizeCheckIn(checkIn.id);
+      if (checkInDetail?.id == updated.id) checkInDetail = updated;
+      _upsertCheckIn(updated);
+      _notify();
+      return updated;
+    }
     return updateCheckIn(checkIn.copyWith(state: CheckInState.final_));
   }
 
-  Future<String> buildPrompt(DateTime start, DateTime end) =>
-      repository.buildPrompt(start, end);
+  /// Removes a saved personal review. The manager boundary is derived only
+  /// from final manager check-ins, so a deletion never moves it.
+  Future<void> deleteCheckIn(String id) async {
+    if (checkInApi != null) {
+      await checkInApi!.deleteCheckIn(id);
+    } else {
+      await repository.deleteCheckIn(id);
+    }
+    checkIns = [
+      for (final checkIn in checkIns)
+        if (checkIn.id != id) checkIn,
+    ];
+    if (checkInDetailId == id) {
+      checkInDetail = null;
+      checkInDetailId = null;
+      checkInReport = null;
+      checkInDetailError = null;
+    }
+    _notify();
+  }
 
-  Future<ExportBundle> buildExport(DateTime start, DateTime end) =>
-      repository.buildExport(start, end);
+  /// Replaces a check-in in the listing, or inserts it newest first. The
+  /// service owns ordering; this keeps the in-memory list consistent after a
+  /// mutation without a refetch.
+  void _upsertCheckIn(CheckIn checkIn) {
+    final found = checkIns.any((existing) => existing.id == checkIn.id);
+    final next = found
+        ? [
+            for (final existing in checkIns)
+              if (existing.id == checkIn.id) checkIn else existing,
+          ]
+        : [checkIn, ...checkIns];
+    checkIns = next..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  /// The variant prompt block for one check-in. The service owns the text when
+  /// connected; the demo adapter mirrors the same variants locally.
+  Future<CheckInPrompt> buildCheckInPrompt(CheckIn checkIn) async {
+    if (checkInApi != null) return checkInApi!.buildPrompt(checkIn.id);
+    return repository.buildPrompt(
+      checkIn.periodStart,
+      checkIn.periodEnd,
+      kind: checkIn.kind,
+      audience: checkIn.audience,
+    );
+  }
+
+  /// The service-backed export and prompt capability. Demo mode keeps the
+  /// local adapter so the UI still runs before a service is connected.
+  bool get hasSummaryService => summaryApi != null;
+  bool get canExport => hasSummaryService || isDemo;
+
+  /// The prompt block for the same scope as [buildExport]. The service owns
+  /// the instruction text and appends summary.md; the demo adapter mirrors
+  /// the same shape locally.
+  Future<String> buildPrompt(
+    DateTime start,
+    DateTime end, {
+    String checkInId = '',
+    CheckInKind kind = CheckInKind.manager,
+    CheckInAudience? audience,
+  }) async {
+    final api = summaryApi;
+    if (api != null) {
+      final prompt = await api.buildPrompt(
+        fromDate: isoDate(start),
+        toDate: isoDate(end),
+        checkInId: checkInId,
+        variant: checkInId.isEmpty ? _promptVariantFor(kind, audience) : null,
+      );
+      return prompt.prompt;
+    }
+    return (await repository.buildPrompt(
+      start,
+      end,
+      kind: kind,
+      audience: audience,
+    )).prompt;
+  }
+
+  Future<ExportBundle> buildExport(
+    DateTime start,
+    DateTime end, {
+    String checkInId = '',
+  }) {
+    final api = summaryApi;
+    if (api != null) {
+      return api.buildExport(
+        fromDate: isoDate(start),
+        toDate: isoDate(end),
+        checkInId: checkInId,
+      );
+    }
+    return repository.buildExport(start, end);
+  }
+
+  CheckInPromptVariant? _promptVariantFor(
+    CheckInKind kind,
+    CheckInAudience? audience,
+  ) {
+    if (kind == CheckInKind.personal) {
+      return CheckInPromptVariant.personalReview;
+    }
+    if (audience == CheckInAudience.performanceReview) {
+      return CheckInPromptVariant.managerPerformanceReview;
+    }
+    return CheckInPromptVariant.managerOneOnOne;
+  }
 
   // --- Categories --------------------------------------------------------
 
@@ -1477,14 +2360,135 @@ class AppState extends ChangeNotifier {
     return saveSettings(settings.copyWith(density: density));
   }
 
-  Future<BackupStatus> backupNow() async {
-    final status = await repository.backupNow();
-    settings = settings.copyWith(
-      lastBackupAt: status.createdAt,
-      lastBackupBytes: status.bytes,
-    );
+  /// Loads the snapshot list and status. Non-admins never call the backup
+  /// RPCs; the panel shows an explanatory read-only state instead.
+  Future<void> loadBackups({bool force = false}) async {
+    if (!canManageBackups) {
+      backups = const [];
+      backupStatus = null;
+      backupsError = null;
+      return;
+    }
+    if (_backupsLoaded && !force) return;
+
+    final api = settingsApi;
+    if (api == null) {
+      _setDemoBackupStatus();
+      backups = List.unmodifiable(_demoBackups);
+      backupsError = null;
+      _backupsLoaded = true;
+      _notify();
+      return;
+    }
+
+    backupsLoading = true;
+    backupsError = null;
     _notify();
-    return status;
+    try {
+      final results = await Future.wait<dynamic>([
+        api.getBackupStatus(),
+        api.listBackups(),
+      ]);
+      backupStatus = results[0] as BackupStatusInfo;
+      backups = List<BackupSnapshot>.from(results[1] as List<BackupSnapshot>);
+      _backupsLoaded = true;
+    } catch (error) {
+      backupsError = error.toString();
+    } finally {
+      backupsLoading = false;
+      _notify();
+    }
+  }
+
+  /// Takes a manual snapshot. Manual snapshots are never removed by retention.
+  Future<BackupStatusInfo> backupNow() async {
+    final api = settingsApi;
+    if (api == null) {
+      final status = await repository.backupNow();
+      final snapshot = BackupSnapshot(
+        name: 'wdid-${status.createdAt.toUtc().toIso8601String()}-manual.db',
+        createdAt: status.createdAt,
+        sizeBytes: status.bytes,
+        manual: true,
+      );
+      _demoBackups = [snapshot, ..._demoBackups];
+      settings = settings.copyWith(
+        lastBackupAt: status.createdAt,
+        lastBackupBytes: status.bytes,
+      );
+      _setDemoBackupStatus();
+      backups = List.unmodifiable(_demoBackups);
+      _backupsLoaded = true;
+      _notify();
+      return backupStatus!;
+    }
+
+    final result = await api.backupNow();
+    backupStatus = result.status;
+    backups = [
+      result.backup,
+      ...backups.where((snapshot) => snapshot.name != result.backup.name),
+    ];
+    settings = settings.copyWith(
+      lastBackupAt: result.status.lastBackupAt ?? result.backup.createdAt,
+      lastBackupBytes: result.status.lastBackupSizeBytes,
+    );
+    _backupsLoaded = true;
+    _notify();
+    return result.status;
+  }
+
+  /// Restores one snapshot. The service verifies it, preserves the current
+  /// database and rebuilds indexes; the client refreshes every server-owned
+  /// view afterwards because the data on screen may have rolled back.
+  Future<RestoreBackupResult> restoreBackup(String name) async {
+    final api = settingsApi;
+    if (api == null) {
+      final selected = _demoBackups.firstWhere(
+        (snapshot) => snapshot.name == name,
+        orElse: () => _demoBackups.first,
+      );
+      settings = settings.copyWith(
+        lastBackupAt: selected.createdAt,
+        lastBackupBytes: selected.sizeBytes,
+      );
+      _demoBackups = _demoBackups
+          .where((snapshot) => !snapshot.createdAt.isAfter(selected.createdAt))
+          .toList();
+      _setDemoBackupStatus();
+      backups = List.unmodifiable(_demoBackups);
+      _notify();
+      return RestoreBackupResult(
+        backup: selected,
+        status: backupStatus!,
+        preRestorePath: '',
+      );
+    }
+
+    final result = await api.restoreBackup(name);
+    backupStatus = result.status;
+    settings = settings.copyWith(
+      lastBackupAt: result.status.lastBackupAt ?? result.backup.createdAt,
+      lastBackupBytes: result.status.lastBackupSizeBytes,
+    );
+    _backupsLoaded = false;
+    await reload();
+    await loadBackups(force: true);
+    return result;
+  }
+
+  void _setDemoBackupStatus() {
+    backupStatus = BackupStatusInfo(
+      lastBackupAt: settings.lastBackupAt,
+      lastBackupSizeBytes: settings.lastBackupBytes,
+      overdue: settings.lastBackupAt == null,
+      backupDirectory: settings.backupDir,
+      backupIntervalHours: settings.backupIntervalHours,
+      backupRetention: settings.retentionCount,
+      scheduledCount: 0,
+      manualCount: _demoBackups.length,
+      lastBackupManual: _demoBackups.isNotEmpty,
+    );
   }
 
   void requestSearchFocus() {

@@ -4,7 +4,7 @@ import '../data/auth_api.dart';
 
 /// Holds the sign-in configuration and the current session.
 class AuthState extends ChangeNotifier {
-  AuthState(this.api);
+  AuthState(this.api, {AuthSession? initialSession}) : session = initialSession;
 
   final AuthApi api;
 

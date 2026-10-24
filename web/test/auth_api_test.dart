@@ -7,15 +7,15 @@ import 'package:wdid_web/src/generated/auth.pbgrpc.dart' as generated;
 class FakeAuthRpc implements AuthRpc {
   generated.GetAuthConfigResponse configResponse =
       generated.GetAuthConfigResponse(
-    localLogin: true,
-    registrationEnabled: true,
-    bootstrapRequired: false,
-    oidc: generated.OIDCConfig(
-      enabled: true,
-      issuerUrl: 'http://zitadel.local:8080',
-      clientId: 'wdid-client',
-    ),
-  );
+        localLogin: true,
+        registrationEnabled: true,
+        bootstrapRequired: false,
+        oidc: generated.OIDCConfig(
+          enabled: true,
+          issuerUrl: 'http://zitadel.local:8080',
+          clientId: 'wdid-client',
+        ),
+      );
 
   generated.LoginResponse loginResponse = generated.LoginResponse(
     user: generated.User(
@@ -29,14 +29,14 @@ class FakeAuthRpc implements AuthRpc {
 
   generated.RegisterAccountResponse registerResponse =
       generated.RegisterAccountResponse(
-    user: generated.User(
-      id: 'user-2',
-      email: 'new@example.com',
-      displayName: 'New User',
-      role: generated.UserRole.USER_ROLE_USER,
-    ),
-    token: 'register-token',
-  );
+        user: generated.User(
+          id: 'user-2',
+          email: 'new@example.com',
+          displayName: 'New User',
+          role: generated.UserRole.USER_ROLE_USER,
+        ),
+        token: 'register-token',
+      );
 
   Object? error;
 

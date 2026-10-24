@@ -49,9 +49,8 @@ Future<void> showShortcutsDialog(BuildContext context) {
                         ),
                         child: Text(
                           key,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                fontFeatures: tabularFigures,
-                              ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(fontFeatures: tabularFigures),
                         ),
                       ),
                     ),

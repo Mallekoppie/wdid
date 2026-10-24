@@ -15,6 +15,7 @@ class PeriodReport {
     this.supportModes = const [],
     this.weeks = const [],
     this.notes = const [],
+    this.milestoneProgress = const [],
   });
 
   final String fromDate;
@@ -27,6 +28,24 @@ class PeriodReport {
   final List<SupportModeAllocation> supportModes;
   final List<WeekRhythm> weeks;
   final List<PeriodNote> notes;
+
+  /// Completion per project. Completion is a property of the project, not the
+  /// period, so a project with milestones is listed even when it has no time
+  /// inside the period.
+  final List<MilestoneProgress> milestoneProgress;
+}
+
+/// How many milestones a project has and how many are done.
+class MilestoneProgress {
+  const MilestoneProgress({
+    required this.subcategoryId,
+    required this.total,
+    required this.done,
+  });
+
+  final String subcategoryId;
+  final int total;
+  final int done;
 }
 
 /// The time attributed to one category in a period.

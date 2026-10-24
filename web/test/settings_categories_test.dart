@@ -34,6 +34,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
         initialRoute: '/settings',
         categoryApiBuilder: (_) => categoryApi,
         settingsApiBuilder: (_) => FakeSettingsApi(),

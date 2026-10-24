@@ -222,7 +222,8 @@ func ValidateWorkEntry(entry WorkEntry, category Category, subcategory *Subcateg
 	return nil
 }
 
-// ValidateMilestone checks the fields required for a dated checkpoint.
+// ValidateMilestone checks the fields required for a dated checkpoint. The due
+// date is optional; when present it must be a canonical local calendar date.
 func ValidateMilestone(milestone Milestone) error {
 	title := strings.TrimSpace(milestone.Title)
 	if title == "" {
@@ -235,7 +236,7 @@ func ValidateMilestone(milestone Milestone) error {
 		return invalid("subcategoryId", "is required")
 	}
 	if strings.TrimSpace(milestone.DueDate) == "" {
-		return invalid("dueDate", "is required")
+		return nil
 	}
 	return validateLocalDate("dueDate", milestone.DueDate)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/Mallekoppie/wdid/internal/auth"
+	"github.com/Mallekoppie/wdid/internal/backup"
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
@@ -20,15 +22,44 @@ import (
 
 // SettingsService implements the generated SettingsService handler. Settings
 // are stored per account, so a second user never sees the first user's
-// preferences.
+// preferences. Backups are instance-wide and use the configured backup
+// directory, interval and retention.
 type SettingsService struct {
 	store *store.Store
 	auth  *auth.Service
+	// backup is the instance-wide snapshot manager shared with the scheduler.
+	backup *backup.Manager
+	// backupDefaults are the service-level backup settings. They are the
+	// fallback when an account has not configured backups.
+	backupDefaults backup.Config
+}
+
+// SettingsServiceOption customises a SettingsService.
+type SettingsServiceOption func(*SettingsService)
+
+// WithBackupManager shares the service's snapshot manager with Settings. The
+// RPC surface can then report status and take a manual backup.
+func WithBackupManager(manager *backup.Manager) SettingsServiceOption {
+	return func(service *SettingsService) {
+		if manager != nil {
+			service.backup = manager
+		}
+	}
 }
 
 // NewSettingsService builds the SettingsService implementation.
-func NewSettingsService(database *store.Store, authService *auth.Service) *SettingsService {
-	return &SettingsService{store: database, auth: authService}
+func NewSettingsService(database *store.Store, authService *auth.Service, options ...SettingsServiceOption) *SettingsService {
+	service := &SettingsService{store: database, auth: authService}
+	for _, option := range options {
+		option(service)
+	}
+	if service.backup == nil {
+		// Tests and embedders that do not care about backups still get a
+		// usable manual/status surface scoped to the default directory.
+		service.backup = backup.New(database, backup.Config{})
+	}
+	service.backupDefaults = service.backup.Config()
+	return service
 }
 
 // Register implements platform.ConnectService.
@@ -37,17 +68,44 @@ func (s *SettingsService) Register(mux *http.ServeMux, options ...connect.Handle
 	mux.Handle(prefix, handler)
 }
 
-// GetSettings returns the caller's preferences and build information.
+// settingsForUser returns the account's saved settings, falling back to the
+// defaults every new account starts with.
+func (s *SettingsService) settingsForUser(userID string) (domain.Settings, error) {
+	settings, err := s.store.Settings(userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return domain.DefaultSettings(userID), nil
+	}
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	return settings, nil
+}
+
+// backupSettingsChanged reports whether a request tries to change an
+// instance-wide backup preference. An empty directory or a zero interval or
+// retention means the caller did not send the backup block, so it is not a
+// change; clients that omit backups can still save their own preferences.
+func backupSettingsChanged(requested, current domain.Settings) bool {
+	requested.Normalize()
+	if requested.BackupDirectory != "" && requested.BackupDirectory != current.BackupDirectory {
+		return true
+	}
+	if requested.BackupIntervalHours != 0 && requested.BackupIntervalHours != current.BackupIntervalHours {
+		return true
+	}
+	return requested.BackupRetention != 0 && requested.BackupRetention != current.BackupRetention
+}
+
+// GetSettings returns the caller's preferences and build information. It works
+// for every account: backups are admin-only, but ordinary settings are not.
 func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[wdidv1.GetSettingsRequest]) (*connect.Response[wdidv1.GetSettingsResponse], error) {
 	userID, err := userIDFromContext(ctx, s.auth)
 	if err != nil {
 		return nil, toConnectError(err)
 	}
 
-	settings, err := s.store.Settings(userID)
-	if errors.Is(err, store.ErrNotFound) {
-		settings = domain.DefaultSettings(userID)
-	} else if err != nil {
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
 		return nil, toConnectError(err)
 	}
 
@@ -67,12 +125,16 @@ func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[wd
 }
 
 // UpdateSettings replaces the caller's preferences after validating every
-// field. Enum and range failures carry a field violation.
+// field. Enum and range failures carry a field violation. Backups are
+// instance-wide, so their fields are admin-only: a non-admin request that tries
+// to change the backup directory, interval or retention is denied.
 func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.Request[wdidv1.UpdateSettingsRequest]) (*connect.Response[wdidv1.UpdateSettingsResponse], error) {
-	userID, err := userIDFromContext(ctx, s.auth)
+	identity, err := s.auth.IdentityFromRequestContext(ctx)
 	if err != nil {
 		return nil, toConnectError(err)
 	}
+	userID := identity.UserID
+	isAdmin := identity.HasRole(string(domain.RoleAdmin))
 
 	if request.Msg.GetSettings() == nil {
 		return nil, toConnectError(domain.ValidationError{Field: "settings", Message: "is required"})
@@ -81,11 +143,155 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	settings := fromProtoSettings(request.Msg.GetSettings())
 	settings.UserID = userID
 	settings.UpdatedAt = time.Now().UTC()
+
+	if !isAdmin {
+		current, err := s.settingsForUser(userID)
+		if err != nil {
+			return nil, toConnectError(err)
+		}
+		if backupSettingsChanged(settings, current) {
+			return nil, toConnectError(ErrBackupsAdminOnly)
+		}
+		// Preserve the account's own backup preferences without applying them
+		// to the live manager. The instance-wide schedule is admin-only.
+		settings.BackupDirectory = current.BackupDirectory
+		settings.BackupIntervalHours = current.BackupIntervalHours
+		settings.BackupRetention = current.BackupRetention
+	}
+
 	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
 
+	if isAdmin {
+		// Backups are instance-wide, so the saved preferences become the live
+		// configuration for the scheduler and the backup RPCs.
+		s.backup.Configure(backup.FromSettings(settings, s.backupDefaults))
+	}
+
 	return connect.NewResponse(&wdidv1.UpdateSettingsResponse{Settings: toProtoSettings(settings)}), nil
+}
+
+// BackupNow takes a manual snapshot. Manual snapshots are never removed by
+// retention. Backups cover every account, so only an administrator may ask.
+func (s *SettingsService) BackupNow(ctx context.Context, _ *connect.Request[wdidv1.BackupNowRequest]) (*connect.Response[wdidv1.BackupNowResponse], error) {
+	if _, err := backupAdminFromContext(ctx, s.auth); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	snapshot, err := s.backup.Create(backup.KindManual)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	status, err := s.backup.Status()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.BackupNowResponse{
+		Backup: toProtoBackup(snapshot),
+		Status: toProtoBackupStatus(status),
+	}), nil
+}
+
+// GetBackupStatus reports the last backup, its size and whether the schedule
+// is overdue. Only an administrator may inspect instance-wide backup state.
+func (s *SettingsService) GetBackupStatus(ctx context.Context, _ *connect.Request[wdidv1.GetBackupStatusRequest]) (*connect.Response[wdidv1.GetBackupStatusResponse], error) {
+	if _, err := backupAdminFromContext(ctx, s.auth); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	status, err := s.backup.Status()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.GetBackupStatusResponse{
+		Status: toProtoBackupStatus(status),
+	}), nil
+}
+
+// ListBackups returns every snapshot, newest first. Only an administrator may
+// inspect instance-wide backup state.
+func (s *SettingsService) ListBackups(ctx context.Context, _ *connect.Request[wdidv1.ListBackupsRequest]) (*connect.Response[wdidv1.ListBackupsResponse], error) {
+	if _, err := backupAdminFromContext(ctx, s.auth); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	snapshots, err := s.backup.List()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	backups := make([]*wdidv1.Backup, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		backups = append(backups, toProtoBackup(snapshot))
+	}
+
+	return connect.NewResponse(&wdidv1.ListBackupsResponse{Backups: backups}), nil
+}
+
+// RestoreBackup replaces the live database with one named snapshot. The
+// snapshot is verified before the database changes and the current database is
+// preserved as a pre-restore file. Restoring covers every account, so only an
+// administrator may ask.
+func (s *SettingsService) RestoreBackup(ctx context.Context, request *connect.Request[wdidv1.RestoreBackupRequest]) (*connect.Response[wdidv1.RestoreBackupResponse], error) {
+	if _, err := backupAdminFromContext(ctx, s.auth); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	name := strings.TrimSpace(request.Msg.GetName())
+	if name == "" {
+		return nil, toConnectError(domain.ValidationError{Field: "name", Message: "is required"})
+	}
+
+	snapshot, result, err := s.backup.Restore(name)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	status, err := s.backup.Status()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.RestoreBackupResponse{
+		Backup:         toProtoBackup(snapshot),
+		Status:         toProtoBackupStatus(status),
+		PreRestorePath: result.PreRestorePath,
+	}), nil
+}
+
+func toProtoBackup(snapshot backup.Snapshot) *wdidv1.Backup {
+	return &wdidv1.Backup{
+		Name:      snapshot.Name,
+		CreatedAt: timestamppb.New(snapshot.CreatedAt.UTC()),
+		SizeBytes: snapshot.Size,
+		Manual:    snapshot.Manual(),
+	}
+}
+
+func toProtoBackupStatus(status backup.Status) *wdidv1.BackupStatus {
+	var lastBackupAt *timestamppb.Timestamp
+	if !status.LastBackupAt.IsZero() {
+		lastBackupAt = timestamppb.New(status.LastBackupAt.UTC())
+	}
+	var nextBackupAt *timestamppb.Timestamp
+	if !status.NextDueAt.IsZero() {
+		nextBackupAt = timestamppb.New(status.NextDueAt.UTC())
+	}
+	return &wdidv1.BackupStatus{
+		LastBackupAt:        lastBackupAt,
+		LastBackupSizeBytes: status.LastBackupSize,
+		Overdue:             status.Overdue,
+		BackupDirectory:     status.Directory,
+		BackupInterval:      durationpb.New(status.Interval),
+		BackupRetention:     int32(status.Retention),
+		ScheduledCount:      int32(status.ScheduledCount),
+		ManualCount:         int32(status.ManualCount),
+		NextBackupAt:        nextBackupAt,
+		LastBackupManual:    status.LastBackupManual,
+	}
 }
 
 func toProtoSettings(settings domain.Settings) *wdidv1.Settings {

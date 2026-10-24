@@ -146,6 +146,21 @@ class _InitiativeDetailScreenState extends State<InitiativeDetailScreen>
     final initiative = _find(state);
 
     if (initiative == null) {
+      if (state.initiativesLoading && state.initiatives.isEmpty) {
+        return const ScreenBody(
+          child: PageScaffold(child: Center(child: LoadingView())),
+        );
+      }
+      if (state.initiativesError != null && state.initiatives.isEmpty) {
+        return ScreenBody(
+          child: PageScaffold(
+            child: ErrorView(
+              message: state.initiativesError!,
+              onRetry: () => unawaited(state.loadInitiativesReport()),
+            ),
+          ),
+        );
+      }
       return ScreenBody(
         child: PageScaffold(
           child: Panel(

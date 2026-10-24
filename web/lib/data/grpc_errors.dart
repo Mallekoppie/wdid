@@ -39,9 +39,7 @@ GrpcFailureText describeGrpcError(
       return GrpcFailureText(message.isEmpty ? unauthenticated : message);
     case StatusCode.failedPrecondition:
       if (failedPrecondition == null) break;
-      return GrpcFailureText(
-        message.isEmpty ? failedPrecondition : message,
-      );
+      return GrpcFailureText(message.isEmpty ? failedPrecondition : message);
     case StatusCode.notFound:
       if (notFound == null) break;
       return GrpcFailureText(message.isEmpty ? notFound : message);

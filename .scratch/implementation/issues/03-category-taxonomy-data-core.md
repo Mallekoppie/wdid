@@ -15,3 +15,8 @@
 - [x] Two accounts cannot read each other's records.
 - [x] The old fixed-kind model and its storage shape are removed.
 - [x] Tests cover every bucket, cross-user isolation, seeds, and the invariants above.
+
+## Comments
+
+- Implemented and committed in `42e9fea` ("add category taxonomy data core"); every box was ticked at implementation time.
+- Bookkeeping reconciliation (2026-10-23): the issue file never received a Comments entry when the work landed, so it was added during a status sweep. No code changes were made during reconciliation.

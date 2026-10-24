@@ -43,15 +43,17 @@ class _EntryRowState extends State<EntryRow> {
     final icon = support
         ? Icons.volunteer_activism_outlined
         : item.type.name == 'initiative'
-            ? Icons.flag_outlined
-            : Icons.category_outlined;
+        ? Icons.flag_outlined
+        : Icons.category_outlined;
     final accent = support
         ? scheme.tertiary
         : item.type.name == 'initiative'
-            ? scheme.primary
-            : scheme.onSurfaceVariant;
+        ? scheme.primary
+        : scheme.onSurfaceVariant;
 
-    final rowHeight = widget.compact ? AppSizes.rowCompact : AppSizes.rowComfortable;
+    final rowHeight = widget.compact
+        ? AppSizes.rowCompact
+        : AppSizes.rowComfortable;
 
     return Container(
       decoration: BoxDecoration(
@@ -59,7 +61,9 @@ class _EntryRowState extends State<EntryRow> {
             ? scheme.tertiaryContainer.withValues(alpha: 0.14)
             : Colors.transparent,
         border: Border(
-          bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
+          bottom: BorderSide(
+            color: scheme.outlineVariant.withValues(alpha: 0.7),
+          ),
         ),
       ),
       child: Column(
@@ -228,7 +232,10 @@ class _EntryRowState extends State<EntryRow> {
               children: [
                 for (final tag in item.tags)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       border: Border.all(color: scheme.outlineVariant),
                       borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -257,11 +264,17 @@ class _EntryRowState extends State<EntryRow> {
               if (widget.onDelete != null)
                 TextButton.icon(
                   onPressed: () => _confirmDelete(context),
-                  icon: Icon(Icons.delete_outline, size: 15, color: scheme.error),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    size: 15,
+                    color: scheme.error,
+                  ),
                   label: Text('Delete', style: TextStyle(color: scheme.error)),
                 ),
               Text(
-                item.source == 'timer' ? 'Timer · ${item.localDate}' : item.localDate,
+                item.source == 'timer'
+                    ? 'Timer · ${item.localDate}'
+                    : item.localDate,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                   fontFeatures: tabularFigures,

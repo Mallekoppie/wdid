@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/entry_api.dart';
+import 'package:wdid_web/data/note_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
+import 'package:wdid_web/models/note.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/state/app_state.dart';
@@ -16,6 +18,7 @@ import 'package:wdid_web/widgets/quick_capture_bar.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
+import 'fake_note_api.dart';
 import 'fake_preferences_api.dart';
 
 Category category(
@@ -90,6 +93,7 @@ void main() {
     required FakeEntryApi entryApi,
     FakeCategoryApi? categoryApi,
     FakeSettingsApi? settingsApi,
+    FakeNoteApi? noteApi,
   }) async {
     tester.view.physicalSize = const Size(1400, 1300);
     tester.view.devicePixelRatio = 1.0;
@@ -100,6 +104,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
         initialRoute: '/today',
         categoryApiBuilder: (_) =>
             categoryApi ??
@@ -119,6 +124,7 @@ void main() {
               settings: const AppSettings(defaultDurationMinutes: 45),
             ),
         entryApiBuilder: (_) => entryApi,
+        noteApiBuilder: noteApi == null ? null : (_) => noteApi,
       ),
     );
     await tester.pumpAndSettle();
@@ -340,6 +346,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
         initialRoute: '/today',
         categoryApiBuilder: (_) => FakeCategoryApi(
           categories: [category('cat-1', 'Initiatives')],
@@ -367,4 +374,91 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Nothing logged yet'), findsOneWidget);
   });
+
+  testWidgets('saves the end-of-day note as a day note', (tester) async {
+    final noteApi = FakeNoteApi();
+    await pumpToday(tester, entryApi: FakeEntryApi(), noteApi: noteApi);
+
+    await tester.ensureVisible(find.text('End of day note'));
+    await tester.enterText(
+      dayNoteField(),
+      'Backfill is stable enough to track.',
+    );
+    await tester.tap(find.text('Save note'));
+    await tester.pumpAndSettle();
+
+    expect(noteApi.drafts, hasLength(1));
+    expect(noteApi.drafts.single.date, isoDate(DateTime.now()));
+    expect(noteApi.drafts.single.initiativeId, isNull);
+    expect(noteApi.drafts.single.text, 'Backfill is stable enough to track.');
+    expect(find.text('Day note saved'), findsOneWidget);
+  });
+
+  testWidgets('loads and updates the existing end-of-day note', (tester) async {
+    final noteApi = FakeNoteApi(
+      notes: [
+        Note(
+          id: 'day-1',
+          date: isoDate(DateTime.now()),
+          text: 'Existing day note.',
+          createdAt: DateTime.now().toUtc(),
+        ),
+      ],
+    );
+    await pumpToday(tester, entryApi: FakeEntryApi(), noteApi: noteApi);
+
+    expect(find.text('Existing day note.'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('End of day note'));
+    await tester.enterText(dayNoteField(), 'Revised end of day note.');
+    await tester.tap(find.text('Save note'));
+    await tester.pumpAndSettle();
+
+    expect(noteApi.updateCalls, 1);
+    expect(noteApi.notes.single.text, 'Revised end of day note.');
+    expect(find.text('Revised end of day note.'), findsOneWidget);
+    expect(find.text('Day note saved'), findsOneWidget);
+  });
+
+  testWidgets('validates an empty end-of-day note', (tester) async {
+    final noteApi = FakeNoteApi();
+    await pumpToday(tester, entryApi: FakeEntryApi(), noteApi: noteApi);
+
+    await tester.ensureVisible(find.text('End of day note'));
+    await tester.tap(find.text('Save note'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Write a note first.'), findsOneWidget);
+    expect(noteApi.drafts, isEmpty);
+  });
+
+  testWidgets('shows and retries a day-note load failure', (tester) async {
+    final noteApi = FakeNoteApi()
+      ..listFailure = const NoteFailure('The notes are unavailable.');
+    await pumpToday(tester, entryApi: FakeEntryApi(), noteApi: noteApi);
+
+    await tester.ensureVisible(find.text('End of day note'));
+    expect(find.text('The notes are unavailable.'), findsOneWidget);
+
+    noteApi.listFailure = null;
+    noteApi.notes.add(
+      Note(
+        id: 'day-1',
+        date: isoDate(DateTime.now()),
+        text: 'Recovered day note.',
+        createdAt: DateTime.now().toUtc(),
+      ),
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recovered day note.'), findsOneWidget);
+  });
 }
+
+Finder dayNoteField() => find.byWidgetPredicate(
+  (widget) =>
+      widget is TextField &&
+      widget.decoration?.hintText ==
+          'What should future-you remember about today?',
+);

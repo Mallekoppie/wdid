@@ -119,6 +119,9 @@ class FakeEntryApi implements EntryApi {
                   (person.isEmpty ||
                       entry.person.toLowerCase() ==
                           person.trim().toLowerCase()) &&
+                  (fromDate.isEmpty ||
+                      entry.localDate.compareTo(fromDate) >= 0) &&
+                  (toDate.isEmpty || entry.localDate.compareTo(toDate) <= 0) &&
                   (from == null || !entry.startedAt.isBefore(from)) &&
                   (to == null || entry.startedAt.isBefore(to)) &&
                   (needle.isEmpty ||

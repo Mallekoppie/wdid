@@ -19,8 +19,9 @@ class SimpleMarkdown extends StatelessWidget {
     final scheme = theme.colorScheme;
     final lines = markdown.trim().split('\n');
     final children = <Widget>[];
-    final bodyStyle = (dense ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
-        ?.copyWith(height: 1.5);
+    final bodyStyle =
+        (dense ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
+            ?.copyWith(height: 1.5);
     final bulletStyle = bodyStyle?.copyWith(color: scheme.onSurface);
 
     for (var index = 0; index < lines.length; index++) {
@@ -33,79 +34,86 @@ class SimpleMarkdown extends StatelessWidget {
         continue;
       }
       if (line.trim() == '---') {
-        children.add(const Padding(
-          padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-          child: Divider(height: 1),
-        ));
+        children.add(
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: Divider(height: 1),
+          ),
+        );
         continue;
       }
       if (line.startsWith('### ')) {
-        children.add(Padding(
-          padding: EdgeInsets.only(top: dense ? 6 : 10, bottom: 2),
-          child: Text(
-            line.substring(4),
-            style: theme.textTheme.titleSmall,
+        children.add(
+          Padding(
+            padding: EdgeInsets.only(top: dense ? 6 : 10, bottom: 2),
+            child: Text(line.substring(4), style: theme.textTheme.titleSmall),
           ),
-        ));
+        );
         continue;
       }
       if (line.startsWith('## ')) {
-        children.add(Padding(
-          padding: EdgeInsets.only(top: dense ? 8 : 14, bottom: 3),
-          child: Text(
-            line.substring(3),
-            style: theme.textTheme.titleMedium,
+        children.add(
+          Padding(
+            padding: EdgeInsets.only(top: dense ? 8 : 14, bottom: 3),
+            child: Text(line.substring(3), style: theme.textTheme.titleMedium),
           ),
-        ));
+        );
         continue;
       }
       if (line.startsWith('# ')) {
-        children.add(Padding(
-          padding: EdgeInsets.only(top: dense ? 8 : 14, bottom: 4),
-          child: Text(
-            line.substring(2),
-            style: theme.textTheme.titleLarge,
+        children.add(
+          Padding(
+            padding: EdgeInsets.only(top: dense ? 8 : 14, bottom: 4),
+            child: Text(line.substring(2), style: theme.textTheme.titleLarge),
           ),
-        ));
+        );
         continue;
       }
       if (line.startsWith('> ')) {
-        children.add(Container(
-          margin: const EdgeInsets.symmetric(vertical: 2),
-          padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(color: scheme.tertiary, width: 2),
+        children.add(
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(color: scheme.tertiary, width: 2),
+              ),
+              color: scheme.tertiaryContainer.withValues(alpha: 0.18),
             ),
-            color: scheme.tertiaryContainer.withValues(alpha: 0.18),
+            child: _richText(
+              context,
+              line.substring(2),
+              bodyStyle?.copyWith(color: scheme.onSurfaceVariant),
+            ),
           ),
-          child: _richText(
-            context,
-            line.substring(2),
-            bodyStyle?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-        ));
+        );
         continue;
       }
       final bulletMatch = RegExp(r'^[-*]\s+(.*)$').firstMatch(line);
       if (bulletMatch != null) {
-        children.add(_listItem(context, bulletMatch.group(1)!, bodyStyle, numbered: null));
+        children.add(
+          _listItem(context, bulletMatch.group(1)!, bodyStyle, numbered: null),
+        );
         continue;
       }
       final numberMatch = RegExp(r'^(\d+)[.)]\s+(.*)$').firstMatch(line);
       if (numberMatch != null) {
-        children.add(_listItem(
-          context,
-          numberMatch.group(2)!,
-          bodyStyle,
-          numbered: numberMatch.group(1)!,
-        ));
+        children.add(
+          _listItem(
+            context,
+            numberMatch.group(2)!,
+            bodyStyle,
+            numbered: numberMatch.group(1)!,
+          ),
+        );
         continue;
       }
-      children.add(Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: _richText(context, line, bulletStyle),
-      ));
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: _richText(context, line, bulletStyle),
+        ),
+      );
     }
 
     return Column(
@@ -150,20 +158,26 @@ class SimpleMarkdown extends StatelessWidget {
       }
       final token = match.group(0)!;
       if (token.startsWith('**')) {
-        spans.add(TextSpan(
-          text: token.substring(2, token.length - 2),
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ));
-      } else {
-        spans.add(TextSpan(
-          text: token.substring(1, token.length - 1),
-          style: TextStyle(
-            fontFamily: 'monospace',
-            fontSize: (base?.fontSize ?? 13) - 0.5,
-            backgroundColor:
-                Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        spans.add(
+          TextSpan(
+            text: token.substring(2, token.length - 2),
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-        ));
+        );
+      } else {
+        spans.add(
+          TextSpan(
+            text: token.substring(1, token.length - 1),
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: (base?.fontSize ?? 13) - 0.5,
+              backgroundColor: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.6),
+            ),
+          ),
+        );
       }
       cursor = match.end;
     }

@@ -9,9 +9,15 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 
 	"github.com/Mallekoppie/wdid/internal/auth"
+	"github.com/Mallekoppie/wdid/internal/backup"
 	"github.com/Mallekoppie/wdid/internal/domain"
 	"github.com/Mallekoppie/wdid/internal/store"
 )
+
+// ErrBackupsAdminOnly is returned when a signed-in account without the admin
+// role reads or changes instance-wide backup state. Snapshots cover every
+// account, so backups are admin-only.
+var ErrBackupsAdminOnly = errors.New("backups are managed by an administrator; only an administrator can view or change them")
 
 // toConnectError maps wdid's service errors onto stable Connect codes and
 // attaches field-level validation details where available.
@@ -37,10 +43,19 @@ func toConnectError(err error) error {
 	case errors.Is(err, store.ErrCategoryRoleImmutable),
 		errors.Is(err, store.ErrCategoryInUse),
 		errors.Is(err, store.ErrSubcategoryInUse),
-		errors.Is(err, store.ErrSubcategoryReparent):
+		errors.Is(err, store.ErrSubcategoryReparent),
+		errors.Is(err, store.ErrFinalCheckInReadOnly):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, store.ErrEmailExists):
 		return connect.NewError(connect.CodeAlreadyExists, err)
+	case errors.Is(err, ErrBackupsAdminOnly):
+		return connect.NewError(connect.CodePermissionDenied, err)
+	case errors.Is(err, store.ErrInvalidSnapshot):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, backup.ErrSnapshotNotFound):
+		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, backup.ErrRestoreUnsupported):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, auth.ErrInvalidBootstrapSecret),
 		errors.Is(err, auth.ErrInvalidInvite),
 		errors.Is(err, auth.ErrInviteUsed),

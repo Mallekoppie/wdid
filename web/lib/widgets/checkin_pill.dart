@@ -19,15 +19,15 @@ class CheckInPill extends StatelessWidget {
     final label = latest == null
         ? 'No check-ins yet'
         : days == 0
-            ? 'Check-in due'
-            : '$days days since check-in';
+        ? 'Check-in due'
+        : '$days days since check-in';
 
     return Tooltip(
       message: latest == null
           ? 'Open check-ins'
           : 'Last check-in ended ${latest.periodEnd.year}-'
-              '${latest.periodEnd.month.toString().padLeft(2, '0')}-'
-              '${latest.periodEnd.day.toString().padLeft(2, '0')}',
+                '${latest.periodEnd.month.toString().padLeft(2, '0')}-'
+                '${latest.periodEnd.day.toString().padLeft(2, '0')}',
       child: InkWell(
         onTap: () => context.go('/checkins'),
         borderRadius: BorderRadius.circular(AppRadius.pill),

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -15,7 +16,9 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/Mallekoppie/wdid/internal/ai"
 	"github.com/Mallekoppie/wdid/internal/auth"
+	"github.com/Mallekoppie/wdid/internal/backup"
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
@@ -36,12 +39,19 @@ func newDomainHandlerForConfig(t *testing.T, cfg config.Config) (http.Handler, *
 // the public RPC surface.
 func newDomainHandlerWithTimerClock(t *testing.T, cfg config.Config, now func() time.Time) (http.Handler, *store.Store) {
 	t.Helper()
-	return newDomainHandlerWithClocks(t, cfg, now, nil)
+	return newDomainHandlerWithClocks(t, cfg, now, nil, nil)
 }
 
-// newDomainHandlerWithClocks controls the timer and summary clocks, so tests
-// can pin the meaning of "now" for both server-owned lifecycles.
-func newDomainHandlerWithClocks(t *testing.T, cfg config.Config, timerNow, summaryNow func() time.Time) (http.Handler, *store.Store) {
+// newDomainHandlerWithClocks controls the timer, summary and check-in clocks,
+// so tests can pin the meaning of "now" for every server-owned lifecycle.
+func newDomainHandlerWithClocks(t *testing.T, cfg config.Config, timerNow, summaryNow, checkInNow func() time.Time) (http.Handler, *store.Store) {
+	t.Helper()
+	return newDomainHandlerWithSummaryOptions(t, cfg, timerNow, summaryNow, checkInNow)
+}
+
+// newDomainHandlerWithSummaryOptions also accepts summary options, which lets a
+// test inject a fake AI provider and key without reaching the network.
+func newDomainHandlerWithSummaryOptions(t *testing.T, cfg config.Config, timerNow, summaryNow, checkInNow func() time.Time, extraSummary ...rpc.SummaryServiceOption) (http.Handler, *store.Store) {
 	t.Helper()
 
 	database, err := store.Open(cfg)
@@ -56,20 +66,31 @@ func newDomainHandlerWithClocks(t *testing.T, cfg config.Config, timerNow, summa
 	if timerNow != nil {
 		timerOptions = append(timerOptions, rpc.WithTimerClock(timerNow))
 	}
-	summaryOptions := make([]rpc.SummaryServiceOption, 0, 1)
+	summaryOptions := make([]rpc.SummaryServiceOption, 0, 1+len(extraSummary))
 	if summaryNow != nil {
 		summaryOptions = append(summaryOptions, rpc.WithSummaryClock(summaryNow))
 	}
+	summaryOptions = append(summaryOptions, extraSummary...)
+	checkInOptions := make([]rpc.CheckInServiceOption, 0, 1)
+	if checkInNow != nil {
+		checkInOptions = append(checkInOptions, rpc.WithCheckInClock(checkInNow))
+	}
 
 	authService := auth.NewService(database, cfg)
+	backupManager := backup.New(database, backup.Config{
+		Dir: filepath.Join(filepath.Dir(cfg.DBPath), "backups"),
+	})
 	application, err := platform.NewApplicationHandler(platform.ApplicationServerOptions{
 		Services: []platform.ConnectService{
 			rpc.NewAuthService(database, authService, cfg),
 			rpc.NewCategoryService(database, authService),
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService, timerOptions...),
-			rpc.NewSettingsService(database, authService),
+			rpc.NewSettingsService(database, authService, rpc.WithBackupManager(backupManager)),
 			rpc.NewSummaryService(database, authService, summaryOptions...),
+			rpc.NewNoteService(database, authService),
+			rpc.NewMilestoneService(database, authService),
+			rpc.NewCheckInService(database, authService, checkInOptions...),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
@@ -78,6 +99,9 @@ func newDomainHandlerWithClocks(t *testing.T, cfg config.Config, timerNow, summa
 			config.TimerServiceName,
 			config.SettingsServiceName,
 			config.SummaryServiceName,
+			config.NoteServiceName,
+			config.MilestoneServiceName,
+			config.CheckInServiceName,
 		},
 	})
 	if err != nil {
@@ -112,7 +136,35 @@ func newDomainServerWithClock(t *testing.T, now func() time.Time) (*httptest.Ser
 func newDomainServerWithSummaryClock(t *testing.T, now func() time.Time) (*httptest.Server, *store.Store) {
 	t.Helper()
 
-	handler, database := newDomainHandlerWithClocks(t, testConfig(t), nil, now)
+	handler, database := newDomainHandlerWithClocks(t, testConfig(t), nil, now, nil)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, database
+}
+
+func newDomainServerWithCheckInClock(t *testing.T, now func() time.Time) (*httptest.Server, *store.Store) {
+	t.Helper()
+
+	handler, database := newDomainHandlerWithClocks(t, testConfig(t), nil, nil, now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, database
+}
+
+// newDomainServerWithAI injects a fake provider and an in-memory key. No test
+// reaches a real provider endpoint.
+func newDomainServerWithAI(t *testing.T, provider ai.Provider, apiKey string) (*httptest.Server, *store.Store) {
+	t.Helper()
+
+	handler, database := newDomainHandlerWithSummaryOptions(
+		t,
+		testConfig(t),
+		nil,
+		nil,
+		nil,
+		rpc.WithSummaryProvider(provider),
+		rpc.WithSummaryAPIKey(apiKey),
+	)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return server, database

@@ -20,6 +20,17 @@ type PeriodReport struct {
 	SupportModes  []SupportModeTotal
 	Weeks         []WeekRhythm
 	Notes         []Note
+	// Milestones is completion per project. Completion is a property of the
+	// project, not of the period, so every project with milestones is included
+	// even when it has no time inside the period.
+	Milestones []MilestoneProgress
+}
+
+// MilestoneProgress is how many milestones a project has and how many are done.
+type MilestoneProgress struct {
+	SubcategoryID string
+	Total         int
+	Done          int
 }
 
 // CategoryTotal is the time attributed to one category in the period.
@@ -375,6 +386,36 @@ func sortedAllocations[T any](
 		return id(first) < id(second)
 	})
 	return result
+}
+
+// BuildMilestoneProgress groups milestones into per-project completion counts.
+// A project with no milestones is absent rather than reported as zero of zero,
+// and the result is ordered by project id so reports are stable.
+func BuildMilestoneProgress(milestones []Milestone) []MilestoneProgress {
+	totals := make(map[string]*MilestoneProgress)
+	for _, milestone := range milestones {
+		if milestone.SubcategoryID == "" {
+			continue
+		}
+		total := totals[milestone.SubcategoryID]
+		if total == nil {
+			total = &MilestoneProgress{SubcategoryID: milestone.SubcategoryID}
+			totals[milestone.SubcategoryID] = total
+		}
+		total.Total++
+		if milestone.Done {
+			total.Done++
+		}
+	}
+
+	progress := make([]MilestoneProgress, 0, len(totals))
+	for _, total := range totals {
+		progress = append(progress, *total)
+	}
+	sort.Slice(progress, func(i, j int) bool {
+		return progress[i].SubcategoryID < progress[j].SubcategoryID
+	})
+	return progress
 }
 
 // reportNotes returns day notes that fall inside the period plus project notes

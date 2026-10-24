@@ -2,13 +2,18 @@ package rpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/Mallekoppie/wdid/internal/ai"
 	"github.com/Mallekoppie/wdid/internal/auth"
+	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
 	"github.com/Mallekoppie/wdid/internal/gen/wdid/v1/wdidv1connect"
@@ -19,13 +24,15 @@ import (
 // report is the single authoritative aggregate: clients render these numbers
 // instead of recomputing totals from entry listings.
 type SummaryService struct {
-	store *store.Store
-	auth  *auth.Service
-	now   func() time.Time
+	store    *store.Store
+	auth     *auth.Service
+	now      func() time.Time
+	provider ai.Provider
+	apiKey   string
 }
 
 // SummaryServiceOption adjusts the service, which lets tests control the clock
-// used to resolve "this week".
+// used to resolve "this week" and inject a fake AI provider.
 type SummaryServiceOption func(*SummaryService)
 
 // WithSummaryClock replaces the service's clock.
@@ -37,9 +44,33 @@ func WithSummaryClock(now func() time.Time) SummaryServiceOption {
 	}
 }
 
+// WithSummaryProvider replaces the AI provider. Tests use a fake so no network
+// call is made.
+func WithSummaryProvider(provider ai.Provider) SummaryServiceOption {
+	return func(service *SummaryService) {
+		if provider != nil {
+			service.provider = provider
+		}
+	}
+}
+
+// WithSummaryAPIKey supplies the provider key read from the environment. The
+// key is held in memory only and is never stored in the database, exported or
+// logged.
+func WithSummaryAPIKey(key string) SummaryServiceOption {
+	return func(service *SummaryService) {
+		service.apiKey = strings.TrimSpace(key)
+	}
+}
+
 // NewSummaryService builds the SummaryService implementation.
 func NewSummaryService(database *store.Store, authService *auth.Service, options ...SummaryServiceOption) *SummaryService {
-	service := &SummaryService{store: database, auth: authService, now: time.Now}
+	service := &SummaryService{
+		store:    database,
+		auth:     authService,
+		now:      time.Now,
+		provider: ai.NewOpenAIProvider(nil),
+	}
 	for _, option := range options {
 		option(service)
 	}
@@ -83,6 +114,314 @@ func (s *SummaryService) GetPeriodReport(ctx context.Context, request *connect.R
 	}), nil
 }
 
+// BuildExport renders the on-demand export bundle for a period or a saved
+// check-in. The files are returned to the caller; nothing is written to the
+// database directory or anywhere else on disk.
+func (s *SummaryService) BuildExport(ctx context.Context, request *connect.Request[wdidv1.BuildExportRequest]) (*connect.Response[wdidv1.BuildExportResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	checkIn, fromDate, toDate, err := s.resolveExportScope(userID, request.Msg.GetCheckInId(), request.Msg.GetFromDate(), request.Msg.GetToDate())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	input, err := s.exportInput(userID, fromDate, toDate, checkIn)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	bundle, err := domain.BuildExportBundle(input)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	files := make([]*wdidv1.ExportFile, 0, len(bundle.Files))
+	for _, file := range bundle.Files {
+		files = append(files, &wdidv1.ExportFile{Name: file.Name, Content: file.Content})
+	}
+	return connect.NewResponse(&wdidv1.BuildExportResponse{
+		Directory: bundle.Directory,
+		Files:     files,
+	}), nil
+}
+
+// BuildPrompt returns the versioned instruction followed by the same
+// summary.md the bundle carries. The template text is the one owned by the
+// check-in prompt package, so this RPC never duplicates prompt copy.
+func (s *SummaryService) BuildPrompt(ctx context.Context, request *connect.Request[wdidv1.BuildPromptRequest]) (*connect.Response[wdidv1.BuildPromptResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	checkIn, fromDate, toDate, err := s.resolveExportScope(userID, request.Msg.GetCheckInId(), request.Msg.GetFromDate(), request.Msg.GetToDate())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	input, err := s.exportInput(userID, fromDate, toDate, checkIn)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	promptCheckIn := domain.CheckIn{}
+	switch request.Msg.GetVariant() {
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED:
+		if checkIn != nil {
+			promptCheckIn.Kind = checkIn.Kind
+			promptCheckIn.Audience = checkIn.Audience
+		} else {
+			promptCheckIn.Kind = domain.CheckInKindManager
+		}
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE:
+		promptCheckIn.Kind = domain.CheckInKindManager
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW:
+		promptCheckIn.Kind = domain.CheckInKindManager
+		promptCheckIn.Audience = domain.AudiencePerformanceReview
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW:
+		promptCheckIn.Kind = domain.CheckInKindPersonal
+	default:
+		return nil, toConnectError(domain.ValidationError{
+			Field:   "variant",
+			Message: "must be a known prompt variant",
+		})
+	}
+	promptCheckIn.SummaryMarkdown = domain.BuildExportSummary(input)
+
+	return connect.NewResponse(&wdidv1.BuildPromptResponse{
+		Prompt:        domain.BuildPrompt(promptCheckIn),
+		PromptVersion: domain.PromptVersion,
+		Variant:       toProtoPromptVariant(domain.PromptVariantFor(promptCheckIn)),
+	}), nil
+}
+
+// GetPromptTemplate returns the versioned instruction alone. Settings → AI
+// previews this text, so the client never duplicates prompt copy.
+func (s *SummaryService) GetPromptTemplate(ctx context.Context, request *connect.Request[wdidv1.GetPromptTemplateRequest]) (*connect.Response[wdidv1.GetPromptTemplateResponse], error) {
+	if _, err := userIDFromContext(ctx, s.auth); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	variant, err := promptVariantFromProto(request.Msg.GetVariant())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	template, ok := domain.PromptTemplate(variant)
+	if !ok {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("the prompt template is missing"))
+	}
+
+	return connect.NewResponse(&wdidv1.GetPromptTemplateResponse{
+		Template:      template,
+		PromptVersion: domain.PromptVersion,
+		Variant:       toProtoPromptVariant(variant),
+	}), nil
+}
+
+// GenerateSummary streams an OpenAI-compatible provider's response into a
+// check-in's summary. Deltas reach the client as they arrive; the stored
+// summary, model name and prompt version are written only after the provider
+// finishes successfully. A failure therefore leaves the existing summary
+// untouched.
+func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.Request[wdidv1.GenerateSummaryRequest], stream *connect.ServerStream[wdidv1.GenerateSummaryDelta]) error {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return toConnectError(err)
+	}
+
+	checkIn, err := s.store.CheckIn(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return toConnectError(err)
+	}
+	if checkIn.Kind == domain.CheckInKindManager && checkIn.State == domain.CheckInStateFinal {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a final check-in is read-only"))
+	}
+	if checkIn.State == domain.CheckInStateEdited &&
+		strings.TrimSpace(checkIn.SummaryMarkdown) != "" &&
+		!request.Msg.GetOverwriteManualEdits() {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the summary was edited by hand; confirm overwriting it"))
+	}
+	if s.apiKey == "" {
+		return connect.NewError(
+			connect.CodeFailedPrecondition,
+			fmt.Errorf("no AI API key is configured; set %s", config.OpenAIAPIKeyEnv),
+		)
+	}
+
+	input, err := s.exportInput(userID, checkIn.PeriodStart, checkIn.PeriodEnd, &checkIn)
+	if err != nil {
+		return toConnectError(err)
+	}
+	if input.Settings.AIRedact {
+		input = domain.RedactExportInput(input)
+	}
+	baseURL, modelName := aiSettingsDefaults(input.Settings)
+
+	// Only the selected period is sent. The prompt text comes from the same
+	// versioned template the copy-prompt path uses.
+	promptCheckIn := checkIn
+	promptCheckIn.SummaryMarkdown = domain.BuildExportSummary(input)
+
+	var generated strings.Builder
+	response, err := s.provider.Stream(ctx, ai.Request{
+		BaseURL: baseURL,
+		APIKey:  s.apiKey,
+		Model:   modelName,
+		Prompt:  domain.BuildPrompt(promptCheckIn),
+	}, func(delta string) error {
+		generated.WriteString(delta)
+		return stream.Send(&wdidv1.GenerateSummaryDelta{Text: delta})
+	})
+	if err != nil {
+		return connect.NewError(
+			connect.CodeUnavailable,
+			fmt.Errorf("AI generation failed; the existing summary is unchanged: %w", err),
+		)
+	}
+
+	summary := strings.TrimSpace(generated.String())
+	if summary == "" {
+		return connect.NewError(
+			connect.CodeUnavailable,
+			errors.New("the AI provider returned no text; the existing summary is unchanged"),
+		)
+	}
+
+	model := strings.TrimSpace(response.Model)
+	if model == "" {
+		model = modelName
+	}
+	checkIn.SummaryMarkdown = summary
+	checkIn.SummaryModel = model
+	checkIn.PromptVersion = domain.PromptVersion
+	checkIn.State = domain.CheckInStateGenerated
+	checkIn.UpdatedAt = s.now().UTC()
+	if err := s.store.SaveCheckIn(checkIn); err != nil {
+		return toConnectError(err)
+	}
+
+	return stream.Send(&wdidv1.GenerateSummaryDelta{
+		CheckIn:       toProtoCheckIn(checkIn),
+		Model:         model,
+		PromptVersion: domain.PromptVersion,
+	})
+}
+
+// aiSettingsDefaults keeps generation usable when an account never opened
+// Settings → AI and therefore has empty AI fields.
+func aiSettingsDefaults(settings domain.Settings) (baseURL, model string) {
+	defaults := domain.DefaultSettings(settings.UserID)
+	baseURL = strings.TrimSpace(settings.AIBaseURL)
+	if baseURL == "" {
+		baseURL = defaults.AIBaseURL
+	}
+	model = strings.TrimSpace(settings.AIModel)
+	if model == "" {
+		model = defaults.AIModel
+	}
+	return baseURL, model
+}
+
+func promptVariantFromProto(value wdidv1.CheckInPromptVariant) (domain.PromptVariant, error) {
+	switch value {
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED:
+		return domain.PromptVariantManagerOneOnOne, nil
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE:
+		return domain.PromptVariantManagerOneOnOne, nil
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW:
+		return domain.PromptVariantManagerPerformanceReview, nil
+	case wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW:
+		return domain.PromptVariantPersonalReview, nil
+	default:
+		return "", domain.ValidationError{Field: "variant", Message: "must be a known prompt variant"}
+	}
+}
+
+// resolveExportScope turns either a check-in id or an explicit period into the
+// dates the bundle covers. A check-in's stored period always wins so the
+// bundle cannot disagree with the artifact it belongs to.
+func (s *SummaryService) resolveExportScope(userID, checkInID, fromDate, toDate string) (*domain.CheckIn, string, string, error) {
+	if checkInID == "" {
+		return nil, fromDate, toDate, nil
+	}
+	checkIn, err := s.store.CheckIn(userID, checkInID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return &checkIn, checkIn.PeriodStart, checkIn.PeriodEnd, nil
+}
+
+// exportInput gathers one consistent view of the scoped period. Aggregates come
+// from the authoritative report; the raw rows supply the CSV sheets and the
+// structured payload.
+func (s *SummaryService) exportInput(userID, fromDate, toDate string, checkIn *domain.CheckIn) (domain.ExportInput, error) {
+	report, err := s.store.PeriodReport(userID, fromDate, toDate)
+	if err != nil {
+		return domain.ExportInput{}, err
+	}
+	entries, err := s.store.WorkEntriesInDateRange(userID, report.FromDate, report.ToDate)
+	if err != nil {
+		return domain.ExportInput{}, err
+	}
+	categories, err := s.store.Categories(userID)
+	if err != nil {
+		return domain.ExportInput{}, err
+	}
+	subcategories, err := s.store.Subcategories(userID, "")
+	if err != nil {
+		return domain.ExportInput{}, err
+	}
+	milestones, err := s.store.Milestones(userID, "")
+	if err != nil {
+		return domain.ExportInput{}, err
+	}
+
+	settings := domain.DefaultSettings(userID)
+	if stored, settingsErr := s.store.Settings(userID); settingsErr == nil {
+		settings = stored
+	}
+
+	var checkIns []domain.CheckIn
+	if checkIn != nil {
+		checkIns = []domain.CheckIn{*checkIn}
+	} else {
+		stored, err := s.store.CheckIns(userID, "")
+		if err != nil {
+			return domain.ExportInput{}, err
+		}
+		checkIns = checkInsInPeriod(stored, report.FromDate, report.ToDate)
+	}
+
+	focusNotes := ""
+	if checkIn != nil {
+		focusNotes = checkIn.FocusNotes
+	}
+
+	return domain.ExportInput{
+		Report:        report,
+		Entries:       entries,
+		Categories:    categories,
+		Subcategories: subcategories,
+		Milestones:    milestones,
+		CheckIns:      checkIns,
+		Settings:      settings,
+		FocusNotes:    focusNotes,
+		GeneratedAt:   s.now().UTC(),
+	}, nil
+}
+
+// checkInsInPeriod keeps the check-ins that overlap the bundle period.
+func checkInsInPeriod(checkIns []domain.CheckIn, fromDate, toDate string) []domain.CheckIn {
+	result := make([]domain.CheckIn, 0)
+	for _, checkIn := range checkIns {
+		if checkIn.PeriodEnd < fromDate || checkIn.PeriodStart > toDate {
+			continue
+		}
+		result = append(result, checkIn)
+	}
+	return result
+}
+
 func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 	response := &wdidv1.PeriodReport{
 		FromDate:      report.FromDate,
@@ -95,6 +434,9 @@ func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 		SupportModes:  make([]*wdidv1.SupportModeAllocation, 0, len(report.SupportModes)),
 		Weeks:         make([]*wdidv1.WeekRhythm, 0, len(report.Weeks)),
 		Notes:         make([]*wdidv1.PeriodNote, 0, len(report.Notes)),
+		MilestoneProgress: make(
+			[]*wdidv1.MilestoneProgress, 0, len(report.Milestones),
+		),
 	}
 
 	for _, total := range report.Categories {
@@ -147,6 +489,13 @@ func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 			SubcategoryId: note.SubcategoryID,
 			Text:          note.Text,
 			CreatedAt:     timestamppb.New(note.CreatedAt),
+		})
+	}
+	for _, progress := range report.Milestones {
+		response.MilestoneProgress = append(response.MilestoneProgress, &wdidv1.MilestoneProgress{
+			SubcategoryId: progress.SubcategoryID,
+			Total:         int32(progress.Total),
+			Done:          int32(progress.Done),
 		})
 	}
 

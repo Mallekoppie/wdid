@@ -104,6 +104,26 @@ func TestLoadFromEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadReadsTheOpenAIKeyFromTheEnvironmentOnly(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv(config.OpenAIAPIKeyEnv, "  sk-test-key  ")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.OpenAIAPIKey != "sk-test-key" {
+		t.Fatalf("AI key = %q, want the trimmed environment value", cfg.OpenAIAPIKey)
+	}
+
+	// The platform configuration has no field for the key, so it cannot leak
+	// into the service's transport or logging configuration.
+	platformConfig := cfg.PlatformConfig()
+	if platformConfig.HTTP.Server.ListeningAddress != cfg.HTTPAddr {
+		t.Fatalf("http address = %q", platformConfig.HTTP.Server.ListeningAddress)
+	}
+}
+
 func TestPlatformConfigLocalOnlyUsesLocalJWT(t *testing.T) {
 	setRequiredEnv(t)
 	// make exports WDID_DEV_MODE=true for local runs; this case asserts the

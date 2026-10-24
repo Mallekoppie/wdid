@@ -70,10 +70,8 @@ class AppSettings {
     this.backupDir = '/var/lib/wdid/backups',
     this.backupIntervalHours = 6,
     this.retentionCount = 30,
-    this.aiProvider = 'OpenAI-compatible',
     this.aiBaseUrl = 'https://api.openai.com/v1',
     this.aiModel = 'gpt-4.1-mini',
-    this.aiKeySource = 'environment',
     this.redactUrls = false,
     this.lastBackupAt,
     this.lastBackupBytes = 0,
@@ -100,10 +98,8 @@ class AppSettings {
   final int backupIntervalHours;
   final int retentionCount;
 
-  final String aiProvider;
   final String aiBaseUrl;
   final String aiModel;
-  final String aiKeySource;
   final bool redactUrls;
 
   final DateTime? lastBackupAt;
@@ -128,10 +124,8 @@ class AppSettings {
     String? backupDir,
     int? backupIntervalHours,
     int? retentionCount,
-    String? aiProvider,
     String? aiBaseUrl,
     String? aiModel,
-    String? aiKeySource,
     bool? redactUrls,
     DateTime? lastBackupAt,
     int? lastBackupBytes,
@@ -155,10 +149,8 @@ class AppSettings {
       backupDir: backupDir ?? this.backupDir,
       backupIntervalHours: backupIntervalHours ?? this.backupIntervalHours,
       retentionCount: retentionCount ?? this.retentionCount,
-      aiProvider: aiProvider ?? this.aiProvider,
       aiBaseUrl: aiBaseUrl ?? this.aiBaseUrl,
       aiModel: aiModel ?? this.aiModel,
-      aiKeySource: aiKeySource ?? this.aiKeySource,
       redactUrls: redactUrls ?? this.redactUrls,
       lastBackupAt: lastBackupAt ?? this.lastBackupAt,
       lastBackupBytes: lastBackupBytes ?? this.lastBackupBytes,
@@ -184,10 +176,8 @@ class AppSettings {
     backupDir: json['backupDir']?.toString() ?? '/var/lib/wdid/backups',
     backupIntervalHours: (json['backupIntervalHours'] as num?)?.round() ?? 6,
     retentionCount: (json['retentionCount'] as num?)?.round() ?? 30,
-    aiProvider: json['aiProvider']?.toString() ?? 'OpenAI-compatible',
     aiBaseUrl: json['aiBaseUrl']?.toString() ?? 'https://api.openai.com/v1',
     aiModel: json['aiModel']?.toString() ?? 'gpt-4.1-mini',
-    aiKeySource: json['aiKeySource']?.toString() ?? 'environment',
     redactUrls: json['redactUrls'] == true,
     lastBackupAt: DateTime.tryParse(json['lastBackupAt']?.toString() ?? ''),
     lastBackupBytes: (json['lastBackupBytes'] as num?)?.round() ?? 0,
@@ -210,10 +200,8 @@ class AppSettings {
     'backupDir': backupDir,
     'backupIntervalHours': backupIntervalHours,
     'retentionCount': retentionCount,
-    'aiProvider': aiProvider,
     'aiBaseUrl': aiBaseUrl,
     'aiModel': aiModel,
-    'aiKeySource': aiKeySource,
     'redactUrls': redactUrls,
     'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
     'lastBackupBytes': lastBackupBytes,

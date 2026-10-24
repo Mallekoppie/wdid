@@ -35,9 +35,9 @@ class DurationChips extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             selectedColor: scheme.primaryContainer,
             labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: tabularFigures,
-                ),
+              fontWeight: FontWeight.w600,
+              fontFeatures: tabularFigures,
+            ),
           ),
       ],
     );
@@ -45,11 +45,7 @@ class DurationChips extends StatelessWidget {
 }
 
 class DurationField extends StatelessWidget {
-  const DurationField({
-    super.key,
-    required this.controller,
-    this.validator,
-  });
+  const DurationField({super.key, required this.controller, this.validator});
 
   final TextEditingController controller;
   final String? Function(String?)? validator;

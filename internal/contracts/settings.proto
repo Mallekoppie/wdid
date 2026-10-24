@@ -77,9 +77,75 @@ message UpdateSettingsResponse {
   Settings settings = 1;
 }
 
-// SettingsService owns per-user behaviour and appearance. Every RPC requires a
-// bearer token; the account is derived from that token.
+// Backup describes one database snapshot on disk.
+message Backup {
+  string name = 1;
+  google.protobuf.Timestamp created_at = 2;
+  int64 size_bytes = 3;
+  // Manual backups are never deleted by retention.
+  bool manual = 4;
+}
+
+// BackupStatus is the instance-wide backup state shown in Settings. A
+// workspace with no scheduled snapshot yet reports overdue.
+message BackupStatus {
+  google.protobuf.Timestamp last_backup_at = 1;
+  int64 last_backup_size_bytes = 2;
+  bool overdue = 3;
+  string backup_directory = 4;
+  google.protobuf.Duration backup_interval = 5;
+  int32 backup_retention = 6;
+  int32 scheduled_count = 7;
+  int32 manual_count = 8;
+  google.protobuf.Timestamp next_backup_at = 9;
+  bool last_backup_manual = 10;
+}
+
+message BackupNowRequest {}
+
+message BackupNowResponse {
+  Backup backup = 1;
+  BackupStatus status = 2;
+}
+
+message GetBackupStatusRequest {}
+
+message GetBackupStatusResponse {
+  BackupStatus status = 1;
+}
+
+message ListBackupsRequest {}
+
+message ListBackupsResponse {
+  repeated Backup backups = 1;
+}
+
+// RestoreBackup replaces the live database with one verified snapshot. The
+// current database is copied aside first; the service reopens the store and
+// rebuilds its indexes before reporting success.
+message RestoreBackupRequest {
+  // The snapshot name as returned by ListBackups.
+  string name = 1;
+}
+
+message RestoreBackupResponse {
+  Backup backup = 1;
+  BackupStatus status = 2;
+  // The file holding the database as it was before this restore.
+  string pre_restore_path = 3;
+}
+
+// SettingsService owns per-user behaviour and appearance plus instance-wide
+// backups. Every RPC requires a bearer token; the account is derived from that
+// token. Snapshots cover every account, so backups are admin-only: the backup
+// RPCs (including RestoreBackup) require the admin role, and UpdateSettings
+// rejects backup directory, interval and retention changes from any other
+// account with PERMISSION_DENIED.
 service SettingsService {
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
   rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  rpc BackupNow(BackupNowRequest) returns (BackupNowResponse);
+  rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+  rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse);
 }

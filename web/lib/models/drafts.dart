@@ -93,11 +93,18 @@ class CheckInDraft {
   const CheckInDraft({
     required this.periodStart,
     required this.periodEnd,
+    this.kind = CheckInKind.manager,
+    this.audience,
     this.focusNotes = '',
   });
 
   final DateTime periodStart;
   final DateTime periodEnd;
+  final CheckInKind kind;
+
+  /// Only a manager check-in carries an audience; a personal review leaves it
+  /// null.
+  final CheckInAudience? audience;
   final String focusNotes;
 }
 
@@ -107,4 +114,22 @@ class NoteDraft {
   final String date;
   final String? initiativeId;
   final String text;
+}
+
+/// Inputs accepted by `MilestoneService` when creating a project checkpoint.
+/// IDs and timestamps are assigned by the service.
+class MilestoneDraft {
+  const MilestoneDraft({
+    required this.subcategoryId,
+    required this.title,
+    this.dueDate = '',
+    this.done = false,
+  });
+
+  final String subcategoryId;
+  final String title;
+
+  /// Optional local calendar date, `YYYY-MM-DD`.
+  final String dueDate;
+  final bool done;
 }

@@ -26,29 +26,29 @@ class Panel extends StatelessWidget {
     final (background, border, accent) = switch (tone) {
       PanelTone.normal => (scheme.surface, scheme.outlineVariant, null),
       PanelTone.accent => (
-          Color.alphaBlend(
-            scheme.primaryContainer.withValues(alpha: 0.38),
-            scheme.surface,
-          ),
-          scheme.outlineVariant,
-          scheme.primary,
+        Color.alphaBlend(
+          scheme.primaryContainer.withValues(alpha: 0.38),
+          scheme.surface,
         ),
+        scheme.outlineVariant,
+        scheme.primary,
+      ),
       PanelTone.support => (
-          Color.alphaBlend(
-            scheme.tertiaryContainer.withValues(alpha: 0.30),
-            scheme.surface,
-          ),
-          scheme.outlineVariant,
-          scheme.tertiary,
+        Color.alphaBlend(
+          scheme.tertiaryContainer.withValues(alpha: 0.30),
+          scheme.surface,
         ),
+        scheme.outlineVariant,
+        scheme.tertiary,
+      ),
       PanelTone.warning => (
-          Color.alphaBlend(
-            scheme.errorContainer.withValues(alpha: 0.25),
-            scheme.surface,
-          ),
-          scheme.outlineVariant,
-          scheme.error,
+        Color.alphaBlend(
+          scheme.errorContainer.withValues(alpha: 0.25),
+          scheme.surface,
         ),
+        scheme.outlineVariant,
+        scheme.error,
+      ),
     };
     final radiusValue = BorderRadius.circular(radius);
 

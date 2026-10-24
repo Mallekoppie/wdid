@@ -173,6 +173,36 @@ func (s *Store) SaveCheckIn(checkIn domain.CheckIn) error {
 	})
 }
 
+// LastFinalManagerCheckIn returns the final manager check-in whose period ends
+// latest. It is the boundary the next manager check-in starts from, so drafts,
+// personal reviews and earlier finals never move it.
+func (s *Store) LastFinalManagerCheckIn(userID string) (domain.CheckIn, bool, error) {
+	raw, err := readAllRaw(userBucket(userID, checkInsBucket))
+	if err != nil {
+		return domain.CheckIn{}, false, err
+	}
+
+	var latest domain.CheckIn
+	found := false
+	for _, value := range raw {
+		var checkIn domain.CheckIn
+		if err := json.Unmarshal([]byte(value), &checkIn); err != nil {
+			return domain.CheckIn{}, false, fmt.Errorf("decode check-in: %w", err)
+		}
+		if checkIn.Kind != domain.CheckInKindManager || checkIn.State != domain.CheckInStateFinal {
+			continue
+		}
+		if !found ||
+			checkIn.PeriodEnd > latest.PeriodEnd ||
+			(checkIn.PeriodEnd == latest.PeriodEnd && checkIn.CreatedAt.After(latest.CreatedAt)) {
+			latest = checkIn
+			found = true
+		}
+	}
+
+	return latest, found, nil
+}
+
 // CheckIn returns one check-in owned by the user.
 func (s *Store) CheckIn(userID, id string) (domain.CheckIn, error) {
 	var checkIn domain.CheckIn

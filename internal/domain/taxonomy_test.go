@@ -274,7 +274,7 @@ func TestValidateMilestone(t *testing.T) {
 		wantField string
 	}{
 		{name: "valid"},
-		{name: "without due date", mutate: func(m *domain.Milestone) { m.DueDate = "" }, wantField: "dueDate"},
+		{name: "without due date", mutate: func(m *domain.Milestone) { m.DueDate = "" }},
 		{name: "missing title", mutate: func(m *domain.Milestone) { m.Title = " " }, wantField: "title"},
 		{name: "missing subcategory", mutate: func(m *domain.Milestone) { m.SubcategoryID = "" }, wantField: "subcategoryId"},
 		{name: "bad due date", mutate: func(m *domain.Milestone) { m.DueDate = "31/10/2026" }, wantField: "dueDate"},

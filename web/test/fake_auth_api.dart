@@ -1,5 +1,16 @@
 import 'package:wdid_web/data/auth_api.dart';
 
+/// A signed-in session for tests that exercise the app behind the auth gate.
+AuthSession signedInSession({String role = 'user'}) => AuthSession(
+  user: AuthUser(
+    id: 'user-1',
+    email: 'test@example.com',
+    displayName: 'Test User',
+    role: role,
+  ),
+  token: 'test-token',
+);
+
 const defaultAuthConfig = AuthConfig(
   localLogin: true,
   registrationEnabled: true,

@@ -9,6 +9,7 @@ Future<Note?> showNoteDialog(
   BuildContext context, {
   required AppState state,
   String? initiativeId,
+  Note? existing,
   String title = 'Add note',
   String? subtitle,
   String initialText = '',
@@ -18,9 +19,10 @@ Future<Note?> showNoteDialog(
     builder: (context) => _NoteDialog(
       state: state,
       initiativeId: initiativeId,
+      existing: existing,
       title: title,
       subtitle: subtitle,
-      initialText: initialText,
+      initialText: initialText.isEmpty ? existing?.text ?? '' : initialText,
     ),
   );
 }
@@ -29,6 +31,7 @@ class _NoteDialog extends StatefulWidget {
   const _NoteDialog({
     required this.state,
     this.initiativeId,
+    this.existing,
     required this.title,
     this.subtitle,
     this.initialText = '',
@@ -36,6 +39,7 @@ class _NoteDialog extends StatefulWidget {
 
   final AppState state;
   final String? initiativeId;
+  final Note? existing;
   final String title;
   final String? subtitle;
   final String initialText;
@@ -45,8 +49,9 @@ class _NoteDialog extends StatefulWidget {
 }
 
 class _NoteDialogState extends State<_NoteDialog> {
-  late final TextEditingController _text =
-      TextEditingController(text: widget.initialText);
+  late final TextEditingController _text = TextEditingController(
+    text: widget.initialText,
+  );
   bool _saving = false;
   String? _error;
 
@@ -66,11 +71,16 @@ class _NoteDialogState extends State<_NoteDialog> {
       _error = null;
     });
     try {
-      final note = await widget.state.addNote(
-        text: _text.text.trim(),
-        initiativeId: widget.initiativeId,
-        date: DateTime.now(),
-      );
+      final trimmed = _text.text.trim();
+      final note = widget.existing != null
+          ? await widget.state.updateNote(
+              widget.existing!.copyWith(text: trimmed),
+            )
+          : await widget.state.addNote(
+              text: trimmed,
+              initiativeId: widget.initiativeId,
+              date: DateTime.now(),
+            );
       if (!mounted) return;
       Navigator.of(context).pop(note);
     } catch (error) {
@@ -100,8 +110,7 @@ class _NoteDialogState extends State<_NoteDialog> {
       ),
       actions: Row(
         children: [
-          if (_error != null)
-            Expanded(child: FormError(message: _error!)),
+          if (_error != null) Expanded(child: FormError(message: _error!)),
           const Spacer(),
           TextButton(
             onPressed: _saving ? null : () => Navigator.of(context).pop(),

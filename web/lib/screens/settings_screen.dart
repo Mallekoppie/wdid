@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 
 import '../data/settings_api.dart';
 import '../models/app_settings.dart';
+import '../models/check_in.dart';
+import '../models/enums.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
-import '../utils/time_utils.dart';
 import '../widgets/app_dropdown.dart';
-import '../widgets/forms/export_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
+import '../widgets/settings/backups_panel.dart';
 import '../widgets/settings/categories_panel.dart';
 
 const _weekdayNames = [
@@ -38,17 +39,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _defaultDuration;
   late final TextEditingController _baseUrl;
   late final TextEditingController _model;
-  late final TextEditingController _provider;
   late int _weekStart;
   late ReviewCadence _reviewCadence;
-  late String _keySource;
   late bool _redactUrls;
   bool _initialized = false;
-  bool _backingUp = false;
   bool _savingTime = false;
   bool _savingAi = false;
   String? _timeError;
   String? _timeField;
+
+  CheckInPromptVariant _previewVariant = CheckInPromptVariant.managerOneOnOne;
+  PromptTemplate? _previewTemplate;
+  String? _previewError;
+  bool _previewLoading = false;
 
   @override
   void didChangeDependencies() {
@@ -66,11 +69,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     _baseUrl = TextEditingController(text: settings.aiBaseUrl);
     _model = TextEditingController(text: settings.aiModel);
-    _provider = TextEditingController(text: settings.aiProvider);
     _weekStart = settings.weekStart;
     _reviewCadence = settings.reviewCadence;
-    _keySource = settings.aiKeySource;
     _redactUrls = settings.redactUrls;
+    if (AppStateScope.of(context).hasSummaryService) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_loadPromptTemplate());
+      });
+    }
   }
 
   @override
@@ -81,28 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _defaultDuration.dispose();
     _baseUrl.dispose();
     _model.dispose();
-    _provider.dispose();
     super.dispose();
-  }
-
-  Future<void> _backupNow() async {
-    final state = AppStateScope.read(context);
-    setState(() => _backingUp = true);
-    try {
-      final status = await state.backupNow();
-      if (!mounted) return;
-      setState(() => _backingUp = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Backup created · ${formatBytes(status.bytes)}'),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _backingUp = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Backup failed: $error')));
-    }
   }
 
   Future<void> _saveTime() async {
@@ -155,12 +140,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final state = AppStateScope.read(context);
     setState(() => _savingAi = true);
     try {
+      // The key is deliberately absent: it comes from the server environment
+      // and the settings contract has no field for it.
       await state.saveSettings(
         state.settings.copyWith(
-          aiProvider: _provider.text.trim(),
           aiBaseUrl: _baseUrl.text.trim(),
           aiModel: _model.text.trim(),
-          aiKeySource: _keySource,
           redactUrls: _redactUrls,
         ),
       );
@@ -177,9 +162,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _loadPromptTemplate() async {
+    final state = AppStateScope.read(context);
+    if (!state.hasSummaryService) return;
+    setState(() {
+      _previewLoading = true;
+      _previewError = null;
+    });
+    try {
+      final template = await state.promptTemplate(_previewVariant);
+      if (!mounted) return;
+      setState(() {
+        _previewTemplate = template;
+        _previewLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _previewLoading = false;
+        _previewError = error.toString();
+      });
+    }
+  }
+
   Future<void> _applyTheme(AppState state, ThemePreference preference) async {
     try {
       await state.setTheme(preference);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Theme set to ${preference.label}')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -191,33 +203,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _applyDensity(AppState state, DensityPreference density) async {
     try {
       await state.setDensity(density);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Density set to ${density.label}')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save the density: $error')),
       );
     }
-  }
-
-  void _showRestoreInfo() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Restore from backup'),
-        content: const Text(
-          'Restore is a host-level operation: the service verifies the selected '
-          'snapshot, preserves the current database, then reopens and rebuilds '
-          'indexes. The UI will call that endpoint once the backup contract is '
-          'exposed by the service.',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -244,92 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: AppSpacing.lg),
             const CategoriesPanel(),
             const SizedBox(height: AppSpacing.lg),
-            Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  PanelHeader(
-                    title: 'Data',
-                    subtitle: 'Local-first storage and backups',
-                    icon: Icons.storage_outlined,
-                    trailing: Text(
-                      settings.lastBackupAt == null
-                          ? 'No backup yet'
-                          : 'Last backup ${formatRelativeDay(settings.lastBackupAt!)} · '
-                                '${formatBytes(settings.lastBackupBytes)}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: settings.lastBackupAt == null
-                            ? scheme.error
-                            : scheme.onSurfaceVariant,
-                        fontFeatures: tabularFigures,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _ReadOnlyPath(
-                    label: 'Database',
-                    value: settings.databasePath,
-                  ),
-                  const SizedBox(height: 6),
-                  _ReadOnlyPath(
-                    label: 'Data directory',
-                    value: settings.dataDir,
-                  ),
-                  const SizedBox(height: 6),
-                  _ReadOnlyPath(
-                    label: 'Backup directory',
-                    value: settings.backupDir,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    'Every ${settings.backupIntervalHours}h · '
-                    'keep ${settings.retentionCount} scheduled backups',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _showRestoreInfo,
-                        icon: const Icon(Icons.restore, size: 15),
-                        label: const Text('Restore…'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => showExportDialog(
-                          context,
-                          state: state,
-                          start: DateTime(2000),
-                          end: state.today,
-                        ),
-                        icon: const Icon(
-                          Icons.file_download_outlined,
-                          size: 15,
-                        ),
-                        label: const Text('Export all data'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _backingUp ? null : _backupNow,
-                        icon: _backingUp
-                            ? const SizedBox(
-                                width: 13,
-                                height: 13,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.backup_outlined, size: 15),
-                        label: const Text('Backup now'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            const BackupsPanel(),
             const SizedBox(height: AppSpacing.lg),
             Panel(
               child: Column(
@@ -502,68 +412,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     children: [
                       Expanded(
-                        child: TextField(
-                          controller: _provider,
-                          decoration: const InputDecoration(
-                            labelText: 'Provider',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
                         flex: 2,
                         child: TextField(
                           controller: _baseUrl,
                           decoration: const InputDecoration(
                             labelText: 'Base URL',
+                            helperText: 'Provider: OpenAI-compatible',
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Row(
-                    children: [
+                      const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: TextField(
                           controller: _model,
                           decoration: const InputDecoration(labelText: 'Model'),
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: AppDropdown<String>(
-                          value: _keySource,
-                          label: 'API key source',
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'environment',
-                              child: Text('Environment variable (recommended)'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'stored',
-                              child: Text('Stored setting'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _keySource = value);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: SwitchListTile(
-                          value: _redactUrls,
-                          onChanged: (value) =>
-                              setState(() => _redactUrls = value),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Redact link URLs'),
-                        ),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  SwitchListTile(
+                    value: _redactUrls,
+                    onChanged: (value) => setState(() => _redactUrls = value),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Redact URLs and notes'),
+                    subtitle: const Text(
+                      'Strips links, day/project notes and focus notes from the '
+                      'payload sent to the provider.',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(AppRadius.input),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.key_outlined,
+                          size: 16,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'API key: set WDID_OPENAI_API_KEY on the server. It is '
+                            'never stored, exported or logged.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   ExpansionTile(
@@ -576,34 +484,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       style: theme.textTheme.labelMedium,
                     ),
                     subtitle: Text(
-                      'Version ${settings.schemaVersion == 1 ? 'v1' : 'v1'} · reset is service-owned',
+                      'Version ${_previewTemplate?.promptVersion ?? 'v1'} · service-owned',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
                     children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(AppRadius.input),
-                          border: Border.all(color: scheme.outlineVariant),
-                        ),
-                        child: Text(
-                          'You are summarising a software engineer\'s work for a '
-                          'performance check-in.\n\n'
-                          'Use only the data provided. Do not invent achievements, '
-                          'metrics or names.\n\n'
-                          'Produce highlights with measurable outcomes, initiative '
-                          'progress, collaboration, time allocation observations, '
-                          'risks and gaps, and three review bullets.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                            height: 1.5,
+                      if (!state.hasSummaryService)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Connect the service to preview the versioned '
+                            'prompt templates.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
                           ),
+                        )
+                      else ...[
+                        AppDropdown<CheckInPromptVariant>(
+                          value: _previewVariant,
+                          label: 'Variant',
+                          items: const [
+                            DropdownMenuItem(
+                              value: CheckInPromptVariant.managerOneOnOne,
+                              child: Text('Manager 1:1'),
+                            ),
+                            DropdownMenuItem(
+                              value:
+                                  CheckInPromptVariant.managerPerformanceReview,
+                              child: Text('Manager performance review'),
+                            ),
+                            DropdownMenuItem(
+                              value: CheckInPromptVariant.personalReview,
+                              child: Text('Personal review'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _previewVariant = value);
+                            unawaited(_loadPromptTemplate());
+                          },
                         ),
-                      ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (_previewLoading)
+                          const LinearProgressIndicator(minHeight: 2)
+                        else if (_previewError != null)
+                          Text(
+                            _previewError!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.error,
+                            ),
+                          )
+                        else
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.input,
+                              ),
+                              border: Border.all(color: scheme.outlineVariant),
+                            ),
+                            child: Text(
+                              _previewTemplate?.template ?? '',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontFamily: 'monospace',
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: AppSpacing.sm),
@@ -611,7 +563,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Keys are never shown in exports or logs.',
+                          'Redaction applies to generation only; exports keep '
+                          'your complete data.',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
@@ -777,48 +730,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ReadOnlyPath extends StatelessWidget {
-  const _ReadOnlyPath({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Row(
-      children: [
-        SizedBox(
-          width: 118,
-          child: Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: scheme.outlineVariant),
-            ),
-            child: Text(
-              value,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

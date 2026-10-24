@@ -69,6 +69,16 @@ type CheckInTotals struct {
 	SupportByPerson map[string]int `json:"supportByPerson,omitempty"`
 }
 
+// SummarySource says whether a summary update is the user's own text or
+// generated output. Only generated text is blocked from replacing a manual
+// edit without confirmation.
+type SummarySource string
+
+const (
+	SummarySourceManual    SummarySource = "manual"
+	SummarySourceGenerated SummarySource = "generated"
+)
+
 // CheckIn is a saved artifact covering a period, with focus notes, aggregates
 // and an optional summary. Only final manager check-ins move the boundary.
 type CheckIn struct {
@@ -88,7 +98,9 @@ type CheckIn struct {
 	UpdatedAt       time.Time     `json:"updatedAt"`
 }
 
-// Normalize trims check-in input into its canonical form.
+// Normalize trims check-in input into its canonical form. A manager check-in
+// always records an audience: one-on-one is the product default when the
+// caller leaves it unspecified.
 func (c *CheckIn) Normalize() {
 	c.PeriodStart = strings.TrimSpace(c.PeriodStart)
 	c.PeriodEnd = strings.TrimSpace(c.PeriodEnd)
@@ -96,6 +108,9 @@ func (c *CheckIn) Normalize() {
 	c.SummaryMarkdown = strings.TrimSpace(c.SummaryMarkdown)
 	c.SummaryModel = strings.TrimSpace(c.SummaryModel)
 	c.PromptVersion = strings.TrimSpace(c.PromptVersion)
+	if c.Kind == CheckInKindManager && c.Audience == "" {
+		c.Audience = AudienceOneOnOne
+	}
 	c.CreatedAt = utc(c.CreatedAt)
 	c.UpdatedAt = utc(c.UpdatedAt)
 }

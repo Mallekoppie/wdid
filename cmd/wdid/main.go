@@ -35,11 +35,24 @@ func health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "invite" {
-		if err := runInvite(os.Args[2:], os.Stdout); err != nil {
-			log.Fatalf("wdid invite: %v", err)
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "invite":
+			if err := runInvite(os.Args[2:], os.Stdout); err != nil {
+				log.Fatalf("wdid invite: %v", err)
+			}
+			return
+		case "backup":
+			if err := runBackup(os.Args[2:], os.Stdout); err != nil {
+				log.Fatalf("wdid backup: %v", err)
+			}
+			return
+		case "restore":
+			if err := runRestore(os.Args[2:], os.Stdout); err != nil {
+				log.Fatalf("wdid restore: %v", err)
+			}
+			return
 		}
-		return
 	}
 
 	if err := run(); err != nil {
@@ -69,6 +82,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The scheduler checks for an overdue backup at startup and then at each
+	// configured interval. It shares its manager with SettingsService so a
+	// manual backup and a settings change are visible in the status.
+	backupManager := newBackupManager(database, cfg)
+	go backupManager.Run(ctx)
+
 	platform.Log.Info("starting wdid service",
 		zap.String("address", cfg.HTTPAddr),
 		zap.String("database", cfg.DBPath),
@@ -84,8 +103,11 @@ func run() error {
 			rpc.NewCategoryService(database, authService),
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService),
-			rpc.NewSettingsService(database, authService),
-			rpc.NewSummaryService(database, authService),
+			rpc.NewSettingsService(database, authService, rpc.WithBackupManager(backupManager)),
+			rpc.NewSummaryService(database, authService, rpc.WithSummaryAPIKey(cfg.OpenAIAPIKey)),
+			rpc.NewNoteService(database, authService),
+			rpc.NewMilestoneService(database, authService),
+			rpc.NewCheckInService(database, authService),
 		},
 		ServiceNames: []string{
 			config.AuthServiceName,
@@ -94,6 +116,9 @@ func run() error {
 			config.TimerServiceName,
 			config.SettingsServiceName,
 			config.SummaryServiceName,
+			config.NoteServiceName,
+			config.MilestoneServiceName,
+			config.CheckInServiceName,
 		},
 		Routes: nonRPCRoutes(),
 		SPA: &platform.SPAOptions{

@@ -1,24 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/check_in.dart';
 import '../models/enums.dart';
-import '../models/initiative.dart';
-import '../models/work_item.dart';
-import '../state/app_state.dart';
-import '../state/app_state_scope.dart';
+import '../models/period_report.dart';
 import '../theme/app_tokens.dart';
-import '../utils/analytics.dart';
 import '../utils/time_utils.dart';
-import '../widgets/allocation_bars.dart';
+import '../widgets/app_dropdown.dart';
+import '../widgets/checkin_aggregates.dart';
+import '../widgets/forms/checkin_dialog.dart';
 import '../widgets/forms/export_dialog.dart';
+import '../widgets/forms/prompt_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
 import '../widgets/simple_markdown.dart';
 import '../widgets/status_badge.dart';
+import '../state/app_state.dart';
+import '../state/app_state_scope.dart';
 
 class CheckinDetailScreen extends StatefulWidget {
   const CheckinDetailScreen({super.key, required this.checkInId});
@@ -31,21 +31,34 @@ class CheckinDetailScreen extends StatefulWidget {
 
 class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
   final _editor = TextEditingController();
+  bool _requested = false;
   bool _editing = false;
   bool _generating = false;
+  String _streamText = '';
+  String? _generationError;
   bool _saving = false;
+  bool _buildingPrompt = false;
+  bool _updatingAudience = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = AppStateScope.read(context);
+    if (!state.hasCheckInService || _requested) return;
+    _requested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final current = AppStateScope.read(context);
+      if (current.checkInDetailId != widget.checkInId) {
+        unawaited(current.loadCheckInDetail(widget.checkInId));
+      }
+    });
+  }
 
   @override
   void dispose() {
     _editor.dispose();
     super.dispose();
-  }
-
-  CheckIn? _find(AppState state) {
-    for (final checkIn in state.checkIns) {
-      if (checkIn.id == widget.checkInId) return checkIn;
-    }
-    return null;
   }
 
   Future<void> _generate(AppState state, CheckIn checkIn) async {
@@ -74,41 +87,36 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
       if (confirmed != true) return;
     }
     if (!mounted) return;
-    setState(() => _generating = true);
+    setState(() {
+      _generating = true;
+      _streamText = '';
+      _generationError = null;
+    });
     try {
-      await state.generateSummary(checkIn);
+      await for (final delta in state.generateSummaryStream(
+        checkIn,
+        overwriteManualEdits: true,
+      )) {
+        if (!mounted) return;
+        if (delta.text.isEmpty) continue;
+        setState(() => _streamText += delta.text);
+      }
       if (!mounted) return;
-      setState(() => _generating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Summary generated')),
-      );
+      setState(() {
+        _generating = false;
+        _streamText = '';
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Summary generated')));
     } catch (error) {
       if (!mounted) return;
-      setState(() => _generating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Generation failed. The existing summary is unchanged. $error',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _copyPrompt(AppState state, CheckIn checkIn) async {
-    try {
-      final text =
-          await state.buildPrompt(checkIn.periodStart, checkIn.periodEnd);
-      await Clipboard.setData(ClipboardData(text: text));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Prompt copied to clipboard')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not build the prompt: $error')),
-      );
+      // The service persists only a complete response, so the stored summary
+      // is untouched. Drop the partial preview and offer an explicit retry.
+      setState(() {
+        _generating = false;
+        _streamText = '';
+        _generationError = error.toString();
+      });
     }
   }
 
@@ -121,14 +129,100 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
         _saving = false;
         _editing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Summary saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Summary saved')));
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save the summary: $error')),
+      );
+    }
+  }
+
+  Future<void> _copyPrompt(AppState state, CheckIn checkIn) async {
+    setState(() => _buildingPrompt = true);
+    try {
+      final prompt = await state.buildCheckInPrompt(checkIn);
+      if (!mounted) return;
+      setState(() => _buildingPrompt = false);
+      await showPromptDialog(context, prompt: prompt);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _buildingPrompt = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not build the prompt: $error')),
+      );
+    }
+  }
+
+  Future<void> _changeAudience(
+    AppState state,
+    CheckIn checkIn,
+    CheckInAudience audience,
+  ) async {
+    if (checkIn.audience == audience) return;
+    setState(() => _updatingAudience = true);
+    try {
+      await state.setCheckInAudience(checkIn, audience);
+      if (!mounted) return;
+      setState(() => _updatingAudience = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Audience set to ${audience.label}')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _updatingAudience = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change the audience: $error')),
+      );
+    }
+  }
+
+  Future<void> _editReview(AppState state, CheckIn checkIn) async {
+    final updated = await showPersonalReviewDialog(
+      context,
+      state: state,
+      checkIn: checkIn,
+    );
+    if (updated == null || !mounted) return;
+    unawaited(state.loadCheckInDetail(updated.id, force: true));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Review updated')));
+  }
+
+  Future<void> _deleteReview(AppState state, CheckIn checkIn) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this personal review?'),
+        content: const Text(
+          'The review and its notes are removed. This never changes the '
+          'manager boundary.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete review'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await state.deleteCheckIn(checkIn.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Review deleted')));
+      context.go('/checkins');
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete the review: $error')),
       );
     }
   }
@@ -140,7 +234,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
         title: const Text('Mark check-in as final?'),
         content: const Text(
           'Final check-ins are read-only and become the boundary for the next '
-          'period. Exports remain available.',
+          'period.',
         ),
         actions: [
           TextButton(
@@ -158,9 +252,8 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
     try {
       await state.finalizeCheckIn(checkIn);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Check-in marked final')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Check-in marked final')));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -174,8 +267,52 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
     final state = AppStateScope.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final checkIn = _find(state);
+    final checkIn = state.checkInById(widget.checkInId);
 
+    if (state.hasCheckInService &&
+        checkIn == null &&
+        state.checkInDetailLoading) {
+      return const ScreenBody(
+        child: PageScaffold(child: Center(child: LoadingView())),
+      );
+    }
+    // A cached listing copy must not hide a failed detail read: the retry
+    // belongs on screen even when the list already knows this check-in.
+    final detailFailed =
+        state.checkInDetailId == widget.checkInId &&
+        state.checkInDetail == null &&
+        state.checkInDetailError != null;
+    if (state.hasCheckInService && (checkIn == null || detailFailed)) {
+      final error = state.checkInDetailError;
+      return ScreenBody(
+        child: PageScaffold(
+          child: Panel(
+            child: error == null
+                ? EmptyState(
+                    icon: Icons.event_note_outlined,
+                    title: 'Check-in not found',
+                    message: 'It may have been removed.',
+                    action: FilledButton(
+                      onPressed: () => context.go('/checkins'),
+                      child: const Text('Back to check-ins'),
+                    ),
+                  )
+                : EmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    title: 'Could not load the check-in',
+                    message: error,
+                    action: OutlinedButton.icon(
+                      onPressed: () => unawaited(
+                        state.loadCheckInDetail(widget.checkInId, force: true),
+                      ),
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry'),
+                    ),
+                  ),
+          ),
+        ),
+      );
+    }
     if (checkIn == null) {
       return ScreenBody(
         child: PageScaffold(
@@ -194,15 +331,12 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
       );
     }
 
-    final entries = entriesInRange(
-      state.workItems,
-      checkIn.periodStart,
-      checkIn.periodEnd,
-    );
-    final support = entries.where((item) => item.isSupport).toList();
-    final supportPeople = supportByPerson(support).entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final finalState = checkIn.isFinal;
+    final report =
+        state.checkInReport?.fromDate == isoDate(checkIn.periodStart) &&
+            state.checkInReport?.toDate == isoDate(checkIn.periodEnd)
+        ? state.checkInReport
+        : null;
+    final readOnly = checkIn.isReadOnly;
 
     return ScreenBody(
       child: PageScaffold(
@@ -221,24 +355,27 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: AppSpacing.sm,
+                        runSpacing: 4,
                         children: [
-                          Flexible(
-                            child: Text(
-                              'Check-in · ${formatRange(checkIn.periodStart, checkIn.periodEnd)}',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                fontFeatures: tabularFigures,
-                              ),
+                          Text(
+                            'Check-in · ${formatRange(checkIn.periodStart, checkIn.periodEnd)}',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontFeatures: tabularFigures,
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.sm),
+                          CheckInKindBadge(kind: checkIn.kind),
+                          if (checkIn.audience != null)
+                            CheckInAudienceBadge(audience: checkIn.audience!),
                           CheckInStateBadge(state: checkIn.state),
                         ],
                       ),
                       const SizedBox(height: 3),
                       Text(
                         'Created ${formatFullDate(checkIn.createdAt)} · '
-                        'prompt ${checkIn.promptVersion}'
+                        '${checkIn.daysCovered} days'
                         '${checkIn.summaryModel == null ? '' : ' · ${checkIn.summaryModel}'}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
@@ -249,18 +386,34 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
-                OutlinedButton.icon(
-                  onPressed: () => showExportDialog(
-                    context,
-                    state: state,
-                    start: checkIn.periodStart,
-                    end: checkIn.periodEnd,
+                if (checkIn.isPersonal) ...[
+                  OutlinedButton.icon(
+                    onPressed: () => unawaited(_editReview(state, checkIn)),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Edit review'),
                   ),
-                  icon: const Icon(Icons.file_download_outlined, size: 16),
-                  label: const Text('Export'),
-                ),
-                const SizedBox(width: 6),
-                if (!finalState)
+                  const SizedBox(width: 6),
+                  OutlinedButton.icon(
+                    onPressed: () => unawaited(_deleteReview(state, checkIn)),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Delete review'),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                if (state.canExport)
+                  OutlinedButton.icon(
+                    onPressed: () => showExportDialog(
+                      context,
+                      state: state,
+                      start: checkIn.periodStart,
+                      end: checkIn.periodEnd,
+                      checkInId: checkIn.id,
+                    ),
+                    icon: const Icon(Icons.file_download_outlined, size: 16),
+                    label: const Text('Export'),
+                  ),
+                if (state.canExport) const SizedBox(width: 6),
+                if (checkIn.canFinalize)
                   FilledButton.icon(
                     onPressed: () => unawaited(_finalize(state, checkIn)),
                     icon: const Icon(Icons.flag_outlined, size: 16),
@@ -268,7 +421,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                   ),
               ],
             ),
-            if (finalState) ...[
+            if (readOnly) ...[
               const SizedBox(height: AppSpacing.md),
               Panel(
                 tone: PanelTone.support,
@@ -290,30 +443,17 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                 ),
               ),
             ],
+            if (checkIn.isPersonal) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Personal review — editable, and never moves the manager boundary.',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
-            Wrap(
-              spacing: AppSpacing.xl,
-              runSpacing: AppSpacing.md,
-              children: [
-                _Stat(
-                  label: 'logged',
-                  value: formatDuration(checkIn.totals.minutes),
-                ),
-                _Stat(label: 'days', value: '${checkIn.daysCovered}'),
-                _Stat(
-                  label: 'initiatives',
-                  value: '${checkIn.totals.byInitiative.length}',
-                ),
-                _Stat(
-                  label: 'support',
-                  value: formatDuration(supportMinutes(support)),
-                ),
-                _Stat(
-                  label: 'interactions',
-                  value: '${support.length}',
-                ),
-              ],
-            ),
+            _Stats(checkIn: checkIn, report: report),
             const SizedBox(height: AppSpacing.lg),
             Panel(
               child: Column(
@@ -324,14 +464,58 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     subtitle: _editing
                         ? 'Editing Markdown · generation will not overwrite silently'
                         : checkIn.summaryModel == null
-                            ? 'No model recorded'
-                            : 'Model: ${checkIn.summaryModel}',
+                        ? 'No model recorded'
+                        : 'Model: ${checkIn.summaryModel} · prompt ${checkIn.promptVersion}',
                     icon: Icons.auto_awesome_outlined,
                   ),
+                  if (checkIn.isManager) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 210,
+                          child: AppDropdown<CheckInAudience>(
+                            value: checkIn.audience ?? CheckInAudience.oneOnOne,
+                            label: 'Audience',
+                            icon: Icons.forum_outlined,
+                            enabled: !readOnly && !_updatingAudience,
+                            items: const [
+                              DropdownMenuItem(
+                                value: CheckInAudience.oneOnOne,
+                                child: Text('1:1'),
+                              ),
+                              DropdownMenuItem(
+                                value: CheckInAudience.performanceReview,
+                                child: Text('Performance review'),
+                              ),
+                            ],
+                            onChanged: (audience) {
+                              if (audience == null) return;
+                              unawaited(
+                                _changeAudience(state, checkIn, audience),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'The audience selects the prompt variant. It never '
+                            'changes the summary or the recorded data.',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
-                      if (!finalState && !_editing) ...[
+                      if (!readOnly &&
+                          !_editing &&
+                          state.canGenerateSummary) ...[
                         FilledButton.tonalIcon(
                           onPressed: _generating
                               ? null
@@ -340,8 +524,9 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Icon(Icons.auto_awesome, size: 16),
                           label: Text(
@@ -353,12 +538,22 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                         const SizedBox(width: 6),
                       ],
                       OutlinedButton.icon(
-                        onPressed: () => unawaited(_copyPrompt(state, checkIn)),
-                        icon: const Icon(Icons.copy_all, size: 15),
+                        onPressed: _buildingPrompt
+                            ? null
+                            : () => unawaited(_copyPrompt(state, checkIn)),
+                        icon: _buildingPrompt
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.copy_all, size: 15),
                         label: const Text('Copy prompt'),
                       ),
                       const Spacer(),
-                      if (!finalState && !_editing)
+                      if (!readOnly && !_editing)
                         TextButton.icon(
                           onPressed: () {
                             _editor.text = checkIn.summaryMarkdown;
@@ -367,7 +562,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                           icon: const Icon(Icons.edit_outlined, size: 15),
                           label: const Text('Edit'),
                         ),
-                      if (!finalState && _editing) ...[
+                      if (!readOnly && _editing) ...[
                         TextButton(
                           onPressed: _saving
                               ? null
@@ -385,8 +580,9 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                               ? const SizedBox(
                                   width: 14,
                                   height: 14,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Save summary'),
                         ),
@@ -394,7 +590,89 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  if (_editing)
+                  if (_generationError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.errorContainer,
+                        borderRadius: BorderRadius.circular(AppRadius.input),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 17,
+                            color: scheme.onErrorContainer,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              'Generation failed. The existing summary is '
+                              'unchanged. ${_generationError!}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _generating
+                                ? null
+                                : () => unawaited(_generate(state, checkIn)),
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  if (_generating)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(AppRadius.input),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                'Generating with ${checkIn.summaryModel ?? 'the configured model'}…',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _streamText.isEmpty
+                                ? 'Waiting for the model…'
+                                : _streamText,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontFamily: 'monospace',
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (_editing)
                     TextField(
                       controller: _editor,
                       minLines: 14,
@@ -411,16 +689,16 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     EmptyState(
                       icon: Icons.auto_awesome_outlined,
                       title: 'No summary yet',
-                      message:
-                          'Generate one from the captured entries, or copy the '
-                          'prompt into your own model.',
-                      action: finalState
+                      message: state.canGenerateSummary
+                          ? 'Generate one from the captured entries, or copy the '
+                                'prompt into your own model.'
+                          : 'Add a summary for this period, or copy the focus notes into your own review.',
+                      action: readOnly || !state.canGenerateSummary
                           ? null
                           : FilledButton.icon(
                               onPressed: _generating
                                   ? null
-                                  : () =>
-                                      unawaited(_generate(state, checkIn)),
+                                  : () => unawaited(_generate(state, checkIn)),
                               icon: const Icon(Icons.auto_awesome, size: 16),
                               label: const Text('Generate with AI'),
                             ),
@@ -441,151 +719,81 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                       icon: Icons.push_pin_outlined,
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      checkIn.focusNotes,
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    Text(checkIn.focusNotes, style: theme.textTheme.bodyMedium),
                   ],
                 ),
               ),
             ],
             const SizedBox(height: AppSpacing.lg),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final stacked = constraints.maxWidth < 900;
-                final allocation = Panel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      PanelHeader(
-                        title: 'Time allocation',
-                        subtitle: formatDuration(totalMinutes(entries)),
-                        icon: Icons.pie_chart_outline,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      AllocationBars(
-                        slices: allocationFor(entries, state.initiatives),
-                      ),
-                    ],
-                  ),
-                );
-                final initiatives = Panel(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      PanelHeader(
-                        title: 'Initiative progress',
-                        subtitle:
-                            '${checkIn.totals.byInitiative.length} initiatives touched',
-                        icon: Icons.flag_outlined,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      if (checkIn.totals.byInitiative.isEmpty)
-                        Text(
-                          'No initiative time in this period.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        )
-                      else
-                        for (final entry in _sortedInitiativeTotals(checkIn))
-                          _InitiativeProgressRow(
-                            initiative: _initiative(state, entry.key),
-                            minutes: entry.value,
-                          ),
-                    ],
-                  ),
-                );
-                if (stacked) {
-                  return Column(
-                    children: [
-                      allocation,
-                      const SizedBox(height: AppSpacing.lg),
-                      initiatives,
-                    ],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: allocation),
-                    const SizedBox(width: AppSpacing.lg),
-                    Expanded(child: initiatives),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+            CheckInAggregates(state: state, report: report),
+            if (!state.hasCheckInService) ...[
+              const SizedBox(height: AppSpacing.lg),
+              Row(
                 children: [
-                  PanelHeader(
-                    title: 'Support & collaboration',
-                    subtitle:
-                        '${formatDuration(supportMinutes(support))} across '
-                        '${supportPeople.length} people',
-                    icon: Icons.volunteer_activism_outlined,
+                  TextButton.icon(
+                    onPressed: () => showExportDialog(
+                      context,
+                      state: state,
+                      start: checkIn.periodStart,
+                      end: checkIn.periodEnd,
+                      checkInId: checkIn.id,
+                    ),
+                    icon: const Icon(Icons.file_download_outlined, size: 16),
+                    label: const Text('Export summary.md + data.json'),
                   ),
-                  const SizedBox(height: AppSpacing.md),
-                  if (support.isEmpty)
-                    Text(
-                      'No support logged in this period.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    )
-                  else
-                    for (final person in supportPeople)
-                      _SupportPersonRow(
-                        person: person.key,
-                        minutes: person.value,
-                        entries: support
-                            .where((item) => item.person == person.key)
-                            .toList(),
-                      ),
+                  const Spacer(),
+                  if (checkIn.canFinalize)
+                    OutlinedButton.icon(
+                      onPressed: () => unawaited(_finalize(state, checkIn)),
+                      icon: const Icon(Icons.flag_outlined, size: 16),
+                      label: const Text('Mark as final'),
+                    ),
                 ],
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: () => showExportDialog(
-                    context,
-                    state: state,
-                    start: checkIn.periodStart,
-                    end: checkIn.periodEnd,
-                  ),
-                  icon: const Icon(Icons.file_download_outlined, size: 16),
-                  label: const Text('Export summary.md + data.json'),
-                ),
-                const Spacer(),
-                if (!finalState)
-                  OutlinedButton.icon(
-                    onPressed: () => unawaited(_finalize(state, checkIn)),
-                    icon: const Icon(Icons.flag_outlined, size: 16),
-                    label: const Text('Mark as final'),
-                  ),
-              ],
-            ),
+            ],
           ],
         ),
       ),
     );
   }
+}
 
-  List<MapEntry<String, int>> _sortedInitiativeTotals(CheckIn checkIn) {
-    final entries = checkIn.totals.byInitiative.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return entries;
-  }
+class _Stats extends StatelessWidget {
+  const _Stats({required this.checkIn, required this.report});
 
-  Initiative? _initiative(AppState state, String id) {
-    for (final initiative in state.initiatives) {
-      if (initiative.id == id) return initiative;
-    }
-    return null;
+  final CheckIn checkIn;
+  final PeriodReport? report;
+
+  @override
+  Widget build(BuildContext context) {
+    final report = this.report;
+    final supportMinutes = report == null
+        ? checkIn.totals.supportMinutes
+        : report.supportPeople.fold(
+            0,
+            (total, person) => total + person.minutes,
+          );
+    final interactions = report == null
+        ? checkIn.totals.supportByPerson.length
+        : report.supportPeople.fold(
+            0,
+            (total, person) => total + person.interactions,
+          );
+    return Wrap(
+      spacing: AppSpacing.xl,
+      runSpacing: AppSpacing.md,
+      children: [
+        _Stat(
+          label: 'logged',
+          value: formatDuration(report?.totalMinutes ?? checkIn.totals.minutes),
+        ),
+        _Stat(label: 'days', value: '${checkIn.daysCovered}'),
+        if (report != null)
+          _Stat(label: 'entries', value: '${report.entryCount}'),
+        _Stat(label: 'support', value: formatDuration(supportMinutes)),
+        _Stat(label: 'interactions', value: '$interactions'),
+      ],
+    );
   }
 }
 
@@ -615,136 +823,6 @@ class _Stat extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _InitiativeProgressRow extends StatelessWidget {
-  const _InitiativeProgressRow({required this.initiative, required this.minutes});
-
-  final Initiative? initiative;
-  final int minutes;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final progress = initiative?.progress ?? 0;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  initiative?.name ?? 'Unknown initiative',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (initiative != null) ...[
-                InitiativeStatusBadge(status: initiative!.status),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                formatDuration(minutes),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontFeatures: tabularFigures,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: progress / 100,
-              minHeight: 4,
-              backgroundColor: scheme.surfaceContainerHighest,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SupportPersonRow extends StatelessWidget {
-  const _SupportPersonRow({
-    required this.person,
-    required this.minutes,
-    required this.entries,
-  });
-
-  final String person;
-  final int minutes;
-  final List<WorkItem> entries;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: scheme.tertiaryContainer,
-            child: Text(
-              person.characters.first.toUpperCase(),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onTertiaryContainer,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      person,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      '${formatDuration(minutes)} · ${entries.length} '
-                      '${entries.length == 1 ? 'interaction' : 'interactions'}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontFeatures: tabularFigures,
-                      ),
-                    ),
-                  ],
-                ),
-                for (final entry in entries.take(3))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      entry.outcome.isEmpty
-                          ? entry.summary
-                          : '${entry.summary} — ${entry.outcome}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -5,23 +5,34 @@ class CheckInTotals {
     this.minutes = 0,
     this.byInitiative = const {},
     this.byCategory = const {},
+    this.bySubcategory = const {},
+    this.supportByPerson = const {},
   });
 
   final int minutes;
   final Map<String, int> byInitiative;
   final Map<String, int> byCategory;
+  final Map<String, int> bySubcategory;
+  final Map<String, int> supportByPerson;
+
+  int get supportMinutes =>
+      supportByPerson.values.fold(0, (total, value) => total + value);
 
   factory CheckInTotals.fromJson(Map<String, dynamic> json) => CheckInTotals(
-        minutes: (json['minutes'] as num?)?.round() ?? 0,
-        byInitiative: _intMap(json['byInitiative']),
-        byCategory: _intMap(json['byCategory']),
-      );
+    minutes: (json['minutes'] as num?)?.round() ?? 0,
+    byInitiative: _intMap(json['byInitiative']),
+    byCategory: _intMap(json['byCategory']),
+    bySubcategory: _intMap(json['bySubcategory']),
+    supportByPerson: _intMap(json['supportByPerson']),
+  );
 
   Map<String, dynamic> toJson() => {
-        'minutes': minutes,
-        'byInitiative': byInitiative,
-        'byCategory': byCategory,
-      };
+    'minutes': minutes,
+    'byInitiative': byInitiative,
+    'byCategory': byCategory,
+    'bySubcategory': bySubcategory,
+    'supportByPerson': supportByPerson,
+  };
 
   static Map<String, int> _intMap(Object? value) {
     if (value is! Map) return const {};
@@ -31,12 +42,80 @@ class CheckInTotals {
   }
 }
 
+/// The server-computed period a new check-in should start with. Both dates are
+/// inclusive local calendar days; the user may edit either before creating it.
+class CheckInDefaults {
+  const CheckInDefaults({
+    required this.periodStart,
+    required this.periodEnd,
+    this.lastFinalCheckInId = '',
+  });
+
+  final DateTime periodStart;
+  final DateTime periodEnd;
+  final String lastFinalCheckInId;
+
+  int get daysCovered {
+    if (periodEnd.isBefore(periodStart)) return 0;
+    return periodEnd.difference(periodStart).inDays + 1;
+  }
+}
+
+/// The ready-to-paste prompt block for one check-in. The service owns the
+/// instruction text; the client only displays and copies it.
+class CheckInPrompt {
+  const CheckInPrompt({
+    required this.prompt,
+    required this.variant,
+    this.promptVersion = 'v1',
+  });
+
+  final String prompt;
+  final CheckInPromptVariant variant;
+  final String promptVersion;
+}
+
+/// One versioned prompt instruction, previewed in Settings → AI. The text is
+/// service-owned so the client never duplicates prompt copy.
+class PromptTemplate {
+  const PromptTemplate({
+    required this.template,
+    required this.variant,
+    this.promptVersion = 'v1',
+  });
+
+  final String template;
+  final CheckInPromptVariant variant;
+  final String promptVersion;
+}
+
+/// One streamed chunk of AI generation. Text arrives incrementally; the final
+/// delta carries the persisted check-in with its model name and prompt version.
+class SummaryDelta {
+  const SummaryDelta({
+    this.text = '',
+    this.checkIn,
+    this.model = '',
+    this.promptVersion = '',
+  });
+
+  final String text;
+  final CheckIn? checkIn;
+  final String model;
+  final String promptVersion;
+
+  bool get isFinal => checkIn != null;
+}
+
 class CheckIn {
   const CheckIn({
     required this.id,
     required this.periodStart,
     required this.periodEnd,
     required this.createdAt,
+    this.updatedAt,
+    this.kind = CheckInKind.manager,
+    this.audience,
     this.state = CheckInState.draft,
     this.focusNotes = '',
     this.summaryMarkdown = '',
@@ -49,6 +128,9 @@ class CheckIn {
   final DateTime periodStart;
   final DateTime periodEnd;
   final DateTime createdAt;
+  final DateTime? updatedAt;
+  final CheckInKind kind;
+  final CheckInAudience? audience;
   final CheckInState state;
   final String focusNotes;
   final String summaryMarkdown;
@@ -56,14 +138,40 @@ class CheckIn {
   final String promptVersion;
   final CheckInTotals totals;
 
+  bool get isManager => kind == CheckInKind.manager;
+  bool get isPersonal => kind == CheckInKind.personal;
   bool get isFinal => state == CheckInState.final_;
-  int get daysCovered => periodEnd.difference(periodStart).inDays + 1;
+
+  /// Only a final manager check-in is read-only; a personal review remains
+  /// editable for its whole life.
+  bool get isReadOnly => isManager && isFinal;
+  bool get canFinalize => isManager && !isFinal;
+  String get audienceLabel => audience?.label ?? 'No audience';
+
+  /// The prompt template this check-in's kind and audience select. A manager
+  /// check-in defaults to the 1:1 variant when no audience is recorded.
+  CheckInPromptVariant get promptVariant {
+    if (isPersonal) return CheckInPromptVariant.personalReview;
+    if (audience == CheckInAudience.performanceReview) {
+      return CheckInPromptVariant.managerPerformanceReview;
+    }
+    return CheckInPromptVariant.managerOneOnOne;
+  }
+
+  int get daysCovered {
+    if (periodEnd.isBefore(periodStart)) return 0;
+    return periodEnd.difference(periodStart).inDays + 1;
+  }
 
   CheckIn copyWith({
     String? id,
     DateTime? periodStart,
     DateTime? periodEnd,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    CheckInKind? kind,
+    CheckInAudience? audience,
+    bool clearAudience = false,
     CheckInState? state,
     String? focusNotes,
     String? summaryMarkdown,
@@ -76,6 +184,9 @@ class CheckIn {
       periodStart: periodStart ?? this.periodStart,
       periodEnd: periodEnd ?? this.periodEnd,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      kind: kind ?? this.kind,
+      audience: clearAudience ? null : (audience ?? this.audience),
       state: state ?? this.state,
       focusNotes: focusNotes ?? this.focusNotes,
       summaryMarkdown: summaryMarkdown ?? this.summaryMarkdown,
@@ -92,6 +203,9 @@ class CheckIn {
       periodStart: start,
       periodEnd: _date(json['periodEnd']) ?? start,
       createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      updatedAt: _date(json['updatedAt']),
+      kind: CheckInKind.parse(json['kind']),
+      audience: CheckInAudience.parse(json['audience']),
       state: CheckInState.parse(json['state']),
       focusNotes: json['focusNotes']?.toString() ?? '',
       summaryMarkdown: json['summaryMarkdown']?.toString() ?? '',
@@ -106,17 +220,20 @@ class CheckIn {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'periodStart': _isoDate(periodStart),
-        'periodEnd': _isoDate(periodEnd),
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'state': state.wireName,
-        'focusNotes': focusNotes,
-        'summaryMarkdown': summaryMarkdown,
-        'summaryModel': summaryModel,
-        'promptVersion': promptVersion,
-        'totals': totals.toJson(),
-      };
+    'id': id,
+    'kind': kind.name,
+    'periodStart': _isoDate(periodStart),
+    'periodEnd': _isoDate(periodEnd),
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt?.toUtc().toIso8601String(),
+    'audience': audience?.wireName,
+    'state': state.wireName,
+    'focusNotes': focusNotes,
+    'summaryMarkdown': summaryMarkdown,
+    'summaryModel': summaryModel,
+    'promptVersion': promptVersion,
+    'totals': totals.toJson(),
+  };
 
   static DateTime? _date(Object? value) {
     if (value == null || value.toString().isEmpty) return null;

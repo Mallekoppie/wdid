@@ -114,6 +114,57 @@ func TestPeriodReportIsPerUserAndEmptyPeriodsAreZero(t *testing.T) {
 	}
 }
 
+func TestPeriodReportIncludesProjectMilestoneProgress(t *testing.T) {
+	database := newStore(t)
+	userID := "user-report"
+	_, subcategory := reportFixture(t, database, userID)
+	other := testSubcategory(userID, subcategory.CategoryID, "Dependency spike")
+	if err := database.SaveSubcategory(other); err != nil {
+		t.Fatalf("save other subcategory: %v", err)
+	}
+
+	now := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
+	milestones := []domain.Milestone{
+		{ID: "m1", UserID: userID, SubcategoryID: subcategory.ID, Title: "Plan", Done: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "m2", UserID: userID, SubcategoryID: subcategory.ID, Title: "Ship", DueDate: "2026-11-15", CreatedAt: now, UpdatedAt: now},
+		{ID: "m3", UserID: userID, SubcategoryID: other.ID, Title: "Spike", CreatedAt: now, UpdatedAt: now},
+	}
+	for _, milestone := range milestones {
+		if err := database.SaveMilestone(milestone); err != nil {
+			t.Fatalf("save milestone: %v", err)
+		}
+	}
+
+	// No entries fall in this period, but project completion is still reported.
+	report, err := database.PeriodReport(userID, "2026-01-01", "2026-01-07")
+	if err != nil {
+		t.Fatalf("period report: %v", err)
+	}
+	if len(report.Milestones) != 2 {
+		t.Fatalf("milestone progress = %+v, want two projects", report.Milestones)
+	}
+	progressByProject := map[string]domain.MilestoneProgress{}
+	for _, progress := range report.Milestones {
+		progressByProject[progress.SubcategoryID] = progress
+	}
+	projectProgress := progressByProject[subcategory.ID]
+	if projectProgress.Total != 2 || projectProgress.Done != 1 {
+		t.Fatalf("project milestone progress = %+v, want 1 of 2 done", projectProgress)
+	}
+	otherProgress := progressByProject[other.ID]
+	if otherProgress.Total != 1 || otherProgress.Done != 0 {
+		t.Fatalf("other milestone progress = %+v, want 0 of 1 done", otherProgress)
+	}
+
+	otherReport, err := database.PeriodReport("user-other", "2026-01-01", "2026-01-07")
+	if err != nil {
+		t.Fatalf("other period report: %v", err)
+	}
+	if len(otherReport.Milestones) != 0 {
+		t.Fatalf("other user milestone progress = %+v, want none", otherReport.Milestones)
+	}
+}
+
 func TestCurrentWeekRangeUsesTheUsersSettings(t *testing.T) {
 	database := newStore(t)
 	userID := "user-report"

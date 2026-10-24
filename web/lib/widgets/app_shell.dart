@@ -85,8 +85,10 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _logSupport() async {
     final state = AppStateScope.read(context);
-    final item = await showSupportDialog(context, state: state);
-    if (item != null && mounted) {
+    final saved = state.hasEntryService
+        ? await showServiceSupportDialog(context, state: state)
+        : await showSupportDialog(context, state: state);
+    if (saved != null && mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Support entry saved')));
     }
@@ -110,7 +112,7 @@ class _AppShellState extends State<AppShell> {
     }
     if (_isEditing) return KeyEventResult.ignored;
 
-    if (event.character == '?') {
+    if (event.character == '?' || key == LogicalKeyboardKey.question) {
       showShortcutsDialog(context);
       return KeyEventResult.handled;
     }

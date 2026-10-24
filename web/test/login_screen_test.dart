@@ -85,10 +85,7 @@ void main() {
     final auth = FakeAuthApi();
     await pumpLogin(tester, auth);
 
-    await tester.enterText(
-      find.byKey(const Key('register-name')),
-      'New User',
-    );
+    await tester.enterText(find.byKey(const Key('register-name')), 'New User');
     await tester.enterText(
       find.byKey(const Key('register-email')),
       'new@example.com',

@@ -7,6 +7,27 @@ abstract final class AppTheme {
   /// Deep Teal seed from the visual design system.
   static const Color seed = Color(0xFF00696D);
 
+  /// Focus rings must stay visible on every surface, in every theme.
+  static const double focusRingWidth = 2;
+
+  /// True when the active theme carries the Compact density.
+  static bool isCompact(BuildContext context) =>
+      Theme.of(context).visualDensity.vertical < 0;
+
+  /// A border that is only drawn while the control has keyboard focus.
+  static WidgetStateProperty<BorderSide?> _focusSide(
+    ColorScheme scheme, {
+    BorderSide? rest,
+    Color? focusColor,
+  }) => WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.focused)
+        ? BorderSide(
+            color: focusColor ?? scheme.primary,
+            width: focusRingWidth,
+          )
+        : rest,
+  );
+
   static ThemeData build(
     ThemePreference preference, {
     Brightness system = Brightness.light,
@@ -83,6 +104,8 @@ abstract final class AppTheme {
     return base.copyWith(
       scaffoldBackgroundColor: scaffold,
       canvasColor: scaffold,
+      focusColor: scheme.primary.withValues(alpha: highContrast ? 0.32 : 0.20),
+      hoverColor: scheme.primary.withValues(alpha: 0.08),
       textTheme: textTheme,
       visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
       listTileTheme: ListTileThemeData(
@@ -143,6 +166,8 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(AppRadius.input),
           ),
           textStyle: textTheme.labelLarge,
+        ).copyWith(
+          side: _focusSide(scheme, focusColor: scheme.onSurface),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -154,7 +179,7 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(AppRadius.input),
           ),
           textStyle: textTheme.labelLarge,
-        ),
+        ).copyWith(side: _focusSide(scheme, rest: BorderSide(color: outline))),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
@@ -164,14 +189,14 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(AppRadius.input),
           ),
           textStyle: textTheme.labelLarge,
-        ),
+        ).copyWith(side: _focusSide(scheme)),
       ),
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           minimumSize: const Size(32, 32),
           padding: const EdgeInsets.all(6),
           visualDensity: VisualDensity.compact,
-        ),
+        ).copyWith(side: _focusSide(scheme)),
       ),
       chipTheme: base.chipTheme.copyWith(
         side: BorderSide(color: outline),

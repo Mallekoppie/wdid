@@ -188,6 +188,20 @@ class FakeSettingsApi implements SettingsApi {
   SettingsFailure? failure;
   int updateCalls = 0;
 
+  BackupStatusInfo backupStatus = const BackupStatusInfo(
+    overdue: true,
+    backupDirectory: '/var/lib/wdid/backups',
+    backupIntervalHours: 6,
+    backupRetention: 30,
+  );
+  List<BackupSnapshot> backups = [];
+  SettingsFailure? backupFailure;
+  int statusCalls = 0;
+  int listCalls = 0;
+  int backupNowCalls = 0;
+  int restoreCalls = 0;
+  String? restoredName;
+
   @override
   Future<SettingsSnapshot> getSettings() async {
     if (failure != null) throw failure!;
@@ -204,5 +218,72 @@ class FakeSettingsApi implements SettingsApi {
       license: about.license,
     );
     return settings;
+  }
+
+  @override
+  Future<BackupStatusInfo> getBackupStatus() async {
+    statusCalls++;
+    if (backupFailure != null) throw backupFailure!;
+    return backupStatus;
+  }
+
+  @override
+  Future<List<BackupSnapshot>> listBackups() async {
+    listCalls++;
+    if (backupFailure != null) throw backupFailure!;
+    return List.unmodifiable(backups);
+  }
+
+  @override
+  Future<BackupNowResult> backupNow() async {
+    backupNowCalls++;
+    if (backupFailure != null) throw backupFailure!;
+    final now = DateTime.now();
+    final snapshot = BackupSnapshot(
+      name: 'wdid-manual-$backupNowCalls.db',
+      createdAt: now,
+      sizeBytes: 1024 * backupNowCalls,
+      manual: true,
+    );
+    backups = [snapshot, ...backups];
+    backupStatus = BackupStatusInfo(
+      lastBackupAt: snapshot.createdAt,
+      lastBackupSizeBytes: snapshot.sizeBytes,
+      overdue: backupStatus.overdue,
+      backupDirectory: backupStatus.backupDirectory,
+      backupIntervalHours: backupStatus.backupIntervalHours,
+      backupRetention: backupStatus.backupRetention,
+      scheduledCount: backupStatus.scheduledCount,
+      manualCount: backups.where((item) => item.manual).length,
+      lastBackupManual: true,
+    );
+    return BackupNowResult(backup: snapshot, status: backupStatus);
+  }
+
+  @override
+  Future<RestoreBackupResult> restoreBackup(String name) async {
+    restoreCalls++;
+    restoredName = name;
+    if (backupFailure != null) throw backupFailure!;
+    final snapshot = backups.firstWhere((item) => item.name == name);
+    backupStatus = BackupStatusInfo(
+      lastBackupAt: snapshot.createdAt,
+      lastBackupSizeBytes: snapshot.sizeBytes,
+      overdue: backupStatus.overdue,
+      backupDirectory: backupStatus.backupDirectory,
+      backupIntervalHours: backupStatus.backupIntervalHours,
+      backupRetention: backupStatus.backupRetention,
+      scheduledCount: backupStatus.scheduledCount,
+      manualCount: backupStatus.manualCount,
+      lastBackupManual: snapshot.manual,
+    );
+    backups = backups
+        .where((item) => !item.createdAt.isAfter(snapshot.createdAt))
+        .toList();
+    return RestoreBackupResult(
+      backup: snapshot,
+      status: backupStatus,
+      preRestorePath: '/var/lib/wdid/data/wdid-before-restore-test.db',
+    );
   }
 }

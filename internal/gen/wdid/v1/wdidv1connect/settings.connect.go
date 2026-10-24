@@ -39,12 +39,28 @@ const (
 	// SettingsServiceUpdateSettingsProcedure is the fully-qualified name of the SettingsService's
 	// UpdateSettings RPC.
 	SettingsServiceUpdateSettingsProcedure = "/wdid.v1.SettingsService/UpdateSettings"
+	// SettingsServiceBackupNowProcedure is the fully-qualified name of the SettingsService's BackupNow
+	// RPC.
+	SettingsServiceBackupNowProcedure = "/wdid.v1.SettingsService/BackupNow"
+	// SettingsServiceGetBackupStatusProcedure is the fully-qualified name of the SettingsService's
+	// GetBackupStatus RPC.
+	SettingsServiceGetBackupStatusProcedure = "/wdid.v1.SettingsService/GetBackupStatus"
+	// SettingsServiceListBackupsProcedure is the fully-qualified name of the SettingsService's
+	// ListBackups RPC.
+	SettingsServiceListBackupsProcedure = "/wdid.v1.SettingsService/ListBackups"
+	// SettingsServiceRestoreBackupProcedure is the fully-qualified name of the SettingsService's
+	// RestoreBackup RPC.
+	SettingsServiceRestoreBackupProcedure = "/wdid.v1.SettingsService/RestoreBackup"
 )
 
 // SettingsServiceClient is a client for the wdid.v1.SettingsService service.
 type SettingsServiceClient interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.GetSettingsResponse], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error)
+	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
+	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
+	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
+	RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error)
 }
 
 // NewSettingsServiceClient constructs a client for the wdid.v1.SettingsService service. By default,
@@ -70,13 +86,41 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
 			connect.WithClientOptions(opts...),
 		),
+		backupNow: connect.NewClient[v1.BackupNowRequest, v1.BackupNowResponse](
+			httpClient,
+			baseURL+SettingsServiceBackupNowProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("BackupNow")),
+			connect.WithClientOptions(opts...),
+		),
+		getBackupStatus: connect.NewClient[v1.GetBackupStatusRequest, v1.GetBackupStatusResponse](
+			httpClient,
+			baseURL+SettingsServiceGetBackupStatusProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("GetBackupStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		listBackups: connect.NewClient[v1.ListBackupsRequest, v1.ListBackupsResponse](
+			httpClient,
+			baseURL+SettingsServiceListBackupsProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("ListBackups")),
+			connect.WithClientOptions(opts...),
+		),
+		restoreBackup: connect.NewClient[v1.RestoreBackupRequest, v1.RestoreBackupResponse](
+			httpClient,
+			baseURL+SettingsServiceRestoreBackupProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("RestoreBackup")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // settingsServiceClient implements SettingsServiceClient.
 type settingsServiceClient struct {
-	getSettings    *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
-	updateSettings *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
+	getSettings     *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
+	updateSettings  *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
+	backupNow       *connect.Client[v1.BackupNowRequest, v1.BackupNowResponse]
+	getBackupStatus *connect.Client[v1.GetBackupStatusRequest, v1.GetBackupStatusResponse]
+	listBackups     *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResponse]
+	restoreBackup   *connect.Client[v1.RestoreBackupRequest, v1.RestoreBackupResponse]
 }
 
 // GetSettings calls wdid.v1.SettingsService.GetSettings.
@@ -89,10 +133,34 @@ func (c *settingsServiceClient) UpdateSettings(ctx context.Context, req *connect
 	return c.updateSettings.CallUnary(ctx, req)
 }
 
+// BackupNow calls wdid.v1.SettingsService.BackupNow.
+func (c *settingsServiceClient) BackupNow(ctx context.Context, req *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error) {
+	return c.backupNow.CallUnary(ctx, req)
+}
+
+// GetBackupStatus calls wdid.v1.SettingsService.GetBackupStatus.
+func (c *settingsServiceClient) GetBackupStatus(ctx context.Context, req *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error) {
+	return c.getBackupStatus.CallUnary(ctx, req)
+}
+
+// ListBackups calls wdid.v1.SettingsService.ListBackups.
+func (c *settingsServiceClient) ListBackups(ctx context.Context, req *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error) {
+	return c.listBackups.CallUnary(ctx, req)
+}
+
+// RestoreBackup calls wdid.v1.SettingsService.RestoreBackup.
+func (c *settingsServiceClient) RestoreBackup(ctx context.Context, req *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error) {
+	return c.restoreBackup.CallUnary(ctx, req)
+}
+
 // SettingsServiceHandler is an implementation of the wdid.v1.SettingsService service.
 type SettingsServiceHandler interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.GetSettingsResponse], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error)
+	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
+	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
+	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
+	RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error)
 }
 
 // NewSettingsServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -114,12 +182,44 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
 		connect.WithHandlerOptions(opts...),
 	)
+	settingsServiceBackupNowHandler := connect.NewUnaryHandler(
+		SettingsServiceBackupNowProcedure,
+		svc.BackupNow,
+		connect.WithSchema(settingsServiceMethods.ByName("BackupNow")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceGetBackupStatusHandler := connect.NewUnaryHandler(
+		SettingsServiceGetBackupStatusProcedure,
+		svc.GetBackupStatus,
+		connect.WithSchema(settingsServiceMethods.ByName("GetBackupStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceListBackupsHandler := connect.NewUnaryHandler(
+		SettingsServiceListBackupsProcedure,
+		svc.ListBackups,
+		connect.WithSchema(settingsServiceMethods.ByName("ListBackups")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceRestoreBackupHandler := connect.NewUnaryHandler(
+		SettingsServiceRestoreBackupProcedure,
+		svc.RestoreBackup,
+		connect.WithSchema(settingsServiceMethods.ByName("RestoreBackup")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wdid.v1.SettingsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SettingsServiceGetSettingsProcedure:
 			settingsServiceGetSettingsHandler.ServeHTTP(w, r)
 		case SettingsServiceUpdateSettingsProcedure:
 			settingsServiceUpdateSettingsHandler.ServeHTTP(w, r)
+		case SettingsServiceBackupNowProcedure:
+			settingsServiceBackupNowHandler.ServeHTTP(w, r)
+		case SettingsServiceGetBackupStatusProcedure:
+			settingsServiceGetBackupStatusHandler.ServeHTTP(w, r)
+		case SettingsServiceListBackupsProcedure:
+			settingsServiceListBackupsHandler.ServeHTTP(w, r)
+		case SettingsServiceRestoreBackupProcedure:
+			settingsServiceRestoreBackupHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -135,4 +235,20 @@ func (UnimplementedSettingsServiceHandler) GetSettings(context.Context, *connect
 
 func (UnimplementedSettingsServiceHandler) UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.UpdateSettings is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.BackupNow is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.GetBackupStatus is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.ListBackups is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) RestoreBackup(context.Context, *connect.Request[v1.RestoreBackupRequest]) (*connect.Response[v1.RestoreBackupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.RestoreBackup is not implemented"))
 }

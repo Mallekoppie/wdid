@@ -146,6 +146,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
         initialRoute: '/initiatives',
         categoryApiBuilder: (_) => categories,
         summaryApiBuilder: (_) =>

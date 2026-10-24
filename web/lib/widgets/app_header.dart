@@ -17,19 +17,19 @@ class AppHeader extends StatelessWidget {
     final state = AppStateScope.read(context);
     final item = await showEntryDialog(context, state: state);
     if (item != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Entry saved')));
     }
   }
 
   Future<void> _logSupport(BuildContext context) async {
     final state = AppStateScope.read(context);
-    final item = await showSupportDialog(context, state: state);
-    if (item != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Support entry saved')),
-      );
+    final saved = state.hasEntryService
+        ? await showServiceSupportDialog(context, state: state)
+        : await showSupportDialog(context, state: state);
+    if (saved != null && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Support entry saved')));
     }
   }
 
@@ -42,9 +42,7 @@ class AppHeader extends StatelessWidget {
       height: AppSizes.headerHeight,
       decoration: BoxDecoration(
         color: scheme.surface,
-        border: Border(
-          bottom: BorderSide(color: scheme.outlineVariant),
-        ),
+        border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: LayoutBuilder(
@@ -89,8 +87,7 @@ class AppHeader extends StatelessWidget {
               const Spacer(),
               if (state.isDemo)
                 Tooltip(
-                  message:
-                      'Demo adapter — the Go service contract is not connected yet',
+                  message: 'Demo adapter — the Go service contract is not connected yet',
                   child: StatusBadge(
                     label: 'Demo data',
                     color: scheme.secondary,

@@ -227,8 +227,7 @@ class _InitiativeDialogState extends State<_InitiativeDialog> {
               max: 100,
               divisions: 20,
               label: '$_progress%',
-              onChanged: (value) =>
-                  setState(() => _progress = value.round()),
+              onChanged: (value) => setState(() => _progress = value.round()),
             ),
             formGap,
             TextFormField(

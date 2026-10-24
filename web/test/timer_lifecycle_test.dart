@@ -57,6 +57,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
         initialRoute: '/today',
         categoryApiBuilder: (_) => FakeCategoryApi(
           categories: [category('cat-1', 'Initiatives')],

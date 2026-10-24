@@ -54,7 +54,8 @@ class WorkItem {
   DateTime get startedLocal => startedAt.toLocal();
   DateTime get endedLocal => endedAt.toLocal();
 
-  bool get isSupport => type == WorkType.category && (person?.isNotEmpty ?? false);
+  bool get isSupport =>
+      type == WorkType.category && (person?.isNotEmpty ?? false);
 
   SupportMode? get supportMode =>
       isSupport ? SupportMode.parse(category) : null;
@@ -99,7 +100,9 @@ class WorkItem {
     return WorkItem(
       id: id ?? this.id,
       type: type ?? this.type,
-      initiativeId: clearInitiative ? null : (initiativeId ?? this.initiativeId),
+      initiativeId: clearInitiative
+          ? null
+          : (initiativeId ?? this.initiativeId),
       category: category ?? this.category,
       categoryLabel: categoryLabel ?? this.categoryLabel,
       startedAt: startedAt ?? this.startedAt,
@@ -129,8 +132,8 @@ class WorkItem {
     final type = json['type'] != null
         ? WorkType.parse(json['type'])
         : kind == 'initiative'
-            ? WorkType.initiative
-            : WorkType.category;
+        ? WorkType.initiative
+        : WorkType.category;
     final supportMode = _nullableString(supportJson?['mode']);
     return WorkItem(
       id: json['id'].toString(),
@@ -146,15 +149,18 @@ class WorkItem {
       localDate: localDate,
       summary:
           json['summary']?.toString() ?? json['description']?.toString() ?? '',
-      outcome: json['outcome']?.toString() ??
+      outcome:
+          json['outcome']?.toString() ??
           _nullableString(supportJson?['impact']) ??
           '',
       notes: json['notes']?.toString() ?? '',
       links: _links(json['links']),
       tags: _strings(json['tags']),
-      person: _nullableString(json['person']) ??
+      person:
+          _nullableString(json['person']) ??
           _nullableString(supportJson?['person']),
-      team: _nullableString(json['team']) ??
+      team:
+          _nullableString(json['team']) ??
           _nullableString(supportJson?['team']),
       source: json['source']?.toString() ?? 'manual',
       createdAt: _date(json['createdAt']) ?? DateTime.now(),
@@ -163,26 +169,26 @@ class WorkItem {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': type.name,
-        'initiativeId': initiativeId,
-        'category': category,
-        'categoryLabel': categoryLabel,
-        'startedAt': startedAt.toUtc().toIso8601String(),
-        'endedAt': endedAt.toUtc().toIso8601String(),
-        'minutes': minutes,
-        'localDate': localDate,
-        'summary': summary,
-        'outcome': outcome,
-        'notes': notes,
-        'links': links.map((link) => link.toJson()).toList(),
-        'tags': tags,
-        'person': person,
-        'team': team,
-        'source': source,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'updatedAt': updatedAt.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'type': type.name,
+    'initiativeId': initiativeId,
+    'category': category,
+    'categoryLabel': categoryLabel,
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    'endedAt': endedAt.toUtc().toIso8601String(),
+    'minutes': minutes,
+    'localDate': localDate,
+    'summary': summary,
+    'outcome': outcome,
+    'notes': notes,
+    'links': links.map((link) => link.toJson()).toList(),
+    'tags': tags,
+    'person': person,
+    'team': team,
+    'source': source,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
 
   static DateTime? _date(Object? value) {
     if (value == null || value.toString().isEmpty) return null;

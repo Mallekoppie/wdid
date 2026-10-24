@@ -347,3 +347,27 @@ func noteIDs(notes []domain.Note) string {
 	}
 	return strings.Join(ids, ",")
 }
+
+func TestBuildMilestoneProgressCountsDonePerProject(t *testing.T) {
+	milestones := []domain.Milestone{
+		{ID: "m1", SubcategoryID: "sub-billing", Title: "Plan", Done: true},
+		{ID: "m2", SubcategoryID: "sub-billing", Title: "Ship"},
+		{ID: "m3", SubcategoryID: "sub-billing", Title: "Verify", DueDate: "2026-11-01"},
+		{ID: "m4", SubcategoryID: "sub-spike", Title: "Spike"},
+	}
+
+	progress := domain.BuildMilestoneProgress(milestones)
+	if len(progress) != 2 {
+		t.Fatalf("progress = %+v, want two projects", progress)
+	}
+	if progress[0].SubcategoryID != "sub-billing" || progress[0].Total != 3 || progress[0].Done != 1 {
+		t.Fatalf("billing progress = %+v, want 1 of 3 done", progress[0])
+	}
+	if progress[1].SubcategoryID != "sub-spike" || progress[1].Total != 1 || progress[1].Done != 0 {
+		t.Fatalf("spike progress = %+v, want 0 of 1 done", progress[1])
+	}
+
+	if empty := domain.BuildMilestoneProgress(nil); len(empty) != 0 {
+		t.Fatalf("empty progress = %+v, want no projects", empty)
+	}
+}

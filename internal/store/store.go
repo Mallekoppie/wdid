@@ -64,7 +64,11 @@ const (
 // Store persists domain records in BoltDB through goslow's platform helpers.
 // Every user-owned record lives in a bucket prefixed with the user identifier,
 // which keeps tenant data isolated by construction.
-type Store struct{}
+type Store struct {
+	// dbPath is the live database file. Restore needs it to replace and reopen
+	// the file that goslow opened through its package-level handle.
+	dbPath string
+}
 
 // Open configures goslow and opens the BoltDB database.
 func Open(cfg config.Config) (*Store, error) {
@@ -99,7 +103,7 @@ func Open(cfg config.Config) (*Store, error) {
 		return nil, fmt.Errorf("rebuild entry indexes: %w", err)
 	}
 
-	return &Store{}, nil
+	return &Store{dbPath: cfg.DBPath}, nil
 }
 
 // Close releases the database handle.

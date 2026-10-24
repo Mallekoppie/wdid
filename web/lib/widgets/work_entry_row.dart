@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 import '../utils/time_utils.dart';
 
@@ -27,6 +28,7 @@ class WorkEntryRow extends StatelessWidget {
     final scheme = theme.colorScheme;
     final support = category?.role == CategoryRole.support;
     final accent = support ? scheme.tertiary : scheme.primary;
+    final verticalPadding = AppTheme.isCompact(context) ? 6.0 : 10.0;
 
     final attribution = [
       category?.name ?? 'Unknown category',
@@ -45,7 +47,12 @@ class WorkEntryRow extends StatelessWidget {
           ),
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(AppSpacing.sm, 10, 12, 10),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        verticalPadding,
+        12,
+        verticalPadding,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

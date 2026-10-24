@@ -476,28 +476,92 @@ func (x *PeriodNote) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// PeriodReport is the single authoritative aggregate for an inclusive range of
-// local calendar dates. Escaping the period is impossible: the service resolves
-// the day boundaries in the user's configured timezone.
-type PeriodReport struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	FromDate      string                     `protobuf:"bytes,1,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
-	ToDate        string                     `protobuf:"bytes,2,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
-	Total         *durationpb.Duration       `protobuf:"bytes,3,opt,name=total,proto3" json:"total,omitempty"`
-	EntryCount    int32                      `protobuf:"varint,4,opt,name=entry_count,json=entryCount,proto3" json:"entry_count,omitempty"`
-	Categories    []*CategoryAllocation      `protobuf:"bytes,5,rep,name=categories,proto3" json:"categories,omitempty"`
-	Subcategories []*SubcategoryAllocation   `protobuf:"bytes,6,rep,name=subcategories,proto3" json:"subcategories,omitempty"`
-	SupportPeople []*SupportPersonAllocation `protobuf:"bytes,7,rep,name=support_people,json=supportPeople,proto3" json:"support_people,omitempty"`
-	SupportModes  []*SupportModeAllocation   `protobuf:"bytes,8,rep,name=support_modes,json=supportModes,proto3" json:"support_modes,omitempty"`
-	Weeks         []*WeekRhythm              `protobuf:"bytes,9,rep,name=weeks,proto3" json:"weeks,omitempty"`
-	Notes         []*PeriodNote              `protobuf:"bytes,10,rep,name=notes,proto3" json:"notes,omitempty"`
+// MilestoneProgress is the completion count for one project. Completion is a
+// property of the project rather than the period, so the report includes every
+// project with milestones, even one with no time inside the period.
+type MilestoneProgress struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SubcategoryId string                 `protobuf:"bytes,1,opt,name=subcategory_id,json=subcategoryId,proto3" json:"subcategory_id,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Done          int32                  `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *MilestoneProgress) Reset() {
+	*x = MilestoneProgress{}
+	mi := &file_summaries_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MilestoneProgress) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MilestoneProgress) ProtoMessage() {}
+
+func (x *MilestoneProgress) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MilestoneProgress.ProtoReflect.Descriptor instead.
+func (*MilestoneProgress) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *MilestoneProgress) GetSubcategoryId() string {
+	if x != nil {
+		return x.SubcategoryId
+	}
+	return ""
+}
+
+func (x *MilestoneProgress) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *MilestoneProgress) GetDone() int32 {
+	if x != nil {
+		return x.Done
+	}
+	return 0
+}
+
+// PeriodReport is the single authoritative aggregate for an inclusive range of
+// local calendar dates. Escaping the period is impossible: the service resolves
+// the day boundaries in the user's configured timezone.
+type PeriodReport struct {
+	state             protoimpl.MessageState     `protogen:"open.v1"`
+	FromDate          string                     `protobuf:"bytes,1,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
+	ToDate            string                     `protobuf:"bytes,2,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
+	Total             *durationpb.Duration       `protobuf:"bytes,3,opt,name=total,proto3" json:"total,omitempty"`
+	EntryCount        int32                      `protobuf:"varint,4,opt,name=entry_count,json=entryCount,proto3" json:"entry_count,omitempty"`
+	Categories        []*CategoryAllocation      `protobuf:"bytes,5,rep,name=categories,proto3" json:"categories,omitempty"`
+	Subcategories     []*SubcategoryAllocation   `protobuf:"bytes,6,rep,name=subcategories,proto3" json:"subcategories,omitempty"`
+	SupportPeople     []*SupportPersonAllocation `protobuf:"bytes,7,rep,name=support_people,json=supportPeople,proto3" json:"support_people,omitempty"`
+	SupportModes      []*SupportModeAllocation   `protobuf:"bytes,8,rep,name=support_modes,json=supportModes,proto3" json:"support_modes,omitempty"`
+	Weeks             []*WeekRhythm              `protobuf:"bytes,9,rep,name=weeks,proto3" json:"weeks,omitempty"`
+	Notes             []*PeriodNote              `protobuf:"bytes,10,rep,name=notes,proto3" json:"notes,omitempty"`
+	MilestoneProgress []*MilestoneProgress       `protobuf:"bytes,11,rep,name=milestone_progress,json=milestoneProgress,proto3" json:"milestone_progress,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
 func (x *PeriodReport) Reset() {
 	*x = PeriodReport{}
-	mi := &file_summaries_proto_msgTypes[6]
+	mi := &file_summaries_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -509,7 +573,7 @@ func (x *PeriodReport) String() string {
 func (*PeriodReport) ProtoMessage() {}
 
 func (x *PeriodReport) ProtoReflect() protoreflect.Message {
-	mi := &file_summaries_proto_msgTypes[6]
+	mi := &file_summaries_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -522,7 +586,7 @@ func (x *PeriodReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PeriodReport.ProtoReflect.Descriptor instead.
 func (*PeriodReport) Descriptor() ([]byte, []int) {
-	return file_summaries_proto_rawDescGZIP(), []int{6}
+	return file_summaries_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PeriodReport) GetFromDate() string {
@@ -595,6 +659,13 @@ func (x *PeriodReport) GetNotes() []*PeriodNote {
 	return nil
 }
 
+func (x *PeriodReport) GetMilestoneProgress() []*MilestoneProgress {
+	if x != nil {
+		return x.MilestoneProgress
+	}
+	return nil
+}
+
 type GetPeriodReportRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Inclusive local calendar dates in YYYY-MM-DD form, resolved in the user's
@@ -611,7 +682,7 @@ type GetPeriodReportRequest struct {
 
 func (x *GetPeriodReportRequest) Reset() {
 	*x = GetPeriodReportRequest{}
-	mi := &file_summaries_proto_msgTypes[7]
+	mi := &file_summaries_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -623,7 +694,7 @@ func (x *GetPeriodReportRequest) String() string {
 func (*GetPeriodReportRequest) ProtoMessage() {}
 
 func (x *GetPeriodReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_summaries_proto_msgTypes[7]
+	mi := &file_summaries_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -636,7 +707,7 @@ func (x *GetPeriodReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPeriodReportRequest.ProtoReflect.Descriptor instead.
 func (*GetPeriodReportRequest) Descriptor() ([]byte, []int) {
-	return file_summaries_proto_rawDescGZIP(), []int{7}
+	return file_summaries_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetPeriodReportRequest) GetFromDate() string {
@@ -669,7 +740,7 @@ type GetPeriodReportResponse struct {
 
 func (x *GetPeriodReportResponse) Reset() {
 	*x = GetPeriodReportResponse{}
-	mi := &file_summaries_proto_msgTypes[8]
+	mi := &file_summaries_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -681,7 +752,7 @@ func (x *GetPeriodReportResponse) String() string {
 func (*GetPeriodReportResponse) ProtoMessage() {}
 
 func (x *GetPeriodReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_summaries_proto_msgTypes[8]
+	mi := &file_summaries_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -694,7 +765,7 @@ func (x *GetPeriodReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPeriodReportResponse.ProtoReflect.Descriptor instead.
 func (*GetPeriodReportResponse) Descriptor() ([]byte, []int) {
-	return file_summaries_proto_rawDescGZIP(), []int{8}
+	return file_summaries_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetPeriodReportResponse) GetReport() *PeriodReport {
@@ -704,11 +775,553 @@ func (x *GetPeriodReportResponse) GetReport() *PeriodReport {
 	return nil
 }
 
+// ExportFile is one file in a generated export bundle. The bundle is returned
+// to the caller and is never written into the database directory.
+type ExportFile struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Content       string                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportFile) Reset() {
+	*x = ExportFile{}
+	mi := &file_summaries_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportFile) ProtoMessage() {}
+
+func (x *ExportFile) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportFile.ProtoReflect.Descriptor instead.
+func (*ExportFile) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ExportFile) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ExportFile) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+// BuildExportRequest scopes a bundle to a period or to a saved check-in. When
+// check_in_id is set, the check-in's period scopes the bundle and the dates are
+// ignored.
+type BuildExportRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Inclusive local calendar dates in YYYY-MM-DD form.
+	FromDate      string `protobuf:"bytes,1,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
+	ToDate        string `protobuf:"bytes,2,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
+	CheckInId     string `protobuf:"bytes,3,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BuildExportRequest) Reset() {
+	*x = BuildExportRequest{}
+	mi := &file_summaries_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildExportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildExportRequest) ProtoMessage() {}
+
+func (x *BuildExportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildExportRequest.ProtoReflect.Descriptor instead.
+func (*BuildExportRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *BuildExportRequest) GetFromDate() string {
+	if x != nil {
+		return x.FromDate
+	}
+	return ""
+}
+
+func (x *BuildExportRequest) GetToDate() string {
+	if x != nil {
+		return x.ToDate
+	}
+	return ""
+}
+
+func (x *BuildExportRequest) GetCheckInId() string {
+	if x != nil {
+		return x.CheckInId
+	}
+	return ""
+}
+
+type BuildExportResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Directory name the client presents, for example
+	// wdid-export-2026-07-01_2026-10-02.
+	Directory string `protobuf:"bytes,1,opt,name=directory,proto3" json:"directory,omitempty"`
+	// summary.md, data.json, entries.csv and support.csv, in that order.
+	Files         []*ExportFile `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BuildExportResponse) Reset() {
+	*x = BuildExportResponse{}
+	mi := &file_summaries_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildExportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildExportResponse) ProtoMessage() {}
+
+func (x *BuildExportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildExportResponse.ProtoReflect.Descriptor instead.
+func (*BuildExportResponse) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *BuildExportResponse) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+func (x *BuildExportResponse) GetFiles() []*ExportFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+// BuildPromptRequest returns the ready-to-paste prompt block followed by
+// summary.md for the same scope as BuildExport.
+type BuildPromptRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	FromDate  string                 `protobuf:"bytes,1,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
+	ToDate    string                 `protobuf:"bytes,2,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
+	CheckInId string                 `protobuf:"bytes,3,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
+	// Overrides the template. Unspecified follows the check-in's kind and
+	// audience, or the manager 1:1 default for a bare period.
+	Variant       CheckInPromptVariant `protobuf:"varint,4,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BuildPromptRequest) Reset() {
+	*x = BuildPromptRequest{}
+	mi := &file_summaries_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildPromptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildPromptRequest) ProtoMessage() {}
+
+func (x *BuildPromptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildPromptRequest.ProtoReflect.Descriptor instead.
+func (*BuildPromptRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *BuildPromptRequest) GetFromDate() string {
+	if x != nil {
+		return x.FromDate
+	}
+	return ""
+}
+
+func (x *BuildPromptRequest) GetToDate() string {
+	if x != nil {
+		return x.ToDate
+	}
+	return ""
+}
+
+func (x *BuildPromptRequest) GetCheckInId() string {
+	if x != nil {
+		return x.CheckInId
+	}
+	return ""
+}
+
+func (x *BuildPromptRequest) GetVariant() CheckInPromptVariant {
+	if x != nil {
+		return x.Variant
+	}
+	return CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED
+}
+
+type BuildPromptResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The versioned instruction followed by summary.md.
+	Prompt        string               `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	PromptVersion string               `protobuf:"bytes,2,opt,name=prompt_version,json=promptVersion,proto3" json:"prompt_version,omitempty"`
+	Variant       CheckInPromptVariant `protobuf:"varint,3,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BuildPromptResponse) Reset() {
+	*x = BuildPromptResponse{}
+	mi := &file_summaries_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildPromptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildPromptResponse) ProtoMessage() {}
+
+func (x *BuildPromptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildPromptResponse.ProtoReflect.Descriptor instead.
+func (*BuildPromptResponse) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *BuildPromptResponse) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+func (x *BuildPromptResponse) GetPromptVersion() string {
+	if x != nil {
+		return x.PromptVersion
+	}
+	return ""
+}
+
+func (x *BuildPromptResponse) GetVariant() CheckInPromptVariant {
+	if x != nil {
+		return x.Variant
+	}
+	return CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED
+}
+
+// GetPromptTemplateRequest asks for one versioned instruction. The text lives
+// in a single place in the service; the client only previews it in Settings.
+type GetPromptTemplateRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unspecified returns the manager 1:1 default.
+	Variant       CheckInPromptVariant `protobuf:"varint,1,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPromptTemplateRequest) Reset() {
+	*x = GetPromptTemplateRequest{}
+	mi := &file_summaries_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPromptTemplateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPromptTemplateRequest) ProtoMessage() {}
+
+func (x *GetPromptTemplateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPromptTemplateRequest.ProtoReflect.Descriptor instead.
+func (*GetPromptTemplateRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetPromptTemplateRequest) GetVariant() CheckInPromptVariant {
+	if x != nil {
+		return x.Variant
+	}
+	return CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED
+}
+
+type GetPromptTemplateResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The instruction alone, without any period data.
+	Template      string               `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
+	PromptVersion string               `protobuf:"bytes,2,opt,name=prompt_version,json=promptVersion,proto3" json:"prompt_version,omitempty"`
+	Variant       CheckInPromptVariant `protobuf:"varint,3,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPromptTemplateResponse) Reset() {
+	*x = GetPromptTemplateResponse{}
+	mi := &file_summaries_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPromptTemplateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPromptTemplateResponse) ProtoMessage() {}
+
+func (x *GetPromptTemplateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPromptTemplateResponse.ProtoReflect.Descriptor instead.
+func (*GetPromptTemplateResponse) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetPromptTemplateResponse) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *GetPromptTemplateResponse) GetPromptVersion() string {
+	if x != nil {
+		return x.PromptVersion
+	}
+	return ""
+}
+
+func (x *GetPromptTemplateResponse) GetVariant() CheckInPromptVariant {
+	if x != nil {
+		return x.Variant
+	}
+	return CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED
+}
+
+// GenerateSummaryRequest streams a model response into one check-in's summary.
+// Only the check-in's selected period is sent to the provider.
+type GenerateSummaryRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	CheckInId string                 `protobuf:"bytes,1,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
+	// Confirms replacing a summary the user edited by hand. Required when the
+	// stored summary was edited; a final check-in is always rejected.
+	OverwriteManualEdits bool `protobuf:"varint,2,opt,name=overwrite_manual_edits,json=overwriteManualEdits,proto3" json:"overwrite_manual_edits,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *GenerateSummaryRequest) Reset() {
+	*x = GenerateSummaryRequest{}
+	mi := &file_summaries_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateSummaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateSummaryRequest) ProtoMessage() {}
+
+func (x *GenerateSummaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateSummaryRequest.ProtoReflect.Descriptor instead.
+func (*GenerateSummaryRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GenerateSummaryRequest) GetCheckInId() string {
+	if x != nil {
+		return x.CheckInId
+	}
+	return ""
+}
+
+func (x *GenerateSummaryRequest) GetOverwriteManualEdits() bool {
+	if x != nil {
+		return x.OverwriteManualEdits
+	}
+	return false
+}
+
+// GenerateSummaryDelta is one streamed chunk. Text arrives incrementally; the
+// final message carries the persisted check-in, the model name and the prompt
+// version. A failure ends the stream without persisting anything.
+type GenerateSummaryDelta struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Text  string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	// Set on the final message only, after the summary is saved.
+	CheckIn       *CheckIn `protobuf:"bytes,2,opt,name=check_in,json=checkIn,proto3" json:"check_in,omitempty"`
+	Model         string   `protobuf:"bytes,3,opt,name=model,proto3" json:"model,omitempty"`
+	PromptVersion string   `protobuf:"bytes,4,opt,name=prompt_version,json=promptVersion,proto3" json:"prompt_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GenerateSummaryDelta) Reset() {
+	*x = GenerateSummaryDelta{}
+	mi := &file_summaries_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GenerateSummaryDelta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenerateSummaryDelta) ProtoMessage() {}
+
+func (x *GenerateSummaryDelta) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenerateSummaryDelta.ProtoReflect.Descriptor instead.
+func (*GenerateSummaryDelta) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GenerateSummaryDelta) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *GenerateSummaryDelta) GetCheckIn() *CheckIn {
+	if x != nil {
+		return x.CheckIn
+	}
+	return nil
+}
+
+func (x *GenerateSummaryDelta) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *GenerateSummaryDelta) GetPromptVersion() string {
+	if x != nil {
+		return x.PromptVersion
+	}
+	return ""
+}
+
 var File_summaries_proto protoreflect.FileDescriptor
 
 const file_summaries_proto_rawDesc = "" +
 	"\n" +
-	"\x0fsummaries.proto\x12\awdid.v1\x1a\x10categories.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x01\n" +
+	"\x0fsummaries.proto\x12\awdid.v1\x1a\x10categories.proto\x1a\x0fcheck_ins.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x01\n" +
 	"\x12CategoryAllocation\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12\x12\n" +
@@ -749,7 +1362,11 @@ const file_summaries_proto_rawDesc = "" +
 	"\x0esubcategory_id\x18\x03 \x01(\tR\rsubcategoryId\x12\x12\n" +
 	"\x04text\x18\x04 \x01(\tR\x04text\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xfd\x03\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"d\n" +
+	"\x11MilestoneProgress\x12%\n" +
+	"\x0esubcategory_id\x18\x01 \x01(\tR\rsubcategoryId\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04done\x18\x03 \x01(\x05R\x04done\"\xc8\x04\n" +
 	"\fPeriodReport\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
 	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12/\n" +
@@ -764,15 +1381,54 @@ const file_summaries_proto_rawDesc = "" +
 	"\rsupport_modes\x18\b \x03(\v2\x1e.wdid.v1.SupportModeAllocationR\fsupportModes\x12)\n" +
 	"\x05weeks\x18\t \x03(\v2\x13.wdid.v1.WeekRhythmR\x05weeks\x12)\n" +
 	"\x05notes\x18\n" +
-	" \x03(\v2\x13.wdid.v1.PeriodNoteR\x05notes\"q\n" +
+	" \x03(\v2\x13.wdid.v1.PeriodNoteR\x05notes\x12I\n" +
+	"\x12milestone_progress\x18\v \x03(\v2\x1a.wdid.v1.MilestoneProgressR\x11milestoneProgress\"q\n" +
 	"\x16GetPeriodReportRequest\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
 	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12!\n" +
 	"\fcurrent_week\x18\x03 \x01(\bR\vcurrentWeek\"H\n" +
 	"\x17GetPeriodReportResponse\x12-\n" +
-	"\x06report\x18\x01 \x01(\v2\x15.wdid.v1.PeriodReportR\x06report2f\n" +
+	"\x06report\x18\x01 \x01(\v2\x15.wdid.v1.PeriodReportR\x06report\":\n" +
+	"\n" +
+	"ExportFile\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\acontent\x18\x02 \x01(\tR\acontent\"j\n" +
+	"\x12BuildExportRequest\x12\x1b\n" +
+	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
+	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12\x1e\n" +
+	"\vcheck_in_id\x18\x03 \x01(\tR\tcheckInId\"^\n" +
+	"\x13BuildExportResponse\x12\x1c\n" +
+	"\tdirectory\x18\x01 \x01(\tR\tdirectory\x12)\n" +
+	"\x05files\x18\x02 \x03(\v2\x13.wdid.v1.ExportFileR\x05files\"\xa3\x01\n" +
+	"\x12BuildPromptRequest\x12\x1b\n" +
+	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
+	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12\x1e\n" +
+	"\vcheck_in_id\x18\x03 \x01(\tR\tcheckInId\x127\n" +
+	"\avariant\x18\x04 \x01(\x0e2\x1d.wdid.v1.CheckInPromptVariantR\avariant\"\x8d\x01\n" +
+	"\x13BuildPromptResponse\x12\x16\n" +
+	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12%\n" +
+	"\x0eprompt_version\x18\x02 \x01(\tR\rpromptVersion\x127\n" +
+	"\avariant\x18\x03 \x01(\x0e2\x1d.wdid.v1.CheckInPromptVariantR\avariant\"S\n" +
+	"\x18GetPromptTemplateRequest\x127\n" +
+	"\avariant\x18\x01 \x01(\x0e2\x1d.wdid.v1.CheckInPromptVariantR\avariant\"\x97\x01\n" +
+	"\x19GetPromptTemplateResponse\x12\x1a\n" +
+	"\btemplate\x18\x01 \x01(\tR\btemplate\x12%\n" +
+	"\x0eprompt_version\x18\x02 \x01(\tR\rpromptVersion\x127\n" +
+	"\avariant\x18\x03 \x01(\x0e2\x1d.wdid.v1.CheckInPromptVariantR\avariant\"n\n" +
+	"\x16GenerateSummaryRequest\x12\x1e\n" +
+	"\vcheck_in_id\x18\x01 \x01(\tR\tcheckInId\x124\n" +
+	"\x16overwrite_manual_edits\x18\x02 \x01(\bR\x14overwriteManualEdits\"\x94\x01\n" +
+	"\x14GenerateSummaryDelta\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12+\n" +
+	"\bcheck_in\x18\x02 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn\x12\x14\n" +
+	"\x05model\x18\x03 \x01(\tR\x05model\x12%\n" +
+	"\x0eprompt_version\x18\x04 \x01(\tR\rpromptVersion2\xab\x03\n" +
 	"\x0eSummaryService\x12T\n" +
-	"\x0fGetPeriodReport\x12\x1f.wdid.v1.GetPeriodReportRequest\x1a .wdid.v1.GetPeriodReportResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
+	"\x0fGetPeriodReport\x12\x1f.wdid.v1.GetPeriodReportRequest\x1a .wdid.v1.GetPeriodReportResponse\x12H\n" +
+	"\vBuildExport\x12\x1b.wdid.v1.BuildExportRequest\x1a\x1c.wdid.v1.BuildExportResponse\x12H\n" +
+	"\vBuildPrompt\x12\x1b.wdid.v1.BuildPromptRequest\x1a\x1c.wdid.v1.BuildPromptResponse\x12Z\n" +
+	"\x11GetPromptTemplate\x12!.wdid.v1.GetPromptTemplateRequest\x1a\".wdid.v1.GetPromptTemplateResponse\x12S\n" +
+	"\x0fGenerateSummary\x12\x1f.wdid.v1.GenerateSummaryRequest\x1a\x1d.wdid.v1.GenerateSummaryDelta0\x01B9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
 
 var (
 	file_summaries_proto_rawDescOnce sync.Once
@@ -786,44 +1442,71 @@ func file_summaries_proto_rawDescGZIP() []byte {
 	return file_summaries_proto_rawDescData
 }
 
-var file_summaries_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_summaries_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_summaries_proto_goTypes = []any{
-	(*CategoryAllocation)(nil),      // 0: wdid.v1.CategoryAllocation
-	(*SubcategoryAllocation)(nil),   // 1: wdid.v1.SubcategoryAllocation
-	(*SupportPersonAllocation)(nil), // 2: wdid.v1.SupportPersonAllocation
-	(*SupportModeAllocation)(nil),   // 3: wdid.v1.SupportModeAllocation
-	(*WeekRhythm)(nil),              // 4: wdid.v1.WeekRhythm
-	(*PeriodNote)(nil),              // 5: wdid.v1.PeriodNote
-	(*PeriodReport)(nil),            // 6: wdid.v1.PeriodReport
-	(*GetPeriodReportRequest)(nil),  // 7: wdid.v1.GetPeriodReportRequest
-	(*GetPeriodReportResponse)(nil), // 8: wdid.v1.GetPeriodReportResponse
-	(CategoryRole)(0),               // 9: wdid.v1.CategoryRole
-	(*durationpb.Duration)(nil),     // 10: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),   // 11: google.protobuf.Timestamp
+	(*CategoryAllocation)(nil),        // 0: wdid.v1.CategoryAllocation
+	(*SubcategoryAllocation)(nil),     // 1: wdid.v1.SubcategoryAllocation
+	(*SupportPersonAllocation)(nil),   // 2: wdid.v1.SupportPersonAllocation
+	(*SupportModeAllocation)(nil),     // 3: wdid.v1.SupportModeAllocation
+	(*WeekRhythm)(nil),                // 4: wdid.v1.WeekRhythm
+	(*PeriodNote)(nil),                // 5: wdid.v1.PeriodNote
+	(*MilestoneProgress)(nil),         // 6: wdid.v1.MilestoneProgress
+	(*PeriodReport)(nil),              // 7: wdid.v1.PeriodReport
+	(*GetPeriodReportRequest)(nil),    // 8: wdid.v1.GetPeriodReportRequest
+	(*GetPeriodReportResponse)(nil),   // 9: wdid.v1.GetPeriodReportResponse
+	(*ExportFile)(nil),                // 10: wdid.v1.ExportFile
+	(*BuildExportRequest)(nil),        // 11: wdid.v1.BuildExportRequest
+	(*BuildExportResponse)(nil),       // 12: wdid.v1.BuildExportResponse
+	(*BuildPromptRequest)(nil),        // 13: wdid.v1.BuildPromptRequest
+	(*BuildPromptResponse)(nil),       // 14: wdid.v1.BuildPromptResponse
+	(*GetPromptTemplateRequest)(nil),  // 15: wdid.v1.GetPromptTemplateRequest
+	(*GetPromptTemplateResponse)(nil), // 16: wdid.v1.GetPromptTemplateResponse
+	(*GenerateSummaryRequest)(nil),    // 17: wdid.v1.GenerateSummaryRequest
+	(*GenerateSummaryDelta)(nil),      // 18: wdid.v1.GenerateSummaryDelta
+	(CategoryRole)(0),                 // 19: wdid.v1.CategoryRole
+	(*durationpb.Duration)(nil),       // 20: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),     // 21: google.protobuf.Timestamp
+	(CheckInPromptVariant)(0),         // 22: wdid.v1.CheckInPromptVariant
+	(*CheckIn)(nil),                   // 23: wdid.v1.CheckIn
 }
 var file_summaries_proto_depIdxs = []int32{
-	9,  // 0: wdid.v1.CategoryAllocation.role:type_name -> wdid.v1.CategoryRole
-	10, // 1: wdid.v1.CategoryAllocation.duration:type_name -> google.protobuf.Duration
-	10, // 2: wdid.v1.SubcategoryAllocation.duration:type_name -> google.protobuf.Duration
-	10, // 3: wdid.v1.SupportPersonAllocation.duration:type_name -> google.protobuf.Duration
-	10, // 4: wdid.v1.SupportModeAllocation.duration:type_name -> google.protobuf.Duration
-	10, // 5: wdid.v1.WeekRhythm.duration:type_name -> google.protobuf.Duration
-	11, // 6: wdid.v1.PeriodNote.created_at:type_name -> google.protobuf.Timestamp
-	10, // 7: wdid.v1.PeriodReport.total:type_name -> google.protobuf.Duration
+	19, // 0: wdid.v1.CategoryAllocation.role:type_name -> wdid.v1.CategoryRole
+	20, // 1: wdid.v1.CategoryAllocation.duration:type_name -> google.protobuf.Duration
+	20, // 2: wdid.v1.SubcategoryAllocation.duration:type_name -> google.protobuf.Duration
+	20, // 3: wdid.v1.SupportPersonAllocation.duration:type_name -> google.protobuf.Duration
+	20, // 4: wdid.v1.SupportModeAllocation.duration:type_name -> google.protobuf.Duration
+	20, // 5: wdid.v1.WeekRhythm.duration:type_name -> google.protobuf.Duration
+	21, // 6: wdid.v1.PeriodNote.created_at:type_name -> google.protobuf.Timestamp
+	20, // 7: wdid.v1.PeriodReport.total:type_name -> google.protobuf.Duration
 	0,  // 8: wdid.v1.PeriodReport.categories:type_name -> wdid.v1.CategoryAllocation
 	1,  // 9: wdid.v1.PeriodReport.subcategories:type_name -> wdid.v1.SubcategoryAllocation
 	2,  // 10: wdid.v1.PeriodReport.support_people:type_name -> wdid.v1.SupportPersonAllocation
 	3,  // 11: wdid.v1.PeriodReport.support_modes:type_name -> wdid.v1.SupportModeAllocation
 	4,  // 12: wdid.v1.PeriodReport.weeks:type_name -> wdid.v1.WeekRhythm
 	5,  // 13: wdid.v1.PeriodReport.notes:type_name -> wdid.v1.PeriodNote
-	6,  // 14: wdid.v1.GetPeriodReportResponse.report:type_name -> wdid.v1.PeriodReport
-	7,  // 15: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
-	8,  // 16: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
-	16, // [16:17] is the sub-list for method output_type
-	15, // [15:16] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	6,  // 14: wdid.v1.PeriodReport.milestone_progress:type_name -> wdid.v1.MilestoneProgress
+	7,  // 15: wdid.v1.GetPeriodReportResponse.report:type_name -> wdid.v1.PeriodReport
+	10, // 16: wdid.v1.BuildExportResponse.files:type_name -> wdid.v1.ExportFile
+	22, // 17: wdid.v1.BuildPromptRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 18: wdid.v1.BuildPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 19: wdid.v1.GetPromptTemplateRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 20: wdid.v1.GetPromptTemplateResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	23, // 21: wdid.v1.GenerateSummaryDelta.check_in:type_name -> wdid.v1.CheckIn
+	8,  // 22: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
+	11, // 23: wdid.v1.SummaryService.BuildExport:input_type -> wdid.v1.BuildExportRequest
+	13, // 24: wdid.v1.SummaryService.BuildPrompt:input_type -> wdid.v1.BuildPromptRequest
+	15, // 25: wdid.v1.SummaryService.GetPromptTemplate:input_type -> wdid.v1.GetPromptTemplateRequest
+	17, // 26: wdid.v1.SummaryService.GenerateSummary:input_type -> wdid.v1.GenerateSummaryRequest
+	9,  // 27: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
+	12, // 28: wdid.v1.SummaryService.BuildExport:output_type -> wdid.v1.BuildExportResponse
+	14, // 29: wdid.v1.SummaryService.BuildPrompt:output_type -> wdid.v1.BuildPromptResponse
+	16, // 30: wdid.v1.SummaryService.GetPromptTemplate:output_type -> wdid.v1.GetPromptTemplateResponse
+	18, // 31: wdid.v1.SummaryService.GenerateSummary:output_type -> wdid.v1.GenerateSummaryDelta
+	27, // [27:32] is the sub-list for method output_type
+	22, // [22:27] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_summaries_proto_init() }
@@ -832,13 +1515,14 @@ func file_summaries_proto_init() {
 		return
 	}
 	file_categories_proto_init()
+	file_check_ins_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_summaries_proto_rawDesc), len(file_summaries_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

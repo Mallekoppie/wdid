@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 
 import 'data/auth_api.dart';
 import 'data/category_api.dart';
+import 'data/checkin_api.dart';
 import 'data/entry_api.dart';
+import 'data/milestone_api.dart';
+import 'data/note_api.dart';
 import 'data/repository.dart';
 import 'data/settings_api.dart';
 import 'data/summary_api.dart';
@@ -22,16 +25,25 @@ class WdidApp extends StatefulWidget {
     super.key,
     required this.repository,
     required this.authApi,
+    this.initialSession,
     this.initialRoute,
     this.categoryApiBuilder,
     this.settingsApiBuilder,
     this.entryApiBuilder,
     this.timerApiBuilder,
     this.summaryApiBuilder,
+    this.noteApiBuilder,
+    this.milestoneApiBuilder,
+    this.checkInApiBuilder,
+    this.isAdmin,
   });
 
   final WdidRepository repository;
   final AuthApi authApi;
+
+  /// A session to start with. Production leaves this null and signs in; tests
+  /// inject one to exercise the signed-in app without a login round-trip.
+  final AuthSession? initialSession;
   final String? initialRoute;
 
   /// Builds the service-backed taxonomy client with a token accessor. Tests
@@ -50,6 +62,19 @@ class WdidApp extends StatefulWidget {
   /// Builds the service-backed period-report client with a token accessor.
   final SummaryApi Function(String? Function() token)? summaryApiBuilder;
 
+  /// Builds the service-backed day/project note client with a token accessor.
+  final NoteApi Function(String? Function() token)? noteApiBuilder;
+
+  /// Builds the service-backed project milestone client with a token accessor.
+  final MilestoneApi Function(String? Function() token)? milestoneApiBuilder;
+
+  /// Builds the service-backed check-in client with a token accessor.
+  final CheckInApi Function(String? Function() token)? checkInApiBuilder;
+
+  /// Resolves the signed-in account's admin role. Defaults to the auth session;
+  /// widget tests inject it directly.
+  final bool Function()? isAdmin;
+
   @override
   State<WdidApp> createState() => _WdidAppState();
 }
@@ -62,7 +87,7 @@ class _WdidAppState extends State<WdidApp> {
   @override
   void initState() {
     super.initState();
-    _auth = AuthState(widget.authApi);
+    _auth = AuthState(widget.authApi, initialSession: widget.initialSession);
     String? token() => _auth.session?.token;
     _state = AppState(
       widget.repository,
@@ -71,9 +96,16 @@ class _WdidAppState extends State<WdidApp> {
       entryApi: widget.entryApiBuilder?.call(token),
       timerApi: widget.timerApiBuilder?.call(token),
       summaryApi: widget.summaryApiBuilder?.call(token),
+      noteApi: widget.noteApiBuilder?.call(token),
+      milestoneApi: widget.milestoneApiBuilder?.call(token),
+      checkInApi: widget.checkInApiBuilder?.call(token),
+      roleCheck: widget.isAdmin ?? () => _auth.session?.user.role == 'admin',
     );
     _router = buildRouter(_state, _auth, initialLocation: widget.initialRoute);
-    unawaited(_state.load());
+    // The service-backed clients send the session bearer token, so loading
+    // before sign-in would only produce unauthenticated errors. The login
+    // screen reloads once a session exists.
+    if (_auth.signedIn) unawaited(_state.load());
   }
 
   @override

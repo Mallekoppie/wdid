@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 (Category management end-to-end), 06 (Quick capture and today's list)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] A timer starts, pauses, resumes, and stops; a user has at most one active timer.
 - [x] Paused time is excluded from elapsed time.
@@ -14,3 +14,8 @@
 - [x] The timer pill is visible on every screen and survives a refresh or second tab.
 - [x] Timer state is server-owned; the client only renders it.
 - [x] Connect and gRPC-Web tests cover the transitions, the one-minute rule, and the block limit.
+
+## Comments
+
+- Implemented and committed in `b57394b` ("implement timer lifecycle end-to-end"), with the searchable category selector follow-up in `543c05f`; every box was ticked at implementation time.
+- Bookkeeping reconciliation (2026-10-23): the issue file never received a Comments entry or the post-implementation status when the work landed, so both were added during a status sweep. No code changes were made during reconciliation.

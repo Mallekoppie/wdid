@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// Note is free text attached to a day, a subcategory (project), or both. Day
+// notes and project notes share this one model, so they are stored, listed and
+// reported the same way.
+message Note {
+  string id = 1;
+  // Local calendar date (YYYY-MM-DD) the note belongs to. Empty for a note
+  // that is attached only to a subcategory.
+  string date = 2;
+  // Empty for a day note; the project id for a project note.
+  string subcategory_id = 3;
+  string text = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+// ListNotesRequest narrows the caller's notes. The filters combine with AND,
+// so a day note is listed by date and a project note by subcategory.
+message ListNotesRequest {
+  string date = 1;
+  string subcategory_id = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListNotesResponse {
+  // Newest first.
+  repeated Note notes = 1;
+  string next_page_token = 2;
+}
+
+// CreateNoteRequest attaches a note to a day, a subcategory, or both.
+message CreateNoteRequest {
+  string date = 1;
+  string subcategory_id = 2;
+  string text = 3;
+}
+
+message CreateNoteResponse {
+  Note note = 1;
+}
+
+// UpdateNoteRequest replaces the mutable fields. The note's owner and creation
+// time always come from the stored record.
+message UpdateNoteRequest {
+  string id = 1;
+  string date = 2;
+  string subcategory_id = 3;
+  string text = 4;
+}
+
+message UpdateNoteResponse {
+  Note note = 1;
+}
+
+message DeleteNoteRequest {
+  string id = 1;
+}
+
+message DeleteNoteResponse {}
+
+// NoteService owns day notes and project notes. Every RPC requires a bearer
+// token; the account is derived from that token, never from a request field.
+service NoteService {
+  rpc ListNotes(ListNotesRequest) returns (ListNotesResponse);
+  rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse);
+  rpc UpdateNote(UpdateNoteRequest) returns (UpdateNoteResponse);
+  rpc DeleteNote(DeleteNoteRequest) returns (DeleteNoteResponse);
+}

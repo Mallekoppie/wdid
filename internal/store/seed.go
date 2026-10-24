@@ -182,6 +182,14 @@ func ensureEntryIndexes() error {
 		return nil
 	}
 
+	return rebuildEntryIndexes()
+}
+
+// rebuildEntryIndexes rebuilds every user's entry indexes unconditionally. A
+// restore uses it even when the snapshot already records the current index
+// version, because a snapshot may predate an index or have been written while
+// an index was incomplete.
+func rebuildEntryIndexes() error {
 	return platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
 		users := tx.Bucket([]byte(sysUsersBucket))
 		if users != nil {

@@ -109,3 +109,41 @@ class CheckInStateBadge extends StatelessWidget {
     return StatusBadge(label: state.label, color: color);
   }
 }
+
+/// Distinguishes a manager check-in from a personal review in a listing.
+class CheckInKindBadge extends StatelessWidget {
+  const CheckInKindBadge({super.key, required this.kind});
+
+  final CheckInKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return StatusBadge(
+      label: kind.label,
+      color: kind == CheckInKind.manager ? scheme.primary : scheme.secondary,
+      icon: kind == CheckInKind.manager
+          ? Icons.supervisor_account_outlined
+          : Icons.person_outline,
+    );
+  }
+}
+
+/// The audience of a manager check-in. It is omitted for personal reviews.
+class CheckInAudienceBadge extends StatelessWidget {
+  const CheckInAudienceBadge({super.key, required this.audience});
+
+  final CheckInAudience audience;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return StatusBadge(
+      label: audience.label,
+      color: scheme.onSurfaceVariant,
+      icon: audience == CheckInAudience.oneOnOne
+          ? Icons.forum_outlined
+          : Icons.workspace_premium_outlined,
+    );
+  }
+}

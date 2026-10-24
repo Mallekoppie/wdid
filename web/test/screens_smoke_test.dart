@@ -21,6 +21,7 @@ void main() {
       WdidApp(
         repository: DemoWdidRepository(latency: Duration.zero),
         authApi: FakeAuthApi(),
+        initialSession: route == '/login' ? null : signedInSession(),
         initialRoute: route,
       ),
     );
@@ -35,7 +36,7 @@ void main() {
     '/support': 'Log support',
     '/checkins': 'Create check-in',
     '/checkins/checkin-generated': 'Summary',
-    '/settings': 'Data',
+    '/settings': 'Data & backups',
     '/login': 'Sign in',
   };
 
@@ -48,11 +49,7 @@ void main() {
   }
 
   testWidgets('Today renders at a tablet width', (tester) async {
-    await pumpRoute(
-      tester,
-      '/today',
-      size: const Size(820, 760),
-    );
+    await pumpRoute(tester, '/today', size: const Size(820, 760));
     expect(find.text('Start a timer'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

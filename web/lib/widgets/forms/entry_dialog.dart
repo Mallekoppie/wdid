@@ -77,12 +77,17 @@ class _EntryDialogState extends State<_EntryDialog> {
     _outcome = TextEditingController(text: existing?.outcome ?? '');
     _notes = TextEditingController(text: existing?.notes ?? '');
     _tags = TextEditingController(text: existing?.tags.join(', ') ?? '');
-    final link = existing?.links.isNotEmpty == true ? existing!.links.first : null;
+    final link = existing?.links.isNotEmpty == true
+        ? existing!.links.first
+        : null;
     _linkLabel = TextEditingController(text: link?.label ?? '');
     _linkUrl = TextEditingController(text: link?.url ?? '');
     _duration = TextEditingController(
-      text: (existing?.minutes ?? widget.initialMinutes ?? widget.state.settings.defaultDurationMinutes)
-          .toString(),
+      text:
+          (existing?.minutes ??
+                  widget.initialMinutes ??
+                  widget.state.settings.defaultDurationMinutes)
+              .toString(),
     );
     _date = existing?.startedLocal ?? DateTime.now();
     _time = TimeOfDay.fromDateTime(existing?.startedLocal ?? DateTime.now());
@@ -135,10 +140,7 @@ class _EntryDialogState extends State<_EntryDialog> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: _time,
-    );
+    final picked = await showTimePicker(context: context, initialTime: _time);
     if (picked != null) setState(() => _time = picked);
   }
 
@@ -315,9 +317,7 @@ class _EntryDialogState extends State<_EntryDialog> {
                   child: TextFormField(
                     controller: _duration,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Minutes',
-                    ),
+                    decoration: const InputDecoration(labelText: 'Minutes'),
                     validator: (value) {
                       final minutes = int.tryParse(value?.trim() ?? '');
                       if (minutes == null || minutes < 1 || minutes > 1440) {
@@ -357,9 +357,7 @@ class _EntryDialogState extends State<_EntryDialog> {
               controller: _notes,
               minLines: 2,
               maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Notes (optional)',
-              ),
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
             ),
             formGap,
             Row(
@@ -400,15 +398,19 @@ class _EntryDialogState extends State<_EntryDialog> {
       ),
       actions: Row(
         children: [
-          Text(
-            widget.existing == null
-                ? 'Entries are validated by the service.'
-                : 'Editing entry · ${widget.existing!.localDate}',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+          Expanded(
+            child: Text(
+              widget.existing == null
+                  ? 'Entries are validated by the service.'
+                  : 'Editing entry · ${widget.existing!.localDate}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: AppSpacing.sm),
           TextButton(
             onPressed: _saving ? null : () => Navigator.of(context).pop(),
             child: const Text('Cancel'),

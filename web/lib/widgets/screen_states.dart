@@ -16,9 +16,9 @@ class ScreenBody extends StatelessWidget {
     return switch (state.status) {
       AppStatus.loading => const LoadingView(),
       AppStatus.error => ErrorView(
-          message: state.loadError ?? 'The journal could not be loaded.',
-          onRetry: state.reload,
-        ),
+        message: state.loadError ?? 'The journal could not be loaded.',
+        onRetry: state.reload,
+      ),
       AppStatus.ready => child,
     };
   }
@@ -55,11 +55,7 @@ class LoadingView extends StatelessWidget {
 }
 
 class ErrorView extends StatelessWidget {
-  const ErrorView({
-    super.key,
-    required this.message,
-    this.onRetry,
-  });
+  const ErrorView({super.key, required this.message, this.onRetry});
 
   final String message;
   final VoidCallback? onRetry;

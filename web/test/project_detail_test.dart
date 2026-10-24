@@ -7,13 +7,20 @@ import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/category_api.dart';
 import 'package:wdid_web/data/demo_repository.dart';
 import 'package:wdid_web/data/entry_api.dart';
+import 'package:wdid_web/data/milestone_api.dart';
+import 'package:wdid_web/data/note_api.dart';
 import 'package:wdid_web/data/summary_api.dart';
+import 'package:wdid_web/models/milestone.dart';
+import 'package:wdid_web/models/note.dart';
 import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
+import 'package:wdid_web/utils/time_utils.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
+import 'fake_milestone_api.dart';
+import 'fake_note_api.dart';
 import 'fake_preferences_api.dart';
 import 'fake_summary_api.dart';
 
@@ -88,6 +95,8 @@ PeriodReport reportWithProject({
   int entryCount = 2,
   String lastActivityDate = '2026-10-22',
   String lastActivityDescription = 'Backfill review',
+  int milestoneDone = 0,
+  int milestoneTotal = 0,
 }) {
   return PeriodReport(
     fromDate: '2026-10-01',
@@ -114,6 +123,34 @@ PeriodReport reportWithProject({
         lastActivityDescription: lastActivityDescription,
       ),
     ],
+    milestoneProgress: [
+      if (milestoneTotal > 0)
+        MilestoneProgress(
+          subcategoryId: 'sub-invoice',
+          total: milestoneTotal,
+          done: milestoneDone,
+        ),
+    ],
+  );
+}
+
+Milestone milestone(
+  String id, {
+  String title = 'Plan the backfill',
+  String dueDate = '',
+  bool done = false,
+  String subcategoryId = 'sub-invoice',
+  DateTime? createdAt,
+}) {
+  final created = createdAt ?? DateTime.utc(2026, 10, 20, 9);
+  return Milestone(
+    id: id,
+    subcategoryId: subcategoryId,
+    title: title,
+    dueDate: dueDate,
+    done: done,
+    createdAt: created,
+    updatedAt: created,
   );
 }
 
@@ -142,6 +179,8 @@ Future<void> pumpDetail(
   FakeCategoryApi? categoryApi,
   FakeEntryApi? entryApi,
   FakeSummaryApi? summaryApi,
+  FakeNoteApi? noteApi,
+  FakeMilestoneApi? milestoneApi,
   bool settle = true,
 }) async {
   tester.view.physicalSize = const Size(1400, 1600);
@@ -153,6 +192,7 @@ Future<void> pumpDetail(
     WdidApp(
       repository: DemoWdidRepository(latency: Duration.zero),
       authApi: FakeAuthApi(),
+      initialSession: signedInSession(),
       initialRoute: route,
       categoryApiBuilder: (_) => categoryApi ?? projectTaxonomy(),
       entryApiBuilder: (_) =>
@@ -177,6 +217,8 @@ Future<void> pumpDetail(
           ),
       summaryApiBuilder: (_) =>
           summaryApi ?? FakeSummaryApi(report: reportWithProject()),
+      noteApiBuilder: noteApi == null ? null : (_) => noteApi,
+      milestoneApiBuilder: milestoneApi == null ? null : (_) => milestoneApi,
     ),
   );
   if (settle) {
@@ -503,4 +545,523 @@ void main() {
     expect(newest, lessThan(oldest));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('lists project notes newest first and creates a new one', (
+    tester,
+  ) async {
+    final noteApi = FakeNoteApi(
+      notes: [
+        projectNote(
+          'note-old',
+          text: 'Rollback plan needs a rehearsal.',
+          createdAt: DateTime.utc(2026, 10, 18, 9),
+        ),
+        projectNote(
+          'note-new',
+          text: 'Cutover window booked.',
+          createdAt: DateTime.utc(2026, 10, 22, 9),
+        ),
+      ],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cutover window booked.'), findsOneWidget);
+    expect(find.text('Rollback plan needs a rehearsal.'), findsOneWidget);
+    final newest = tester.getTopLeft(find.text('Cutover window booked.')).dy;
+    final oldest = tester
+        .getTopLeft(find.text('Rollback plan needs a rehearsal.'))
+        .dy;
+    expect(newest, lessThan(oldest));
+    expect(noteApi.lastSubcategoryId, 'sub-invoice');
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Add note').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText ==
+                'Decisions, context, or things to revisit…',
+      ),
+      'Backfill is stable enough to track.',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save note'));
+    await tester.pumpAndSettle();
+
+    expect(noteApi.drafts, hasLength(1));
+    expect(noteApi.drafts.single.initiativeId, 'sub-invoice');
+    expect(noteApi.drafts.single.date, isoDate(DateTime.now()));
+    expect(noteApi.drafts.single.text, 'Backfill is stable enough to track.');
+    expect(find.text('Backfill is stable enough to track.'), findsWidgets);
+    expect(find.text('Note added'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits an existing project note', (tester) async {
+    final noteApi = FakeNoteApi(
+      notes: [
+        projectNote(
+          'note-1',
+          text: 'First version.',
+          createdAt: DateTime.utc(2026, 10, 22, 9),
+        ),
+      ],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit note'));
+    await tester.pumpAndSettle();
+
+    final field = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText ==
+              'Decisions, context, or things to revisit…',
+    );
+    await tester.enterText(field, 'Second version.');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save note'));
+    await tester.pumpAndSettle();
+
+    expect(noteApi.updateCalls, 1);
+    expect(noteApi.notes.single.text, 'Second version.');
+    expect(find.text('Second version.'), findsWidgets);
+    expect(find.text('First version.'), findsNothing);
+    expect(find.text('Note updated'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deletes a project note after confirmation', (tester) async {
+    final noteApi = FakeNoteApi(
+      notes: [
+        projectNote(
+          'note-1',
+          text: 'Temporary decision.',
+          createdAt: DateTime.utc(2026, 10, 22, 9),
+        ),
+      ],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete note'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(noteApi.deleteCalls, 1);
+    expect(noteApi.notes, isEmpty);
+    expect(find.text('Temporary decision.'), findsNothing);
+    expect(find.text('No notes yet'), findsOneWidget);
+    expect(find.text('Note deleted'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows an empty notes state', (tester) async {
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: FakeNoteApi(),
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No notes yet'), findsOneWidget);
+    expect(
+      find.text('Capture decisions and context while they are fresh.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows a loading state while project notes load', (tester) async {
+    final gate = Completer<List<Note>>();
+    final noteApi = FakeNoteApi()..projectGate = gate;
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+      settle: false,
+    );
+
+    // Let the taxonomy, entries and report settle while notes stay in flight.
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.tap(find.text('Notes'));
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    gate.complete([
+      projectNote(
+        'note-1',
+        text: 'Loaded project note.',
+        createdAt: DateTime.utc(2026, 10, 22, 9),
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Loaded project note.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retries notes after a service failure', (tester) async {
+    final noteApi = FakeNoteApi()
+      ..listFailure = const NoteFailure('The notes are unavailable.');
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+    expect(find.text('The notes are unavailable.'), findsOneWidget);
+
+    noteApi.listFailure = null;
+    noteApi.notes.add(
+      projectNote(
+        'note-1',
+        text: 'Recovered note.',
+        createdAt: DateTime.utc(2026, 10, 22, 9),
+      ),
+    );
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recovered note.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('validates an empty note before saving', (tester) async {
+    final noteApi = FakeNoteApi();
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Add note').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save note'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Write a note first.'), findsOneWidget);
+    expect(noteApi.drafts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an archived project cannot change its notes', (tester) async {
+    final noteApi = FakeNoteApi(
+      notes: [
+        projectNote(
+          'note-1',
+          text: 'Historical decision.',
+          createdAt: DateTime.utc(2026, 10, 22, 9),
+        ),
+      ],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      categoryApi: projectTaxonomy(archived: true),
+      noteApi: noteApi,
+    );
+
+    await tester.tap(find.text('Notes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Historical decision.'), findsOneWidget);
+    expect(find.text('Add note'), findsNothing);
+    expect(find.byTooltip('Edit note'), findsNothing);
+    expect(find.byTooltip('Delete note'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lists milestones and creates one from the project detail', (
+    tester,
+  ) async {
+    final milestoneApi = FakeMilestoneApi(
+      milestones: [
+        milestone(
+          'milestone-1',
+          title: 'Plan the backfill',
+          dueDate: '2026-10-25',
+        ),
+        milestone('milestone-2', title: 'Ship to production', done: true),
+      ],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+
+    expect(milestoneApi.lastSubcategoryId, 'sub-invoice');
+    expect(find.text('Plan the backfill'), findsOneWidget);
+    expect(find.text('Ship to production'), findsOneWidget);
+    expect(find.text('Due 25 Oct'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Add milestone'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'Rehearse the rollback');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save milestone'));
+    await tester.pumpAndSettle();
+
+    expect(milestoneApi.drafts, hasLength(1));
+    expect(milestoneApi.drafts.single.subcategoryId, 'sub-invoice');
+    expect(milestoneApi.drafts.single.title, 'Rehearse the rollback');
+    expect(milestoneApi.drafts.single.dueDate, '');
+    expect(find.text('Rehearse the rollback'), findsOneWidget);
+    expect(find.text('Milestone added'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('marks a milestone done and not done', (tester) async {
+    final milestoneApi = FakeMilestoneApi(
+      milestones: [milestone('milestone-1', title: 'Plan the backfill')],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse);
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+    expect(milestoneApi.updateCalls, 1);
+    expect(milestoneApi.milestones.single.done, isTrue);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+    expect(milestoneApi.updateCalls, 2);
+    expect(milestoneApi.milestones.single.done, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits an existing milestone', (tester) async {
+    final milestoneApi = FakeMilestoneApi(
+      milestones: [milestone('milestone-1', title: 'First plan')],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit milestone'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), 'Second plan');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save milestone'));
+    await tester.pumpAndSettle();
+
+    expect(milestoneApi.updateCalls, 1);
+    expect(milestoneApi.milestones.single.title, 'Second plan');
+    expect(find.text('Second plan'), findsOneWidget);
+    expect(find.text('First plan'), findsNothing);
+    expect(find.text('Milestone updated'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('deletes a milestone after confirmation', (tester) async {
+    final milestoneApi = FakeMilestoneApi(
+      milestones: [milestone('milestone-1', title: 'Temporary checkpoint')],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete milestone'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(milestoneApi.deleteCalls, 1);
+    expect(milestoneApi.milestones, isEmpty);
+    expect(find.text('Temporary checkpoint'), findsNothing);
+    expect(find.text('No milestones yet'), findsOneWidget);
+    expect(find.text('Milestone deleted'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows an empty milestones state', (tester) async {
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: FakeMilestoneApi(),
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No milestones yet'), findsOneWidget);
+    expect(find.text('Add milestone'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows a loading state while milestones load', (tester) async {
+    final gate = Completer<List<Milestone>>();
+    final milestoneApi = FakeMilestoneApi()..listGate = gate;
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+      settle: false,
+    );
+
+    // Let the taxonomy, entries, notes and report settle while milestones stay
+    // in flight.
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.tap(find.text('Milestones'));
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    gate.complete([milestone('milestone-1', title: 'Loaded milestone')]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Loaded milestone'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retries milestones after a service failure', (tester) async {
+    final milestoneApi = FakeMilestoneApi()
+      ..listFailure = const MilestoneFailure('The milestones are unavailable.');
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+    expect(find.text('The milestones are unavailable.'), findsOneWidget);
+
+    milestoneApi.listFailure = null;
+    milestoneApi.milestones.add(
+      milestone('milestone-1', title: 'Recovered milestone'),
+    );
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recovered milestone'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('validates an empty milestone title before saving', (
+    tester,
+  ) async {
+    final milestoneApi = FakeMilestoneApi();
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add milestone'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save milestone'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Milestone title is required.'), findsOneWidget);
+    expect(milestoneApi.drafts, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the report shows how many milestones are complete', (
+    tester,
+  ) async {
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      summaryApi: FakeSummaryApi(
+        report: reportWithProject(milestoneDone: 2, milestoneTotal: 5),
+      ),
+      milestoneApi: FakeMilestoneApi(),
+    );
+
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Milestones'), findsWidgets);
+    expect(find.text('2 of 5 complete'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an archived project cannot change its milestones', (
+    tester,
+  ) async {
+    final milestoneApi = FakeMilestoneApi(
+      milestones: [milestone('milestone-1', title: 'Historical checkpoint')],
+    );
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      categoryApi: projectTaxonomy(archived: true),
+      milestoneApi: milestoneApi,
+    );
+
+    await tester.tap(find.text('Milestones'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Historical checkpoint'), findsOneWidget);
+    expect(find.text('Add milestone'), findsNothing);
+    expect(find.byTooltip('Edit milestone'), findsNothing);
+    expect(find.byTooltip('Delete milestone'), findsNothing);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).onChanged, isNull);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Note projectNote(
+  String id, {
+  required String text,
+  DateTime? createdAt,
+  String subcategoryId = 'sub-invoice',
+}) {
+  return Note(
+    id: id,
+    date: '2026-10-22',
+    initiativeId: subcategoryId,
+    text: text,
+    createdAt: createdAt ?? DateTime.utc(2026, 10, 22, 9),
+  );
 }

@@ -102,6 +102,7 @@ Future<FakeEntryApi> pumpLog(
       key: UniqueKey(),
       repository: DemoWdidRepository(latency: Duration.zero),
       authApi: FakeAuthApi(),
+      initialSession: signedInSession(),
       initialRoute: '/log',
       categoryApiBuilder: (_) => FakeCategoryApi(
         categories: [

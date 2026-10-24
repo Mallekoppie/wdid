@@ -1,6 +1,7 @@
 import '../models/app_settings.dart';
 import '../models/check_in.dart';
 import '../models/drafts.dart';
+import '../models/enums.dart';
 import '../models/initiative.dart';
 import '../models/note.dart';
 import '../models/work_item.dart';
@@ -59,15 +60,24 @@ abstract class WdidRepository {
 
   Future<Note> updateNote(Note note);
 
+  Future<void> deleteNote(String id);
+
   Future<List<CheckIn>> listCheckIns();
 
   Future<CheckIn> createCheckIn(CheckInDraft draft);
 
   Future<CheckIn> updateCheckIn(CheckIn checkIn);
 
+  Future<void> deleteCheckIn(String id);
+
   Future<CheckIn> generateSummary(String checkInId);
 
-  Future<String> buildPrompt(DateTime periodStart, DateTime periodEnd);
+  Future<CheckInPrompt> buildPrompt(
+    DateTime periodStart,
+    DateTime periodEnd, {
+    CheckInKind kind = CheckInKind.manager,
+    CheckInAudience? audience,
+  });
 
   Future<ExportBundle> buildExport(DateTime periodStart, DateTime periodEnd);
 

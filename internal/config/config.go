@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Mallekoppie/goslow/platform"
 )
@@ -20,6 +22,8 @@ const (
 	defaultAllowedOrigins      = "http://127.0.0.1:5173,http://localhost:5173"
 	minBootstrapSecretLen      = 16
 	minJWTSecretLen            = 32
+	defaultBackupInterval      = 6 * time.Hour
+	defaultBackupRetention     = 30
 
 	// ServiceVersion and ServiceLicense are reported in Settings → About.
 	ServiceVersion = "0.1.0"
@@ -38,6 +42,12 @@ const (
 	SettingsServiceName = "wdid.v1.SettingsService"
 	// SummaryServiceName owns authoritative period aggregation.
 	SummaryServiceName = "wdid.v1.SummaryService"
+	// NoteServiceName owns day notes and project notes.
+	NoteServiceName = "wdid.v1.NoteService"
+	// MilestoneServiceName owns project milestones.
+	MilestoneServiceName = "wdid.v1.MilestoneService"
+	// CheckInServiceName owns manager check-ins and personal reviews.
+	CheckInServiceName = "wdid.v1.CheckInService"
 
 	// AuthRegisterAccountProcedure is public: a new account needs no token.
 	AuthRegisterAccountProcedure = "/wdid.v1.AuthService/RegisterAccount"
@@ -47,6 +57,10 @@ const (
 	AuthConfigProcedure = "/wdid.v1.AuthService/GetAuthConfig"
 	// AuthCurrentUserProcedure is protected and derives identity from the token.
 	AuthCurrentUserProcedure = "/wdid.v1.AuthService/GetCurrentUser"
+
+	// OpenAIAPIKeyEnv names the only source of the AI provider key. The key is
+	// never stored in the database, exported or logged.
+	OpenAIAPIKeyEnv = "WDID_OPENAI_API_KEY"
 )
 
 // Zitadel holds the OIDC settings for the initial local Zitadel deployment.
@@ -64,6 +78,9 @@ type Zitadel struct {
 type Config struct {
 	HTTPAddr             string
 	DBPath               string
+	BackupDir            string
+	BackupInterval       time.Duration
+	BackupRetention      int
 	AllowedOrigins       []string
 	DevMode              bool
 	BootstrapSecret      string
@@ -72,6 +89,9 @@ type Config struct {
 	JWTExpirationMinutes int64
 	MaxBlockMinutes      int
 	Zitadel              Zitadel
+	// OpenAIAPIKey is read from WDID_OPENAI_API_KEY and kept in memory only.
+	// It is never persisted, exported or logged.
+	OpenAIAPIKey string
 	// StorageOnly marks commands that open the database without serving
 	// requests, so no transport or health configuration is required.
 	StorageOnly bool
@@ -79,9 +99,13 @@ type Config struct {
 
 // Load reads the service configuration from the environment and validates it.
 func Load() (Config, error) {
+	dbPath := envString("WDID_DB_PATH", defaultDBPath)
 	cfg := Config{
 		HTTPAddr:             envString("WDID_HTTP_ADDR", defaultHTTPAddr),
-		DBPath:               envString("WDID_DB_PATH", defaultDBPath),
+		DBPath:               dbPath,
+		BackupDir:            envString("WDID_BACKUP_DIR", defaultBackupDir(dbPath)),
+		BackupInterval:       envDuration("WDID_BACKUP_INTERVAL", defaultBackupInterval),
+		BackupRetention:      envInt("WDID_BACKUP_RETENTION", defaultBackupRetention),
 		AllowedOrigins:       splitList(envString("WDID_ALLOWED_ORIGINS", defaultAllowedOrigins)),
 		DevMode:              envBool("WDID_DEV_MODE", false),
 		BootstrapSecret:      os.Getenv("WDID_BOOTSTRAP_SECRET"),
@@ -89,6 +113,7 @@ func Load() (Config, error) {
 		JWTSigningMethod:     envString("WDID_JWT_SIGNING_METHOD", defaultJWTSigningMethod),
 		JWTExpirationMinutes: int64(envInt("WDID_JWT_EXPIRATION_MINUTES", defaultJWTExpirationMinute)),
 		MaxBlockMinutes:      envInt("WDID_MAX_BLOCK_MINUTES", defaultMaxBlockMinutes),
+		OpenAIAPIKey:         envString(OpenAIAPIKeyEnv, ""),
 		Zitadel: Zitadel{
 			Enabled:           envBool("WDID_ZITADEL_ENABLED", false),
 			IssuerURL:         strings.TrimRight(envString("WDID_ZITADEL_ISSUER_URL", ""), "/"),
@@ -108,7 +133,45 @@ func Load() (Config, error) {
 // LoadStorage reads only the database location. CLI commands that inspect or
 // seed the database do not need the serving secrets.
 func LoadStorage() Config {
-	return Config{DBPath: envString("WDID_DB_PATH", defaultDBPath), StorageOnly: true}
+	dbPath := envString("WDID_DB_PATH", defaultDBPath)
+	return Config{
+		DBPath:          dbPath,
+		BackupDir:       envString("WDID_BACKUP_DIR", defaultBackupDir(dbPath)),
+		BackupInterval:  envDuration("WDID_BACKUP_INTERVAL", defaultBackupInterval),
+		BackupRetention: envInt("WDID_BACKUP_RETENTION", defaultBackupRetention),
+		StorageOnly:     true,
+	}
+}
+
+// EffectiveBackupDir is the configured backup directory, or the default
+// sibling `backups/` directory when the config was built without one.
+func (c Config) EffectiveBackupDir() string {
+	if trimmed := strings.TrimSpace(c.BackupDir); trimmed != "" {
+		return trimmed
+	}
+	return defaultBackupDir(c.DBPath)
+}
+
+// EffectiveBackupInterval is the configured snapshot interval, or six hours.
+func (c Config) EffectiveBackupInterval() time.Duration {
+	if c.BackupInterval > 0 {
+		return c.BackupInterval
+	}
+	return defaultBackupInterval
+}
+
+// EffectiveBackupRetention is the configured scheduled-snapshot count, or 30.
+func (c Config) EffectiveBackupRetention() int {
+	if c.BackupRetention > 0 {
+		return c.BackupRetention
+	}
+	return defaultBackupRetention
+}
+
+// defaultBackupDir puts backups next to the database file, in a directory the
+// database never opens or treats as its own.
+func defaultBackupDir(dbPath string) string {
+	return filepath.Join(filepath.Dir(dbPath), "backups")
 }
 
 // Validate enforces the configuration invariants required to start the service.
@@ -274,6 +337,18 @@ func envInt(key string, fallback int) int {
 	}
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	value, ok := os.LookupEnv(key)
+	if !ok || strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
 		return fallback
 	}
 	return parsed

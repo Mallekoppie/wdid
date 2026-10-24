@@ -6,8 +6,12 @@ import 'package:protobuf/well_known_types/google/protobuf/duration.pb.dart'
 import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
 import 'package:wdid_web/data/summary_api.dart';
+import 'package:wdid_web/models/enums.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/src/generated/categories.pbenum.dart' as categories;
+import 'package:wdid_web/src/generated/check_ins.pb.dart' as check_in_messages;
+import 'package:wdid_web/src/generated/check_ins.pbenum.dart'
+    as generated_check_ins;
 import 'package:wdid_web/src/generated/summaries.pbgrpc.dart' as generated;
 
 class FakeSummaryRpc implements SummaryRpc {
@@ -16,6 +20,22 @@ class FakeSummaryRpc implements SummaryRpc {
       generated.GetPeriodReportResponse();
   generated.GetPeriodReportRequest? request;
 
+  generated.BuildExportResponse exportResponse =
+      generated.BuildExportResponse();
+  generated.BuildExportRequest? exportRequest;
+
+  generated.BuildPromptResponse promptResponse =
+      generated.BuildPromptResponse();
+  generated.BuildPromptRequest? promptRequest;
+
+  generated.GetPromptTemplateResponse templateResponse =
+      generated.GetPromptTemplateResponse();
+  generated.GetPromptTemplateRequest? templateRequest;
+
+  generated.GenerateSummaryRequest? generateRequest;
+  List<generated.GenerateSummaryDelta> generationDeltas = const [];
+  GrpcError? generationError;
+
   @override
   Future<generated.GetPeriodReportResponse> getPeriodReport(
     generated.GetPeriodReportRequest request,
@@ -23,6 +43,44 @@ class FakeSummaryRpc implements SummaryRpc {
     this.request = request;
     if (error != null) throw error!;
     return response;
+  }
+
+  @override
+  Future<generated.BuildExportResponse> buildExport(
+    generated.BuildExportRequest request,
+  ) async {
+    exportRequest = request;
+    if (error != null) throw error!;
+    return exportResponse;
+  }
+
+  @override
+  Future<generated.BuildPromptResponse> buildPrompt(
+    generated.BuildPromptRequest request,
+  ) async {
+    promptRequest = request;
+    if (error != null) throw error!;
+    return promptResponse;
+  }
+
+  @override
+  Future<generated.GetPromptTemplateResponse> getPromptTemplate(
+    generated.GetPromptTemplateRequest request,
+  ) async {
+    templateRequest = request;
+    if (error != null) throw error!;
+    return templateResponse;
+  }
+
+  @override
+  Stream<generated.GenerateSummaryDelta> generateSummary(
+    generated.GenerateSummaryRequest request,
+  ) async* {
+    generateRequest = request;
+    for (final delta in generationDeltas) {
+      yield delta;
+    }
+    if (generationError != null) throw generationError!;
   }
 }
 
@@ -188,5 +246,148 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('buildExport sends the scope and maps the four bundle files', () async {
+    final rpc = FakeSummaryRpc()
+      ..exportResponse = generated.BuildExportResponse(
+        directory: 'wdid-export-2026-10-19_2026-10-25',
+        files: [
+          generated.ExportFile(name: 'summary.md', content: '# report'),
+          generated.ExportFile(name: 'data.json', content: '{}'),
+          generated.ExportFile(name: 'entries.csv', content: 'date,minutes\n'),
+          generated.ExportFile(name: 'support.csv', content: 'person,mode\n'),
+        ],
+      );
+
+    final bundle = await GrpcSummaryApi(rpc: rpc).buildExport(
+      fromDate: '2026-10-19',
+      toDate: '2026-10-25',
+      checkInId: 'checkin-1',
+    );
+
+    expect(rpc.exportRequest!.fromDate, '2026-10-19');
+    expect(rpc.exportRequest!.toDate, '2026-10-25');
+    expect(rpc.exportRequest!.checkInId, 'checkin-1');
+    expect(bundle.directory, 'wdid-export-2026-10-19_2026-10-25');
+    expect(bundle.files.keys, [
+      'summary.md',
+      'data.json',
+      'entries.csv',
+      'support.csv',
+    ]);
+    expect(bundle.files['summary.md'], '# report');
+  });
+
+  test('buildPrompt sends the variant and maps the versioned prompt', () async {
+    final rpc = FakeSummaryRpc()
+      ..promptResponse = generated.BuildPromptResponse(
+        prompt: 'instruction\n\n# wdid work report',
+        promptVersion: 'v1',
+        variant: generated_check_ins
+            .CheckInPromptVariant
+            .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
+      );
+
+    final prompt = await GrpcSummaryApi(rpc: rpc).buildPrompt(
+      fromDate: '2026-10-19',
+      toDate: '2026-10-25',
+      checkInId: 'checkin-1',
+      variant: CheckInPromptVariant.managerPerformanceReview,
+    );
+
+    expect(rpc.promptRequest!.checkInId, 'checkin-1');
+    expect(
+      rpc.promptRequest!.variant,
+      generated_check_ins
+          .CheckInPromptVariant
+          .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
+    );
+    expect(prompt.prompt, 'instruction\n\n# wdid work report');
+    expect(prompt.promptVersion, 'v1');
+    expect(prompt.variant, CheckInPromptVariant.managerPerformanceReview);
+  });
+
+  test('generateSummary maps streamed text and the final check-in', () async {
+    final createdAt = Timestamp.fromDateTime(DateTime.utc(2026, 10, 19, 12));
+    final rpc = FakeSummaryRpc()
+      ..generationDeltas = [
+        generated.GenerateSummaryDelta(text: '## Highlights\n'),
+        generated.GenerateSummaryDelta(text: '- Cut invoicing\n'),
+        generated.GenerateSummaryDelta(
+          model: 'provider-model',
+          promptVersion: 'v1',
+          checkIn: check_in_messages.CheckIn(
+            id: 'checkin-1',
+            kind: generated_check_ins.CheckInKind.CHECK_IN_KIND_MANAGER,
+            periodStart: '2026-10-19',
+            periodEnd: '2026-10-19',
+            summaryMarkdown: '## Highlights\n- Cut invoicing',
+            summaryModel: 'provider-model',
+            promptVersion: 'v1',
+            createdAt: createdAt,
+            updatedAt: createdAt,
+          ),
+        ),
+      ];
+
+    final deltas = await GrpcSummaryApi(rpc: rpc)
+        .generateSummary('checkin-1', overwriteManualEdits: true)
+        .toList();
+
+    expect(rpc.generateRequest!.checkInId, 'checkin-1');
+    expect(rpc.generateRequest!.overwriteManualEdits, isTrue);
+    expect(deltas, hasLength(3));
+    expect(deltas.first.text, '## Highlights\n');
+    expect(deltas[1].text, '- Cut invoicing\n');
+    expect(deltas.last.isFinal, isTrue);
+    expect(deltas.last.checkIn!.summaryMarkdown, contains('Cut invoicing'));
+    expect(deltas.last.checkIn!.summaryModel, 'provider-model');
+    expect(deltas.last.model, 'provider-model');
+    expect(deltas.last.promptVersion, 'v1');
+  });
+
+  test('generateSummary surfaces a provider failure as a retryable error', () async {
+    final rpc = FakeSummaryRpc()
+      ..generationDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
+      ..generationError = GrpcError.unavailable('provider offline');
+
+    expect(
+      () => GrpcSummaryApi(
+        rpc: rpc,
+      ).generateSummary('checkin-1').toList(),
+      throwsA(
+        isA<SummaryFailure>().having(
+          (failure) => failure.message,
+          'message',
+          contains('existing summary is unchanged'),
+        ),
+      ),
+    );
+  });
+
+  test('getPromptTemplate previews the service-owned instruction', () async {
+    final rpc = FakeSummaryRpc()
+      ..templateResponse = generated.GetPromptTemplateResponse(
+        template: 'You are preparing a personal review.',
+        promptVersion: 'v1',
+        variant: generated_check_ins
+            .CheckInPromptVariant
+            .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+      );
+
+    final template = await GrpcSummaryApi(
+      rpc: rpc,
+    ).getPromptTemplate(CheckInPromptVariant.personalReview);
+
+    expect(
+      rpc.templateRequest!.variant,
+      generated_check_ins
+          .CheckInPromptVariant
+          .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+    );
+    expect(template.template, 'You are preparing a personal review.');
+    expect(template.promptVersion, 'v1');
+    expect(template.variant, CheckInPromptVariant.personalReview);
   });
 }

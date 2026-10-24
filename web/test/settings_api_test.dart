@@ -3,6 +3,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:grpc/grpc_or_grpcweb.dart';
 import 'package:protobuf/well_known_types/google/protobuf/duration.pb.dart'
     as duration;
+import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
 import 'package:wdid_web/data/settings_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
@@ -17,6 +18,20 @@ class FakeSettingsRpc implements SettingsRpc {
   generated.UpdateSettingsResponse updateResponse =
       generated.UpdateSettingsResponse(settings: generated.Settings());
   generated.UpdateSettingsRequest? updateRequest;
+
+  generated.GetBackupStatusResponse backupStatusResponse =
+      generated.GetBackupStatusResponse(
+        status: generated.BackupStatus(
+          backupInterval: duration.Duration(seconds: Int64(6 * 60 * 60)),
+          backupRetention: 30,
+        ),
+      );
+  generated.ListBackupsResponse listBackupsResponse =
+      generated.ListBackupsResponse();
+  generated.BackupNowResponse backupNowResponse = generated.BackupNowResponse();
+  generated.RestoreBackupResponse restoreResponse =
+      generated.RestoreBackupResponse();
+  generated.RestoreBackupRequest? restoreRequest;
 
   void _maybeFail() {
     if (error != null) throw error!;
@@ -35,6 +50,33 @@ class FakeSettingsRpc implements SettingsRpc {
     updateRequest = request;
     _maybeFail();
     return updateResponse;
+  }
+
+  @override
+  Future<generated.GetBackupStatusResponse> getBackupStatus() async {
+    _maybeFail();
+    return backupStatusResponse;
+  }
+
+  @override
+  Future<generated.ListBackupsResponse> listBackups() async {
+    _maybeFail();
+    return listBackupsResponse;
+  }
+
+  @override
+  Future<generated.BackupNowResponse> backupNow() async {
+    _maybeFail();
+    return backupNowResponse;
+  }
+
+  @override
+  Future<generated.RestoreBackupResponse> restoreBackup(
+    generated.RestoreBackupRequest request,
+  ) async {
+    restoreRequest = request;
+    _maybeFail();
+    return restoreResponse;
   }
 }
 
@@ -172,4 +214,74 @@ void main() {
       ),
     );
   });
+
+  test(
+    'backup responses map status, snapshots and the pre-restore path',
+    () async {
+      final at = DateTime.utc(2026, 10, 23, 8);
+      final rpc = FakeSettingsRpc()
+        ..backupStatusResponse = generated.GetBackupStatusResponse(
+          status: generated.BackupStatus(
+            lastBackupAt: Timestamp.fromDateTime(at),
+            lastBackupSizeBytes: Int64(4096),
+            overdue: true,
+            backupDirectory: '/srv/backups',
+            backupInterval: duration.Duration(seconds: Int64(6 * 60 * 60)),
+            backupRetention: 12,
+            scheduledCount: 2,
+            manualCount: 1,
+            lastBackupManual: true,
+          ),
+        )
+        ..listBackupsResponse = generated.ListBackupsResponse(
+          backups: [
+            generated.Backup(
+              name: 'wdid-20261023T080000Z-manual.db',
+              createdAt: Timestamp.fromDateTime(at),
+              sizeBytes: Int64(4096),
+              manual: true,
+            ),
+          ],
+        )
+        ..restoreResponse = generated.RestoreBackupResponse(
+          backup: generated.Backup(
+            name: 'wdid-20261023T080000Z-manual.db',
+            createdAt: Timestamp.fromDateTime(at),
+            sizeBytes: Int64(4096),
+            manual: true,
+          ),
+          status: generated.BackupStatus(
+            lastBackupAt: Timestamp.fromDateTime(at),
+            lastBackupSizeBytes: Int64(4096),
+            backupInterval: duration.Duration(seconds: Int64(6 * 60 * 60)),
+            backupRetention: 12,
+          ),
+          preRestorePath: '/srv/data/wdid-before-restore-20261023T090000Z.db',
+        );
+
+      final api = GrpcSettingsApi(rpc: rpc);
+      final status = await api.getBackupStatus();
+      expect(status.lastBackupAt, at);
+      expect(status.lastBackupSizeBytes, 4096);
+      expect(status.overdue, isTrue);
+      expect(status.backupDirectory, '/srv/backups');
+      expect(status.backupIntervalHours, 6);
+      expect(status.backupRetention, 12);
+      expect(status.lastBackupManual, isTrue);
+
+      final backups = await api.listBackups();
+      expect(backups, hasLength(1));
+      expect(backups.first.name, 'wdid-20261023T080000Z-manual.db');
+      expect(backups.first.manual, isTrue);
+      expect(backups.first.sizeBytes, 4096);
+
+      final restored = await api.restoreBackup(backups.first.name);
+      expect(rpc.restoreRequest!.name, backups.first.name);
+      expect(
+        restored.preRestorePath,
+        '/srv/data/wdid-before-restore-20261023T090000Z.db',
+      );
+      expect(restored.status.lastBackupSizeBytes, 4096);
+    },
+  );
 }

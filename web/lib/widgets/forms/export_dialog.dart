@@ -12,10 +12,16 @@ Future<void> showExportDialog(
   required AppState state,
   required DateTime start,
   required DateTime end,
+  String checkInId = '',
 }) {
   return showDialog<void>(
     context: context,
-    builder: (context) => _ExportDialog(state: state, start: start, end: end),
+    builder: (context) => _ExportDialog(
+      state: state,
+      start: start,
+      end: end,
+      checkInId: checkInId,
+    ),
   );
 }
 
@@ -24,11 +30,13 @@ class _ExportDialog extends StatefulWidget {
     required this.state,
     required this.start,
     required this.end,
+    this.checkInId = '',
   });
 
   final AppState state;
   final DateTime start;
   final DateTime end;
+  final String checkInId;
 
   @override
   State<_ExportDialog> createState() => _ExportDialogState();
@@ -49,8 +57,16 @@ class _ExportDialogState extends State<_ExportDialog> {
   Future<void> _load() async {
     try {
       final results = await Future.wait<Object>([
-        widget.state.buildExport(widget.start, widget.end),
-        widget.state.buildPrompt(widget.start, widget.end),
+        widget.state.buildExport(
+          widget.start,
+          widget.end,
+          checkInId: widget.checkInId,
+        ),
+        widget.state.buildPrompt(
+          widget.start,
+          widget.end,
+          checkInId: widget.checkInId,
+        ),
       ]);
       if (!mounted) return;
       setState(() {
@@ -67,9 +83,8 @@ class _ExportDialogState extends State<_ExportDialog> {
   Future<void> _copy(String text, String label) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$label copied to clipboard')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('$label copied to clipboard')));
   }
 
   @override
@@ -79,8 +94,7 @@ class _ExportDialogState extends State<_ExportDialog> {
     final bundle = _bundle;
     return DialogFrame(
       title: 'Export period',
-      subtitle:
-          '${formatRange(widget.start, widget.end)} · AI-ready bundle',
+      subtitle: '${formatRange(widget.start, widget.end)} · AI-ready bundle',
       icon: Icons.file_download_outlined,
       maxWidth: 820,
       content: _error != null
@@ -99,82 +113,82 @@ class _ExportDialogState extends State<_ExportDialog> {
               ],
             )
           : bundle == null
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(AppRadius.input),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.folder_outlined,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
                       ),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(AppRadius.input),
-                        border: Border.all(color: scheme.outlineVariant),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.folder_outlined,
-                            size: 16,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            bundle.directory,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${bundle.files.length} files',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final file in bundle.files.keys)
-                          ChoiceChip(
-                            label: Text(file),
-                            selected: _file == file,
-                            showCheckmark: false,
-                            onSelected: (_) => setState(() => _file = file),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Container(
-                      height: 320,
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerLowest,
-                        borderRadius: BorderRadius.circular(AppRadius.input),
-                        border: Border.all(color: scheme.outlineVariant),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          bundle.files[_file] ?? '',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontFamily: 'monospace',
-                            height: 1.45,
-                          ),
+                      const SizedBox(width: 8),
+                      Text(
+                        bundle.directory,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
                         ),
                       ),
-                    ),
+                      const Spacer(),
+                      Text(
+                        '${bundle.files.length} files',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final file in bundle.files.keys)
+                      ChoiceChip(
+                        label: Text(file),
+                        selected: _file == file,
+                        showCheckmark: false,
+                        onSelected: (_) => setState(() => _file = file),
+                      ),
                   ],
                 ),
+                const SizedBox(height: AppSpacing.md),
+                Container(
+                  height: 320,
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(AppRadius.input),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      bundle.files[_file] ?? '',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
       actions: Row(
         children: [
           TextButton.icon(

@@ -36,11 +36,34 @@ const (
 	// SummaryServiceGetPeriodReportProcedure is the fully-qualified name of the SummaryService's
 	// GetPeriodReport RPC.
 	SummaryServiceGetPeriodReportProcedure = "/wdid.v1.SummaryService/GetPeriodReport"
+	// SummaryServiceBuildExportProcedure is the fully-qualified name of the SummaryService's
+	// BuildExport RPC.
+	SummaryServiceBuildExportProcedure = "/wdid.v1.SummaryService/BuildExport"
+	// SummaryServiceBuildPromptProcedure is the fully-qualified name of the SummaryService's
+	// BuildPrompt RPC.
+	SummaryServiceBuildPromptProcedure = "/wdid.v1.SummaryService/BuildPrompt"
+	// SummaryServiceGetPromptTemplateProcedure is the fully-qualified name of the SummaryService's
+	// GetPromptTemplate RPC.
+	SummaryServiceGetPromptTemplateProcedure = "/wdid.v1.SummaryService/GetPromptTemplate"
+	// SummaryServiceGenerateSummaryProcedure is the fully-qualified name of the SummaryService's
+	// GenerateSummary RPC.
+	SummaryServiceGenerateSummaryProcedure = "/wdid.v1.SummaryService/GenerateSummary"
 )
 
 // SummaryServiceClient is a client for the wdid.v1.SummaryService service.
 type SummaryServiceClient interface {
 	GetPeriodReport(context.Context, *connect.Request[v1.GetPeriodReportRequest]) (*connect.Response[v1.GetPeriodReportResponse], error)
+	// Builds the on-demand export bundle. Nothing is written to disk.
+	BuildExport(context.Context, *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error)
+	// The prompt block (versioned instruction followed by summary.md) for the
+	// same period or check-in scope.
+	BuildPrompt(context.Context, *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error)
+	// The versioned instruction alone, for Settings → AI preview.
+	GetPromptTemplate(context.Context, *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error)
+	// Streams provider output into the check-in's editable summary. The stored
+	// summary is replaced only after a complete, successful response, together
+	// with the model name and prompt version.
+	GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest]) (*connect.ServerStreamForClient[v1.GenerateSummaryDelta], error)
 }
 
 // NewSummaryServiceClient constructs a client for the wdid.v1.SummaryService service. By default,
@@ -60,12 +83,40 @@ func NewSummaryServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(summaryServiceMethods.ByName("GetPeriodReport")),
 			connect.WithClientOptions(opts...),
 		),
+		buildExport: connect.NewClient[v1.BuildExportRequest, v1.BuildExportResponse](
+			httpClient,
+			baseURL+SummaryServiceBuildExportProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("BuildExport")),
+			connect.WithClientOptions(opts...),
+		),
+		buildPrompt: connect.NewClient[v1.BuildPromptRequest, v1.BuildPromptResponse](
+			httpClient,
+			baseURL+SummaryServiceBuildPromptProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("BuildPrompt")),
+			connect.WithClientOptions(opts...),
+		),
+		getPromptTemplate: connect.NewClient[v1.GetPromptTemplateRequest, v1.GetPromptTemplateResponse](
+			httpClient,
+			baseURL+SummaryServiceGetPromptTemplateProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("GetPromptTemplate")),
+			connect.WithClientOptions(opts...),
+		),
+		generateSummary: connect.NewClient[v1.GenerateSummaryRequest, v1.GenerateSummaryDelta](
+			httpClient,
+			baseURL+SummaryServiceGenerateSummaryProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("GenerateSummary")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // summaryServiceClient implements SummaryServiceClient.
 type summaryServiceClient struct {
-	getPeriodReport *connect.Client[v1.GetPeriodReportRequest, v1.GetPeriodReportResponse]
+	getPeriodReport   *connect.Client[v1.GetPeriodReportRequest, v1.GetPeriodReportResponse]
+	buildExport       *connect.Client[v1.BuildExportRequest, v1.BuildExportResponse]
+	buildPrompt       *connect.Client[v1.BuildPromptRequest, v1.BuildPromptResponse]
+	getPromptTemplate *connect.Client[v1.GetPromptTemplateRequest, v1.GetPromptTemplateResponse]
+	generateSummary   *connect.Client[v1.GenerateSummaryRequest, v1.GenerateSummaryDelta]
 }
 
 // GetPeriodReport calls wdid.v1.SummaryService.GetPeriodReport.
@@ -73,9 +124,40 @@ func (c *summaryServiceClient) GetPeriodReport(ctx context.Context, req *connect
 	return c.getPeriodReport.CallUnary(ctx, req)
 }
 
+// BuildExport calls wdid.v1.SummaryService.BuildExport.
+func (c *summaryServiceClient) BuildExport(ctx context.Context, req *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error) {
+	return c.buildExport.CallUnary(ctx, req)
+}
+
+// BuildPrompt calls wdid.v1.SummaryService.BuildPrompt.
+func (c *summaryServiceClient) BuildPrompt(ctx context.Context, req *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error) {
+	return c.buildPrompt.CallUnary(ctx, req)
+}
+
+// GetPromptTemplate calls wdid.v1.SummaryService.GetPromptTemplate.
+func (c *summaryServiceClient) GetPromptTemplate(ctx context.Context, req *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error) {
+	return c.getPromptTemplate.CallUnary(ctx, req)
+}
+
+// GenerateSummary calls wdid.v1.SummaryService.GenerateSummary.
+func (c *summaryServiceClient) GenerateSummary(ctx context.Context, req *connect.Request[v1.GenerateSummaryRequest]) (*connect.ServerStreamForClient[v1.GenerateSummaryDelta], error) {
+	return c.generateSummary.CallServerStream(ctx, req)
+}
+
 // SummaryServiceHandler is an implementation of the wdid.v1.SummaryService service.
 type SummaryServiceHandler interface {
 	GetPeriodReport(context.Context, *connect.Request[v1.GetPeriodReportRequest]) (*connect.Response[v1.GetPeriodReportResponse], error)
+	// Builds the on-demand export bundle. Nothing is written to disk.
+	BuildExport(context.Context, *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error)
+	// The prompt block (versioned instruction followed by summary.md) for the
+	// same period or check-in scope.
+	BuildPrompt(context.Context, *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error)
+	// The versioned instruction alone, for Settings → AI preview.
+	GetPromptTemplate(context.Context, *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error)
+	// Streams provider output into the check-in's editable summary. The stored
+	// summary is replaced only after a complete, successful response, together
+	// with the model name and prompt version.
+	GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error
 }
 
 // NewSummaryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -91,10 +173,42 @@ func NewSummaryServiceHandler(svc SummaryServiceHandler, opts ...connect.Handler
 		connect.WithSchema(summaryServiceMethods.ByName("GetPeriodReport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	summaryServiceBuildExportHandler := connect.NewUnaryHandler(
+		SummaryServiceBuildExportProcedure,
+		svc.BuildExport,
+		connect.WithSchema(summaryServiceMethods.ByName("BuildExport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	summaryServiceBuildPromptHandler := connect.NewUnaryHandler(
+		SummaryServiceBuildPromptProcedure,
+		svc.BuildPrompt,
+		connect.WithSchema(summaryServiceMethods.ByName("BuildPrompt")),
+		connect.WithHandlerOptions(opts...),
+	)
+	summaryServiceGetPromptTemplateHandler := connect.NewUnaryHandler(
+		SummaryServiceGetPromptTemplateProcedure,
+		svc.GetPromptTemplate,
+		connect.WithSchema(summaryServiceMethods.ByName("GetPromptTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	summaryServiceGenerateSummaryHandler := connect.NewServerStreamHandler(
+		SummaryServiceGenerateSummaryProcedure,
+		svc.GenerateSummary,
+		connect.WithSchema(summaryServiceMethods.ByName("GenerateSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wdid.v1.SummaryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SummaryServiceGetPeriodReportProcedure:
 			summaryServiceGetPeriodReportHandler.ServeHTTP(w, r)
+		case SummaryServiceBuildExportProcedure:
+			summaryServiceBuildExportHandler.ServeHTTP(w, r)
+		case SummaryServiceBuildPromptProcedure:
+			summaryServiceBuildPromptHandler.ServeHTTP(w, r)
+		case SummaryServiceGetPromptTemplateProcedure:
+			summaryServiceGetPromptTemplateHandler.ServeHTTP(w, r)
+		case SummaryServiceGenerateSummaryProcedure:
+			summaryServiceGenerateSummaryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -106,4 +220,20 @@ type UnimplementedSummaryServiceHandler struct{}
 
 func (UnimplementedSummaryServiceHandler) GetPeriodReport(context.Context, *connect.Request[v1.GetPeriodReportRequest]) (*connect.Response[v1.GetPeriodReportResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.GetPeriodReport is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) BuildExport(context.Context, *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.BuildExport is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) BuildPrompt(context.Context, *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.BuildPrompt is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) GetPromptTemplate(context.Context, *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.GetPromptTemplate is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.GenerateSummary is not implemented"))
 }

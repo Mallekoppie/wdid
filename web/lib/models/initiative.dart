@@ -7,9 +7,9 @@ class LinkRef {
   final String url;
 
   factory LinkRef.fromJson(Map<String, dynamic> json) => LinkRef(
-        label: json['label']?.toString() ?? json['url']?.toString() ?? 'Link',
-        url: json['url']?.toString() ?? '',
-      );
+    label: json['label']?.toString() ?? json['url']?.toString() ?? 'Link',
+    url: json['url']?.toString() ?? '',
+  );
 
   Map<String, dynamic> toJson() => {'label': label, 'url': url};
 }
@@ -100,19 +100,19 @@ class Initiative {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'summary': summary,
-        'targetOutcome': targetOutcome,
-        'status': status.name,
-        'progress': progress,
-        'startedAt': startedAt?.toUtc().toIso8601String(),
-        'targetDate': targetDate == null ? null : _isoDate(targetDate!),
-        'links': links.map((link) => link.toJson()).toList(),
-        'tags': tags,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'updatedAt': updatedAt.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'summary': summary,
+    'targetOutcome': targetOutcome,
+    'status': status.name,
+    'progress': progress,
+    'startedAt': startedAt?.toUtc().toIso8601String(),
+    'targetDate': targetDate == null ? null : _isoDate(targetDate!),
+    'links': links.map((link) => link.toJson()).toList(),
+    'tags': tags,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+  };
 
   static DateTime? _tryParse(Object? value) {
     if (value == null || value.toString().isEmpty) return null;

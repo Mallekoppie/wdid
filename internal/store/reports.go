@@ -40,6 +40,10 @@ func (s *Store) PeriodReport(userID, fromDate, toDate string) (domain.PeriodRepo
 		if err != nil {
 			return err
 		}
+		milestones, err := readBucketTx[domain.Milestone](tx, userBucket(userID, milestonesBucket))
+		if err != nil {
+			return err
+		}
 
 		report, err = domain.BuildPeriodReport(
 			fromDate,
@@ -51,12 +55,32 @@ func (s *Store) PeriodReport(userID, fromDate, toDate string) (domain.PeriodRepo
 			subcategories,
 			notes,
 		)
-		return err
+		if err != nil {
+			return err
+		}
+		report.Milestones = domain.BuildMilestoneProgress(milestones)
+		return nil
 	})
 	if err != nil {
 		return domain.PeriodReport{}, err
 	}
 	return report, nil
+}
+
+// WorkEntriesInDateRange returns the entries whose recorded local date falls
+// inside an inclusive range. It reads the same day index as PeriodReport, so an
+// export's CSV rows and its aggregates cannot disagree about the boundary.
+func (s *Store) WorkEntriesInDateRange(userID, fromDate, toDate string) ([]domain.WorkEntry, error) {
+	var entries []domain.WorkEntry
+	err := platform.Database.BoltDb.View(func(tx *bbolt.Tx) error {
+		var err error
+		entries, err = entriesInDateRangeTx(tx, userID, fromDate, toDate)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
 // CurrentWeekRange returns the inclusive local dates of the week containing

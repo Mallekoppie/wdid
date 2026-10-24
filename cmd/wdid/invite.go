@@ -135,7 +135,7 @@ func openCLIStore() (*store.Store, error) {
 	database, err := store.Open(config.LoadStorage())
 	if err != nil {
 		return nil, fmt.Errorf(
-			"open database (stop the running service before managing invites): %w", err)
+			"open database (stop the running service before using CLI commands): %w", err)
 	}
 	return database, nil
 }

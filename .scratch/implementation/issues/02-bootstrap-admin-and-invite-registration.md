@@ -50,3 +50,10 @@ Known limitation: the CLI opens the BoltDB file directly, and bbolt takes an
 exclusive lock. Invite commands therefore require the service to be stopped.
 The README says so and the CLI reports the lock. Live invite management would
 need an admin RPC (deferred, like the Users & Access screen).
+
+2026-10-24: Manual run-through found the app never routed to the login screen:
+the router started at `/today` with no session, so every RPC failed with
+`missing or malformed bearer token`. Fixed by adding an auth redirect guard
+(`web/lib/routing/app_router.dart`) and deferring data loads until a session
+exists; regression tests live in `web/test/auth_gate_test.dart`. `make check`
+passes (252 Flutter tests).

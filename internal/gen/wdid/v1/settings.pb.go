@@ -588,6 +588,551 @@ func (x *UpdateSettingsResponse) GetSettings() *Settings {
 	return nil
 }
 
+// Backup describes one database snapshot on disk.
+type Backup struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	SizeBytes int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// Manual backups are never deleted by retention.
+	Manual        bool `protobuf:"varint,4,opt,name=manual,proto3" json:"manual,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Backup) Reset() {
+	*x = Backup{}
+	mi := &file_settings_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Backup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Backup) ProtoMessage() {}
+
+func (x *Backup) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Backup.ProtoReflect.Descriptor instead.
+func (*Backup) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Backup) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Backup) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Backup) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *Backup) GetManual() bool {
+	if x != nil {
+		return x.Manual
+	}
+	return false
+}
+
+// BackupStatus is the instance-wide backup state shown in Settings. A
+// workspace with no scheduled snapshot yet reports overdue.
+type BackupStatus struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	LastBackupAt        *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
+	LastBackupSizeBytes int64                  `protobuf:"varint,2,opt,name=last_backup_size_bytes,json=lastBackupSizeBytes,proto3" json:"last_backup_size_bytes,omitempty"`
+	Overdue             bool                   `protobuf:"varint,3,opt,name=overdue,proto3" json:"overdue,omitempty"`
+	BackupDirectory     string                 `protobuf:"bytes,4,opt,name=backup_directory,json=backupDirectory,proto3" json:"backup_directory,omitempty"`
+	BackupInterval      *durationpb.Duration   `protobuf:"bytes,5,opt,name=backup_interval,json=backupInterval,proto3" json:"backup_interval,omitempty"`
+	BackupRetention     int32                  `protobuf:"varint,6,opt,name=backup_retention,json=backupRetention,proto3" json:"backup_retention,omitempty"`
+	ScheduledCount      int32                  `protobuf:"varint,7,opt,name=scheduled_count,json=scheduledCount,proto3" json:"scheduled_count,omitempty"`
+	ManualCount         int32                  `protobuf:"varint,8,opt,name=manual_count,json=manualCount,proto3" json:"manual_count,omitempty"`
+	NextBackupAt        *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=next_backup_at,json=nextBackupAt,proto3" json:"next_backup_at,omitempty"`
+	LastBackupManual    bool                   `protobuf:"varint,10,opt,name=last_backup_manual,json=lastBackupManual,proto3" json:"last_backup_manual,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *BackupStatus) Reset() {
+	*x = BackupStatus{}
+	mi := &file_settings_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupStatus) ProtoMessage() {}
+
+func (x *BackupStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupStatus.ProtoReflect.Descriptor instead.
+func (*BackupStatus) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *BackupStatus) GetLastBackupAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastBackupAt
+	}
+	return nil
+}
+
+func (x *BackupStatus) GetLastBackupSizeBytes() int64 {
+	if x != nil {
+		return x.LastBackupSizeBytes
+	}
+	return 0
+}
+
+func (x *BackupStatus) GetOverdue() bool {
+	if x != nil {
+		return x.Overdue
+	}
+	return false
+}
+
+func (x *BackupStatus) GetBackupDirectory() string {
+	if x != nil {
+		return x.BackupDirectory
+	}
+	return ""
+}
+
+func (x *BackupStatus) GetBackupInterval() *durationpb.Duration {
+	if x != nil {
+		return x.BackupInterval
+	}
+	return nil
+}
+
+func (x *BackupStatus) GetBackupRetention() int32 {
+	if x != nil {
+		return x.BackupRetention
+	}
+	return 0
+}
+
+func (x *BackupStatus) GetScheduledCount() int32 {
+	if x != nil {
+		return x.ScheduledCount
+	}
+	return 0
+}
+
+func (x *BackupStatus) GetManualCount() int32 {
+	if x != nil {
+		return x.ManualCount
+	}
+	return 0
+}
+
+func (x *BackupStatus) GetNextBackupAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextBackupAt
+	}
+	return nil
+}
+
+func (x *BackupStatus) GetLastBackupManual() bool {
+	if x != nil {
+		return x.LastBackupManual
+	}
+	return false
+}
+
+type BackupNowRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupNowRequest) Reset() {
+	*x = BackupNowRequest{}
+	mi := &file_settings_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupNowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupNowRequest) ProtoMessage() {}
+
+func (x *BackupNowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupNowRequest.ProtoReflect.Descriptor instead.
+func (*BackupNowRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{8}
+}
+
+type BackupNowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backup        *Backup                `protobuf:"bytes,1,opt,name=backup,proto3" json:"backup,omitempty"`
+	Status        *BackupStatus          `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupNowResponse) Reset() {
+	*x = BackupNowResponse{}
+	mi := &file_settings_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupNowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupNowResponse) ProtoMessage() {}
+
+func (x *BackupNowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupNowResponse.ProtoReflect.Descriptor instead.
+func (*BackupNowResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *BackupNowResponse) GetBackup() *Backup {
+	if x != nil {
+		return x.Backup
+	}
+	return nil
+}
+
+func (x *BackupNowResponse) GetStatus() *BackupStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+type GetBackupStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBackupStatusRequest) Reset() {
+	*x = GetBackupStatusRequest{}
+	mi := &file_settings_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackupStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackupStatusRequest) ProtoMessage() {}
+
+func (x *GetBackupStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackupStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetBackupStatusRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{10}
+}
+
+type GetBackupStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        *BackupStatus          `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBackupStatusResponse) Reset() {
+	*x = GetBackupStatusResponse{}
+	mi := &file_settings_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBackupStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBackupStatusResponse) ProtoMessage() {}
+
+func (x *GetBackupStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBackupStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetBackupStatusResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetBackupStatusResponse) GetStatus() *BackupStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+type ListBackupsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBackupsRequest) Reset() {
+	*x = ListBackupsRequest{}
+	mi := &file_settings_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackupsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackupsRequest) ProtoMessage() {}
+
+func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackupsRequest.ProtoReflect.Descriptor instead.
+func (*ListBackupsRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{12}
+}
+
+type ListBackupsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backups       []*Backup              `protobuf:"bytes,1,rep,name=backups,proto3" json:"backups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBackupsResponse) Reset() {
+	*x = ListBackupsResponse{}
+	mi := &file_settings_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackupsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackupsResponse) ProtoMessage() {}
+
+func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackupsResponse.ProtoReflect.Descriptor instead.
+func (*ListBackupsResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListBackupsResponse) GetBackups() []*Backup {
+	if x != nil {
+		return x.Backups
+	}
+	return nil
+}
+
+// RestoreBackup replaces the live database with one verified snapshot. The
+// current database is copied aside first; the service reopens the store and
+// rebuilds its indexes before reporting success.
+type RestoreBackupRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The snapshot name as returned by ListBackups.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreBackupRequest) Reset() {
+	*x = RestoreBackupRequest{}
+	mi := &file_settings_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreBackupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreBackupRequest) ProtoMessage() {}
+
+func (x *RestoreBackupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreBackupRequest.ProtoReflect.Descriptor instead.
+func (*RestoreBackupRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RestoreBackupRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type RestoreBackupResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Backup *Backup                `protobuf:"bytes,1,opt,name=backup,proto3" json:"backup,omitempty"`
+	Status *BackupStatus          `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// The file holding the database as it was before this restore.
+	PreRestorePath string `protobuf:"bytes,3,opt,name=pre_restore_path,json=preRestorePath,proto3" json:"pre_restore_path,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RestoreBackupResponse) Reset() {
+	*x = RestoreBackupResponse{}
+	mi := &file_settings_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreBackupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreBackupResponse) ProtoMessage() {}
+
+func (x *RestoreBackupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreBackupResponse.ProtoReflect.Descriptor instead.
+func (*RestoreBackupResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RestoreBackupResponse) GetBackup() *Backup {
+	if x != nil {
+		return x.Backup
+	}
+	return nil
+}
+
+func (x *RestoreBackupResponse) GetStatus() *BackupStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
+func (x *RestoreBackupResponse) GetPreRestorePath() string {
+	if x != nil {
+		return x.PreRestorePath
+	}
+	return ""
+}
+
 var File_settings_proto protoreflect.FileDescriptor
 
 const file_settings_proto_rawDesc = "" +
@@ -624,7 +1169,42 @@ const file_settings_proto_rawDesc = "" +
 	"\x15UpdateSettingsRequest\x12-\n" +
 	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"G\n" +
 	"\x16UpdateSettingsResponse\x12-\n" +
-	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings*~\n" +
+	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"\x8e\x01\n" +
+	"\x06Backup\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
+	"\n" +
+	"created_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12\x16\n" +
+	"\x06manual\x18\x04 \x01(\bR\x06manual\"\xf5\x03\n" +
+	"\fBackupStatus\x12@\n" +
+	"\x0elast_backup_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\flastBackupAt\x123\n" +
+	"\x16last_backup_size_bytes\x18\x02 \x01(\x03R\x13lastBackupSizeBytes\x12\x18\n" +
+	"\aoverdue\x18\x03 \x01(\bR\aoverdue\x12)\n" +
+	"\x10backup_directory\x18\x04 \x01(\tR\x0fbackupDirectory\x12B\n" +
+	"\x0fbackup_interval\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\x0ebackupInterval\x12)\n" +
+	"\x10backup_retention\x18\x06 \x01(\x05R\x0fbackupRetention\x12'\n" +
+	"\x0fscheduled_count\x18\a \x01(\x05R\x0escheduledCount\x12!\n" +
+	"\fmanual_count\x18\b \x01(\x05R\vmanualCount\x12@\n" +
+	"\x0enext_backup_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\fnextBackupAt\x12,\n" +
+	"\x12last_backup_manual\x18\n" +
+	" \x01(\bR\x10lastBackupManual\"\x12\n" +
+	"\x10BackupNowRequest\"k\n" +
+	"\x11BackupNowResponse\x12'\n" +
+	"\x06backup\x18\x01 \x01(\v2\x0f.wdid.v1.BackupR\x06backup\x12-\n" +
+	"\x06status\x18\x02 \x01(\v2\x15.wdid.v1.BackupStatusR\x06status\"\x18\n" +
+	"\x16GetBackupStatusRequest\"H\n" +
+	"\x17GetBackupStatusResponse\x12-\n" +
+	"\x06status\x18\x01 \x01(\v2\x15.wdid.v1.BackupStatusR\x06status\"\x14\n" +
+	"\x12ListBackupsRequest\"@\n" +
+	"\x13ListBackupsResponse\x12)\n" +
+	"\abackups\x18\x01 \x03(\v2\x0f.wdid.v1.BackupR\abackups\"*\n" +
+	"\x14RestoreBackupRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x99\x01\n" +
+	"\x15RestoreBackupResponse\x12'\n" +
+	"\x06backup\x18\x01 \x01(\v2\x0f.wdid.v1.BackupR\x06backup\x12-\n" +
+	"\x06status\x18\x02 \x01(\v2\x15.wdid.v1.BackupStatusR\x06status\x12(\n" +
+	"\x10pre_restore_path\x18\x03 \x01(\tR\x0epreRestorePath*~\n" +
 	"\rReviewCadence\x12\x1e\n" +
 	"\x1aREVIEW_CADENCE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15REVIEW_CADENCE_WEEKLY\x10\x01\x12\x1a\n" +
@@ -639,10 +1219,14 @@ const file_settings_proto_rawDesc = "" +
 	"\x11DensityPreference\x12\"\n" +
 	"\x1eDENSITY_PREFERENCE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDENSITY_PREFERENCE_COMFORTABLE\x10\x01\x12\x1e\n" +
-	"\x1aDENSITY_PREFERENCE_COMPACT\x10\x022\xae\x01\n" +
+	"\x1aDENSITY_PREFERENCE_COMPACT\x10\x022\xe2\x03\n" +
 	"\x0fSettingsService\x12H\n" +
 	"\vGetSettings\x12\x1b.wdid.v1.GetSettingsRequest\x1a\x1c.wdid.v1.GetSettingsResponse\x12Q\n" +
-	"\x0eUpdateSettings\x12\x1e.wdid.v1.UpdateSettingsRequest\x1a\x1f.wdid.v1.UpdateSettingsResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
+	"\x0eUpdateSettings\x12\x1e.wdid.v1.UpdateSettingsRequest\x1a\x1f.wdid.v1.UpdateSettingsResponse\x12B\n" +
+	"\tBackupNow\x12\x19.wdid.v1.BackupNowRequest\x1a\x1a.wdid.v1.BackupNowResponse\x12T\n" +
+	"\x0fGetBackupStatus\x12\x1f.wdid.v1.GetBackupStatusRequest\x1a .wdid.v1.GetBackupStatusResponse\x12H\n" +
+	"\vListBackups\x12\x1b.wdid.v1.ListBackupsRequest\x1a\x1c.wdid.v1.ListBackupsResponse\x12N\n" +
+	"\rRestoreBackup\x12\x1d.wdid.v1.RestoreBackupRequest\x1a\x1e.wdid.v1.RestoreBackupResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
 
 var (
 	file_settings_proto_rawDescOnce sync.Once
@@ -657,42 +1241,70 @@ func file_settings_proto_rawDescGZIP() []byte {
 }
 
 var file_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_settings_proto_goTypes = []any{
-	(ReviewCadence)(0),             // 0: wdid.v1.ReviewCadence
-	(ThemePreference)(0),           // 1: wdid.v1.ThemePreference
-	(DensityPreference)(0),         // 2: wdid.v1.DensityPreference
-	(*Settings)(nil),               // 3: wdid.v1.Settings
-	(*About)(nil),                  // 4: wdid.v1.About
-	(*GetSettingsRequest)(nil),     // 5: wdid.v1.GetSettingsRequest
-	(*GetSettingsResponse)(nil),    // 6: wdid.v1.GetSettingsResponse
-	(*UpdateSettingsRequest)(nil),  // 7: wdid.v1.UpdateSettingsRequest
-	(*UpdateSettingsResponse)(nil), // 8: wdid.v1.UpdateSettingsResponse
-	(*durationpb.Duration)(nil),    // 9: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
+	(ReviewCadence)(0),              // 0: wdid.v1.ReviewCadence
+	(ThemePreference)(0),            // 1: wdid.v1.ThemePreference
+	(DensityPreference)(0),          // 2: wdid.v1.DensityPreference
+	(*Settings)(nil),                // 3: wdid.v1.Settings
+	(*About)(nil),                   // 4: wdid.v1.About
+	(*GetSettingsRequest)(nil),      // 5: wdid.v1.GetSettingsRequest
+	(*GetSettingsResponse)(nil),     // 6: wdid.v1.GetSettingsResponse
+	(*UpdateSettingsRequest)(nil),   // 7: wdid.v1.UpdateSettingsRequest
+	(*UpdateSettingsResponse)(nil),  // 8: wdid.v1.UpdateSettingsResponse
+	(*Backup)(nil),                  // 9: wdid.v1.Backup
+	(*BackupStatus)(nil),            // 10: wdid.v1.BackupStatus
+	(*BackupNowRequest)(nil),        // 11: wdid.v1.BackupNowRequest
+	(*BackupNowResponse)(nil),       // 12: wdid.v1.BackupNowResponse
+	(*GetBackupStatusRequest)(nil),  // 13: wdid.v1.GetBackupStatusRequest
+	(*GetBackupStatusResponse)(nil), // 14: wdid.v1.GetBackupStatusResponse
+	(*ListBackupsRequest)(nil),      // 15: wdid.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),     // 16: wdid.v1.ListBackupsResponse
+	(*RestoreBackupRequest)(nil),    // 17: wdid.v1.RestoreBackupRequest
+	(*RestoreBackupResponse)(nil),   // 18: wdid.v1.RestoreBackupResponse
+	(*durationpb.Duration)(nil),     // 19: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),   // 20: google.protobuf.Timestamp
 }
 var file_settings_proto_depIdxs = []int32{
-	9,  // 0: wdid.v1.Settings.daily_target:type_name -> google.protobuf.Duration
+	19, // 0: wdid.v1.Settings.daily_target:type_name -> google.protobuf.Duration
 	0,  // 1: wdid.v1.Settings.review_cadence:type_name -> wdid.v1.ReviewCadence
-	9,  // 2: wdid.v1.Settings.long_timer_threshold:type_name -> google.protobuf.Duration
-	9,  // 3: wdid.v1.Settings.default_entry_duration:type_name -> google.protobuf.Duration
-	9,  // 4: wdid.v1.Settings.backup_interval:type_name -> google.protobuf.Duration
+	19, // 2: wdid.v1.Settings.long_timer_threshold:type_name -> google.protobuf.Duration
+	19, // 3: wdid.v1.Settings.default_entry_duration:type_name -> google.protobuf.Duration
+	19, // 4: wdid.v1.Settings.backup_interval:type_name -> google.protobuf.Duration
 	1,  // 5: wdid.v1.Settings.theme:type_name -> wdid.v1.ThemePreference
 	2,  // 6: wdid.v1.Settings.density:type_name -> wdid.v1.DensityPreference
-	10, // 7: wdid.v1.Settings.updated_at:type_name -> google.protobuf.Timestamp
+	20, // 7: wdid.v1.Settings.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 8: wdid.v1.GetSettingsResponse.settings:type_name -> wdid.v1.Settings
 	4,  // 9: wdid.v1.GetSettingsResponse.about:type_name -> wdid.v1.About
 	3,  // 10: wdid.v1.UpdateSettingsRequest.settings:type_name -> wdid.v1.Settings
 	3,  // 11: wdid.v1.UpdateSettingsResponse.settings:type_name -> wdid.v1.Settings
-	5,  // 12: wdid.v1.SettingsService.GetSettings:input_type -> wdid.v1.GetSettingsRequest
-	7,  // 13: wdid.v1.SettingsService.UpdateSettings:input_type -> wdid.v1.UpdateSettingsRequest
-	6,  // 14: wdid.v1.SettingsService.GetSettings:output_type -> wdid.v1.GetSettingsResponse
-	8,  // 15: wdid.v1.SettingsService.UpdateSettings:output_type -> wdid.v1.UpdateSettingsResponse
-	14, // [14:16] is the sub-list for method output_type
-	12, // [12:14] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	20, // 12: wdid.v1.Backup.created_at:type_name -> google.protobuf.Timestamp
+	20, // 13: wdid.v1.BackupStatus.last_backup_at:type_name -> google.protobuf.Timestamp
+	19, // 14: wdid.v1.BackupStatus.backup_interval:type_name -> google.protobuf.Duration
+	20, // 15: wdid.v1.BackupStatus.next_backup_at:type_name -> google.protobuf.Timestamp
+	9,  // 16: wdid.v1.BackupNowResponse.backup:type_name -> wdid.v1.Backup
+	10, // 17: wdid.v1.BackupNowResponse.status:type_name -> wdid.v1.BackupStatus
+	10, // 18: wdid.v1.GetBackupStatusResponse.status:type_name -> wdid.v1.BackupStatus
+	9,  // 19: wdid.v1.ListBackupsResponse.backups:type_name -> wdid.v1.Backup
+	9,  // 20: wdid.v1.RestoreBackupResponse.backup:type_name -> wdid.v1.Backup
+	10, // 21: wdid.v1.RestoreBackupResponse.status:type_name -> wdid.v1.BackupStatus
+	5,  // 22: wdid.v1.SettingsService.GetSettings:input_type -> wdid.v1.GetSettingsRequest
+	7,  // 23: wdid.v1.SettingsService.UpdateSettings:input_type -> wdid.v1.UpdateSettingsRequest
+	11, // 24: wdid.v1.SettingsService.BackupNow:input_type -> wdid.v1.BackupNowRequest
+	13, // 25: wdid.v1.SettingsService.GetBackupStatus:input_type -> wdid.v1.GetBackupStatusRequest
+	15, // 26: wdid.v1.SettingsService.ListBackups:input_type -> wdid.v1.ListBackupsRequest
+	17, // 27: wdid.v1.SettingsService.RestoreBackup:input_type -> wdid.v1.RestoreBackupRequest
+	6,  // 28: wdid.v1.SettingsService.GetSettings:output_type -> wdid.v1.GetSettingsResponse
+	8,  // 29: wdid.v1.SettingsService.UpdateSettings:output_type -> wdid.v1.UpdateSettingsResponse
+	12, // 30: wdid.v1.SettingsService.BackupNow:output_type -> wdid.v1.BackupNowResponse
+	14, // 31: wdid.v1.SettingsService.GetBackupStatus:output_type -> wdid.v1.GetBackupStatusResponse
+	16, // 32: wdid.v1.SettingsService.ListBackups:output_type -> wdid.v1.ListBackupsResponse
+	18, // 33: wdid.v1.SettingsService.RestoreBackup:output_type -> wdid.v1.RestoreBackupResponse
+	28, // [28:34] is the sub-list for method output_type
+	22, // [22:28] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_settings_proto_init() }
@@ -706,7 +1318,7 @@ func file_settings_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_settings_proto_rawDesc), len(file_settings_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   6,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

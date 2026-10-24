@@ -28,6 +28,73 @@ class SettingsSnapshot {
   final AboutInfo about;
 }
 
+/// One database snapshot on disk.
+class BackupSnapshot {
+  const BackupSnapshot({
+    required this.name,
+    required this.createdAt,
+    required this.sizeBytes,
+    required this.manual,
+  });
+
+  final String name;
+  final DateTime createdAt;
+  final int sizeBytes;
+
+  /// Manual snapshots are never removed by retention.
+  final bool manual;
+}
+
+/// Instance-wide backup state shown in Settings → Data & backups.
+class BackupStatusInfo {
+  const BackupStatusInfo({
+    this.lastBackupAt,
+    this.lastBackupSizeBytes = 0,
+    this.overdue = false,
+    this.backupDirectory = '',
+    this.backupIntervalHours = 6,
+    this.backupRetention = 30,
+    this.scheduledCount = 0,
+    this.manualCount = 0,
+    this.nextBackupAt,
+    this.lastBackupManual = false,
+  });
+
+  final DateTime? lastBackupAt;
+  final int lastBackupSizeBytes;
+
+  /// A workspace with no scheduled snapshot yet is overdue.
+  final bool overdue;
+  final String backupDirectory;
+  final int backupIntervalHours;
+  final int backupRetention;
+  final int scheduledCount;
+  final int manualCount;
+  final DateTime? nextBackupAt;
+  final bool lastBackupManual;
+}
+
+/// The result of an explicit `Backup now`, including the refreshed status.
+class BackupNowResult {
+  const BackupNowResult({required this.backup, required this.status});
+
+  final BackupSnapshot backup;
+  final BackupStatusInfo status;
+}
+
+/// The result of a restore, including the preserved pre-restore database.
+class RestoreBackupResult {
+  const RestoreBackupResult({
+    required this.backup,
+    required this.status,
+    required this.preRestorePath,
+  });
+
+  final BackupSnapshot backup;
+  final BackupStatusInfo status;
+  final String preRestorePath;
+}
+
 /// A user-facing settings failure, with the field the service rejected.
 class SettingsFailure extends ServiceFailure {
   const SettingsFailure(super.message, {super.field});
@@ -38,6 +105,16 @@ abstract class SettingsApi {
   Future<SettingsSnapshot> getSettings();
 
   Future<AppSettings> updateSettings(AppSettings settings);
+
+  /// Backups are instance-wide and admin-only. Non-admins receive a
+  /// permission-denied [SettingsFailure].
+  Future<BackupStatusInfo> getBackupStatus();
+
+  Future<List<BackupSnapshot>> listBackups();
+
+  Future<BackupNowResult> backupNow();
+
+  Future<RestoreBackupResult> restoreBackup(String name);
 }
 
 /// The narrow generated-client surface, separated so field mapping and error
@@ -47,6 +124,16 @@ abstract class SettingsRpc {
 
   Future<generated.UpdateSettingsResponse> updateSettings(
     generated.UpdateSettingsRequest request,
+  );
+
+  Future<generated.GetBackupStatusResponse> getBackupStatus();
+
+  Future<generated.ListBackupsResponse> listBackups();
+
+  Future<generated.BackupNowResponse> backupNow();
+
+  Future<generated.RestoreBackupResponse> restoreBackup(
+    generated.RestoreBackupRequest request,
   );
 }
 
@@ -72,6 +159,23 @@ class GrpcSettingsRpc implements SettingsRpc {
   Future<generated.UpdateSettingsResponse> updateSettings(
     generated.UpdateSettingsRequest request,
   ) => _client.updateSettings(request);
+
+  @override
+  Future<generated.GetBackupStatusResponse> getBackupStatus() =>
+      _client.getBackupStatus(generated.GetBackupStatusRequest());
+
+  @override
+  Future<generated.ListBackupsResponse> listBackups() =>
+      _client.listBackups(generated.ListBackupsRequest());
+
+  @override
+  Future<generated.BackupNowResponse> backupNow() =>
+      _client.backupNow(generated.BackupNowRequest());
+
+  @override
+  Future<generated.RestoreBackupResponse> restoreBackup(
+    generated.RestoreBackupRequest request,
+  ) => _client.restoreBackup(request);
 }
 
 /// Settings over Connect/gRPC-Web.
@@ -104,6 +208,55 @@ class GrpcSettingsApi implements SettingsApi {
         generated.UpdateSettingsRequest(settings: _toProto(settings)),
       );
       return _fromProto(response.settings, settings);
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<BackupStatusInfo> getBackupStatus() async {
+    try {
+      final response = await _rpc.getBackupStatus();
+      return _statusFromProto(response.status);
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<List<BackupSnapshot>> listBackups() async {
+    try {
+      final response = await _rpc.listBackups();
+      return [for (final backup in response.backups) _backupFromProto(backup)];
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<BackupNowResult> backupNow() async {
+    try {
+      final response = await _rpc.backupNow();
+      return BackupNowResult(
+        backup: _backupFromProto(response.backup),
+        status: _statusFromProto(response.status),
+      );
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<RestoreBackupResult> restoreBackup(String name) async {
+    try {
+      final response = await _rpc.restoreBackup(
+        generated.RestoreBackupRequest(name: name),
+      );
+      return RestoreBackupResult(
+        backup: _backupFromProto(response.backup),
+        status: _statusFromProto(response.status),
+        preRestorePath: response.preRestorePath,
+      );
     } on GrpcError catch (error) {
       throw _failure(error);
     }
@@ -153,9 +306,37 @@ class GrpcSettingsApi implements SettingsApi {
       unavailable:
           'The service is unreachable. Check that the server is running.',
       unauthenticated: 'Sign in again to change settings.',
+      notFound: 'That snapshot no longer exists.',
+      failedPrecondition:
+          'That snapshot cannot be restored. Choose a different backup.',
     );
     return SettingsFailure(text.message, field: text.field);
   }
+
+  BackupSnapshot _backupFromProto(generated.Backup backup) => BackupSnapshot(
+    name: backup.name,
+    createdAt: backup.createdAt.toDateTime(),
+    sizeBytes: backup.sizeBytes.toInt(),
+    manual: backup.manual,
+  );
+
+  BackupStatusInfo _statusFromProto(generated.BackupStatus status) =>
+      BackupStatusInfo(
+        lastBackupAt: status.hasLastBackupAt()
+            ? status.lastBackupAt.toDateTime()
+            : null,
+        lastBackupSizeBytes: status.lastBackupSizeBytes.toInt(),
+        overdue: status.overdue,
+        backupDirectory: status.backupDirectory,
+        backupIntervalHours: status.backupInterval.seconds.toInt() ~/ 3600,
+        backupRetention: status.backupRetention,
+        scheduledCount: status.scheduledCount,
+        manualCount: status.manualCount,
+        nextBackupAt: status.hasNextBackupAt()
+            ? status.nextBackupAt.toDateTime()
+            : null,
+        lastBackupManual: status.lastBackupManual,
+      );
 }
 
 duration.Duration _minutesDuration(int minutes) =>

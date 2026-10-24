@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package wdid.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1";
+
+// Milestone is a dated checkpoint attached to a subcategory (project). The due
+// date is optional, so an undated checkpoint is a plain checklist item.
+message Milestone {
+  string id = 1;
+  string subcategory_id = 2;
+  string title = 3;
+  // Local calendar date (YYYY-MM-DD), empty when the milestone has no due date.
+  string due_date = 4;
+  bool done = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// ListMilestonesRequest narrows the caller's milestones to one project. An
+// empty subcategory_id lists every milestone the caller owns.
+message ListMilestonesRequest {
+  string subcategory_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListMilestonesResponse {
+  // Due date ascending with undated milestones last, then creation time.
+  repeated Milestone milestones = 1;
+  string next_page_token = 2;
+}
+
+message CreateMilestoneRequest {
+  string subcategory_id = 1;
+  string title = 2;
+  // Optional local calendar date (YYYY-MM-DD).
+  string due_date = 3;
+  bool done = 4;
+}
+
+message CreateMilestoneResponse {
+  Milestone milestone = 1;
+}
+
+// UpdateMilestoneRequest replaces the mutable fields. A milestone never moves
+// to another project, so subcategory_id is deliberately absent.
+message UpdateMilestoneRequest {
+  string id = 1;
+  string title = 2;
+  string due_date = 3;
+  bool done = 4;
+}
+
+message UpdateMilestoneResponse {
+  Milestone milestone = 1;
+}
+
+message DeleteMilestoneRequest {
+  string id = 1;
+}
+
+message DeleteMilestoneResponse {}
+
+// MilestoneService owns project milestones. Every RPC requires a bearer token;
+// the account is derived from that token, never from a request field.
+service MilestoneService {
+  rpc ListMilestones(ListMilestonesRequest) returns (ListMilestonesResponse);
+  rpc CreateMilestone(CreateMilestoneRequest) returns (CreateMilestoneResponse);
+  rpc UpdateMilestone(UpdateMilestoneRequest) returns (UpdateMilestoneResponse);
+  rpc DeleteMilestone(DeleteMilestoneRequest) returns (DeleteMilestoneResponse);
+}

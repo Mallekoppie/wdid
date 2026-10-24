@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/app_tokens.dart';
+import 'focus_ring.dart';
 import 'forms/shortcuts_dialog.dart';
 
 class _NavItem {
@@ -21,11 +22,7 @@ const _items = [
 ];
 
 class NavRail extends StatelessWidget {
-  const NavRail({
-    super.key,
-    required this.currentPath,
-    this.compact = false,
-  });
+  const NavRail({super.key, required this.currentPath, this.compact = false});
 
   final String currentPath;
   final bool compact;
@@ -80,7 +77,11 @@ class NavRail extends StatelessWidget {
               ),
             ),
           _NavEntry(
-            item: const _NavItem('/settings', 'Settings', Icons.settings_outlined),
+            item: const _NavItem(
+              '/settings',
+              'Settings',
+              Icons.settings_outlined,
+            ),
             selected: _selected('/settings'),
             compact: compact,
             onTap: () => context.go('/settings'),
@@ -115,46 +116,53 @@ class _NavEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final dense = theme.visualDensity.vertical < 0;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: Material(
-        color: selected
-            ? scheme.primaryContainer.withValues(alpha: 0.72)
-            : Colors.transparent,
+      child: FocusRing(
         borderRadius: BorderRadius.circular(AppRadius.input),
-        child: InkWell(
-          onTap: onTap,
+        child: Material(
+          color: selected
+              ? scheme.primaryContainer.withValues(alpha: 0.72)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.input),
-          child: Tooltip(
-            message: compact ? item.label : '',
-            child: SizedBox(
-              height: 38,
-              child: Row(
-                mainAxisAlignment:
-                    compact ? MainAxisAlignment.center : MainAxisAlignment.start,
-                children: [
-                  if (!compact) const SizedBox(width: 10),
-                  Icon(
-                    item.icon,
-                    size: 18,
-                    color: selected
-                        ? scheme.onPrimaryContainer
-                        : scheme.onSurfaceVariant,
-                  ),
-                  if (!compact) ...[
-                    const SizedBox(width: 10),
-                    Text(
-                      item.label,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: selected
-                            ? scheme.onPrimaryContainer
-                            : scheme.onSurface,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                      ),
+          child: InkWell(
+            onTap: onTap,
+            focusColor: scheme.primary.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(AppRadius.input),
+            child: Tooltip(
+              message: compact ? item.label : '',
+              child: SizedBox(
+                height: dense ? 34 : 38,
+                child: Row(
+                  mainAxisAlignment: compact
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.start,
+                  children: [
+                    if (!compact) const SizedBox(width: 10),
+                    Icon(
+                      item.icon,
+                      size: 18,
+                      color: selected
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurfaceVariant,
                     ),
+                    if (!compact) ...[
+                      const SizedBox(width: 10),
+                      Text(
+                        item.label,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurface,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

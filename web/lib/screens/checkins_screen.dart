@@ -4,17 +4,37 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/check_in.dart';
+import '../models/enums.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
-import '../utils/analytics.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/checkin_dialog.dart';
+import '../widgets/forms/review_timeframe_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
 import '../widgets/status_badge.dart';
 
-class CheckinsScreen extends StatelessWidget {
+class CheckinsScreen extends StatefulWidget {
   const CheckinsScreen({super.key});
+
+  @override
+  State<CheckinsScreen> createState() => _CheckinsScreenState();
+}
+
+class _CheckinsScreenState extends State<CheckinsScreen> {
+  bool _requested = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = AppStateScope.read(context);
+    if (!state.hasCheckInService || _requested) return;
+    _requested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(AppStateScope.read(context).loadCheckIns());
+    });
+  }
 
   Future<void> _create(BuildContext context) async {
     final state = AppStateScope.read(context);
@@ -24,12 +44,31 @@ class CheckinsScreen extends StatelessWidget {
     }
   }
 
-  String _excerpt(String markdown) {
-    final plain = markdown
+  Future<void> _newReview(BuildContext context) async {
+    final state = AppStateScope.read(context);
+    final period = await showReviewTimeframeDialog(context, state: state);
+    if (period == null || !context.mounted) return;
+    context.go(
+      '/checkins/review'
+      '?start=${isoDate(period.start)}'
+      '&end=${isoDate(period.end)}'
+      '&timeframe=${period.timeframe.name}',
+    );
+  }
+
+  String _excerpt(CheckIn checkIn) {
+    final source = checkIn.summaryMarkdown.isNotEmpty
+        ? checkIn.summaryMarkdown
+        : checkIn.focusNotes;
+    final plain = source
         .replaceAll(RegExp(r'[#>*`\-]'), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    if (plain.isEmpty) return 'No summary yet.';
+    if (plain.isEmpty) {
+      return checkIn.focusNotes.isEmpty
+          ? 'No focus notes or summary yet.'
+          : checkIn.focusNotes;
+    }
     return plain.length > 160 ? '${plain.substring(0, 160)}…' : plain;
   }
 
@@ -55,7 +94,7 @@ class CheckinsScreen extends StatelessWidget {
                       state.latestCheckIn == null
                           ? 'Turn captured work into a review-ready period report.'
                           : '${state.daysSinceCheckIn} days since the last check-in · '
-                              '${checkIns.length} total',
+                                '${checkIns.length} shown',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                         fontFeatures: tabularFigures,
@@ -64,6 +103,12 @@ class CheckinsScreen extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
+                OutlinedButton.icon(
+                  onPressed: () => unawaited(_newReview(context)),
+                  icon: const Icon(Icons.rate_review_outlined, size: 16),
+                  label: const Text('New review'),
+                ),
+                const SizedBox(width: 6),
                 FilledButton.icon(
                   onPressed: () => unawaited(_create(context)),
                   icon: const Icon(Icons.add, size: 16),
@@ -71,15 +116,88 @@ class CheckinsScreen extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.md),
+            _KindFilter(
+              selected: state.checkInKindFilter,
+              onSelected: (kind) => unawaited(state.setCheckInKindFilter(kind)),
+            ),
             const SizedBox(height: AppSpacing.lg),
-            if (checkIns.isEmpty)
+            if (state.checkInsError != null && checkIns.isNotEmpty) ...[
+              Panel(
+                tone: PanelTone.support,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_off_outlined,
+                      size: 17,
+                      color: scheme.error,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Could not refresh check-ins. '
+                        '${state.checkInsError}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          unawaited(state.loadCheckIns(force: true)),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            if (state.checkInsLoading && checkIns.isEmpty)
+              const Panel(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(height: AppSpacing.sm),
+                        Text('Loading check-ins…'),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (state.checkInsError != null && checkIns.isEmpty)
+              Panel(
+                child: EmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  title: 'Could not load check-ins',
+                  message: state.checkInsError!,
+                  action: OutlinedButton.icon(
+                    onPressed: () => unawaited(state.loadCheckIns(force: true)),
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Retry'),
+                  ),
+                ),
+              )
+            else if (checkIns.isEmpty)
               Panel(
                 child: EmptyState(
                   icon: Icons.event_note_outlined,
-                  title: 'No check-ins yet',
-                  message:
-                      'A check-in snapshots the period since the previous one and '
-                      'turns it into a portable summary.',
+                  title: switch (state.checkInKindFilter) {
+                    CheckInKind.manager => 'No manager check-ins yet',
+                    CheckInKind.personal => 'No personal reviews yet',
+                    null => 'No check-ins yet',
+                  },
+                  message: state.checkInKindFilter == null
+                      ? 'A manager check-in snapshots the period since the '
+                            'previous one. A personal review is for your own '
+                            'weekly or monthly reflection.'
+                      : 'Nothing matches this filter yet. Create one or switch '
+                            'back to all check-ins.',
                   action: FilledButton.icon(
                     onPressed: () => unawaited(_create(context)),
                     icon: const Icon(Icons.add, size: 16),
@@ -91,22 +209,16 @@ class CheckinsScreen extends StatelessWidget {
               for (final checkIn in checkIns) ...[
                 _CheckInCard(
                   checkIn: checkIn,
-                  excerpt: _excerpt(checkIn.summaryMarkdown),
-                  support: supportMinutes(
-                    entriesInRange(
-                      state.workItems,
-                      checkIn.periodStart,
-                      checkIn.periodEnd,
-                    ),
-                  ),
+                  excerpt: _excerpt(checkIn),
+                  support: checkIn.totals.supportMinutes,
                   onTap: () => context.go('/checkins/${checkIn.id}'),
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
             const SizedBox(height: AppSpacing.md),
             Text(
-              'Final check-ins become the boundary for the next period. '
-              'Exports are generated by SummaryService.',
+              'Final manager check-ins are read-only and become the boundary '
+              'for the next period. Personal reviews never move it.',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -114,6 +226,41 @@ class CheckinsScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _KindFilter extends StatelessWidget {
+  const _KindFilter({required this.selected, required this.onSelected});
+
+  final CheckInKind? selected;
+  final ValueChanged<CheckInKind?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    Widget chip(String label, CheckInKind? kind) {
+      final isSelected = selected == kind;
+      return ChoiceChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => onSelected(kind),
+        labelStyle: theme.textTheme.labelMedium?.copyWith(
+          color: isSelected
+              ? scheme.onSecondaryContainer
+              : scheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: AppSpacing.sm,
+      children: [
+        chip('All', null),
+        chip('Manager', CheckInKind.manager),
+        chip('Personal', CheckInKind.personal),
+      ],
     );
   }
 }
@@ -157,6 +304,12 @@ class _CheckInCard extends StatelessWidget {
                   ),
                 ),
               ),
+              CheckInKindBadge(kind: checkIn.kind),
+              if (checkIn.audience != null) ...[
+                const SizedBox(width: 6),
+                CheckInAudienceBadge(audience: checkIn.audience!),
+              ],
+              const SizedBox(width: 6),
               CheckInStateBadge(state: checkIn.state),
               const SizedBox(width: 6),
               Icon(
@@ -180,22 +333,9 @@ class _CheckInCard extends StatelessWidget {
             spacing: AppSpacing.lg,
             runSpacing: 6,
             children: [
-              _Metric(
-                label: 'logged',
-                value: formatDuration(totals.minutes),
-              ),
-              _Metric(
-                label: 'days',
-                value: '${checkIn.daysCovered}',
-              ),
-              _Metric(
-                label: 'initiatives',
-                value: '${totals.byInitiative.length}',
-              ),
-              _Metric(
-                label: 'support',
-                value: formatDuration(support),
-              ),
+              _Metric(label: 'logged', value: formatDuration(totals.minutes)),
+              _Metric(label: 'days', value: '${checkIn.daysCovered}'),
+              _Metric(label: 'support', value: formatDuration(support)),
               _Metric(
                 label: 'created',
                 value: formatShortDate(checkIn.createdAt),

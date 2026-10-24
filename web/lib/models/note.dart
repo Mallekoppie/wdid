@@ -26,30 +26,31 @@ class Note {
     return Note(
       id: id ?? this.id,
       date: date ?? this.date,
-      initiativeId:
-          clearInitiative ? null : (initiativeId ?? this.initiativeId),
+      initiativeId: clearInitiative
+          ? null
+          : (initiativeId ?? this.initiativeId),
       text: text ?? this.text,
       createdAt: createdAt ?? this.createdAt,
     );
   }
 
   factory Note.fromJson(Map<String, dynamic> json) => Note(
-        id: json['id'].toString(),
-        date: json['date']?.toString() ?? '',
-        initiativeId: _nullableString(json['initiativeId']),
-        text: json['text']?.toString() ?? '',
-        createdAt:
-            DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-                DateTime.now(),
-      );
+    id: json['id'].toString(),
+    date: json['date']?.toString() ?? '',
+    initiativeId: _nullableString(json['initiativeId']),
+    text: json['text']?.toString() ?? '',
+    createdAt:
+        DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+        DateTime.now(),
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date,
-        'initiativeId': initiativeId,
-        'text': text,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'date': date,
+    'initiativeId': initiativeId,
+    'text': text,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+  };
 
   static String? _nullableString(Object? value) {
     final text = value?.toString();

@@ -58,10 +58,7 @@ class AuthFailure implements Exception {
 abstract class AuthApi {
   Future<AuthConfig> getConfig();
 
-  Future<AuthSession> login({
-    required String email,
-    required String password,
-  });
+  Future<AuthSession> login({required String email, required String password});
 
   Future<AuthSession> register({
     required String email,
@@ -95,7 +92,7 @@ abstract class AuthRpc {
 /// default.
 class GrpcAuthRpc implements AuthRpc {
   GrpcAuthRpc({generated.AuthServiceClient? client})
-      : _client = client ?? generated.AuthServiceClient(openAppChannel());
+    : _client = client ?? generated.AuthServiceClient(openAppChannel());
 
   final generated.AuthServiceClient _client;
 
@@ -199,7 +196,9 @@ class GrpcAuthApi implements AuthApi {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
-        role: user.role == generated.UserRole.USER_ROLE_ADMIN ? 'admin' : 'user',
+        role: user.role == generated.UserRole.USER_ROLE_ADMIN
+            ? 'admin'
+            : 'user',
       ),
       token: token,
     );
