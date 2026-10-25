@@ -58,9 +58,11 @@ String stoppedTimerMessage(StoppedTimer? result) {
 /// which case nothing should start. A discarded stop still lets the interrupt
 /// continue (the timer is gone), but it stashes no Resume target: there is no
 /// saved block to return to.
-Future<bool> stopForInterrupt(BuildContext context, {AppState? state}) async {
-  final appState = state ?? AppStateScope.read(context);
-  final timer = appState.activeTimer;
+Future<bool> stopForInterrupt(
+  BuildContext context, {
+  required AppState state,
+}) async {
+  final timer = state.activeTimer;
   if (timer == null) return false;
 
   final stash = InterruptedTimer(
@@ -69,9 +71,9 @@ Future<bool> stopForInterrupt(BuildContext context, {AppState? state}) async {
     description: timer.description,
     person: timer.person,
   );
-  final result = await stopTimerWithDecision(context, state: appState);
+  final result = await stopTimerWithDecision(context, state: state);
   if (result == null) return false;
-  if (!result.discarded) appState.setInterruptedTimer(stash);
+  if (!result.discarded) state.setInterruptedTimer(stash);
   return true;
 }
 
