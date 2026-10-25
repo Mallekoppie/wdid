@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/app_settings.dart';
+import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
@@ -15,6 +16,7 @@ import '../widgets/panel.dart';
 import '../widgets/quick_capture_bar.dart';
 import '../widgets/screen_states.dart';
 import '../widgets/service_timer_card.dart';
+import '../widgets/support_now_strip.dart';
 import '../widgets/work_entry_row.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -25,6 +27,25 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
+  /// Re-files a mode-less support entry under the chosen mode's category and
+  /// subcategory. The entry stays in Today; only its attribution moves.
+  Future<void> _setMode(WorkEntry entry, Subcategory mode) async {
+    final state = AppStateScope.read(context);
+    try {
+      await state.updateWorkEntry(
+        entry.copyWith(categoryId: mode.categoryId, subcategoryId: mode.id),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Mode set · ${mode.name}')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not set the mode: $error')));
+    }
+  }
+
   Future<void> _editOutcome(WorkEntry entry) async {
     final state = AppStateScope.read(context);
     final outcome = await showDialog<String>(
@@ -130,6 +151,8 @@ class _TodayScreenState extends State<TodayScreen> {
               entry: entry,
               category: state.categoryById(entry.categoryId),
               subcategory: state.subcategoryById(entry.subcategoryId),
+              supportModes: state.selectableSupportModes,
+              onSetMode: (mode) => unawaited(_setMode(entry, mode)),
               onEditOutcome: (entry) => unawaited(_editOutcome(entry)),
             ),
         ],
@@ -188,6 +211,8 @@ class _TodayScreenState extends State<TodayScreen> {
             ],
             const SizedBox(height: AppSpacing.lg),
             const ServiceTimerCard(),
+            const SizedBox(height: AppSpacing.md),
+            const SupportNowStrip(),
             const SizedBox(height: AppSpacing.md),
             const QuickCaptureBar(),
             const SizedBox(height: AppSpacing.xl),

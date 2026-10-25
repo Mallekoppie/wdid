@@ -1,0 +1,579 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:wdid_web/app.dart';
+import 'package:wdid_web/data/timer_api.dart';
+import 'package:wdid_web/models/app_settings.dart';
+import 'package:wdid_web/models/taxonomy.dart';
+import 'package:wdid_web/screens/today_screen.dart';
+import 'package:wdid_web/state/app_state.dart';
+import 'package:wdid_web/state/app_state_scope.dart';
+import 'package:wdid_web/widgets/app_shell.dart';
+import 'package:wdid_web/widgets/support_now_strip.dart';
+
+import 'fake_auth_api.dart';
+import 'fake_entry_api.dart';
+import 'fake_preferences_api.dart';
+import 'fake_timer_api.dart';
+
+Category category(
+  String id,
+  String name, {
+  CategoryRole role = CategoryRole.initiative,
+  int sortOrder = 0,
+}) => Category(
+  id: id,
+  name: name,
+  role: role,
+  sortOrder: sortOrder,
+  createdAt: DateTime.utc(2026, 10, 23),
+  updatedAt: DateTime.utc(2026, 10, 23),
+);
+
+Subcategory subcategory(String id, String categoryId, String name) =>
+    Subcategory(
+      id: id,
+      categoryId: categoryId,
+      name: name,
+      createdAt: DateTime.utc(2026, 10, 23),
+      updatedAt: DateTime.utc(2026, 10, 23),
+    );
+
+/// A service-backed state with an initiative and support taxonomy.
+({AppState state, FakeTimerApi timerApi, FakeEntryApi entryApi}) buildState({
+  FakeTimerApi? timerApi,
+  FakeEntryApi? entryApi,
+  List<Category>? categories,
+  List<Subcategory>? subcategories,
+}) {
+  final timer = timerApi ?? FakeTimerApi();
+  final entries = entryApi ?? FakeEntryApi();
+  final state = AppState(
+    categoryApi: FakeCategoryApi(
+      categories:
+          categories ??
+          [
+            category('cat-1', 'Initiatives'),
+            category('cat-support', 'Support', role: CategoryRole.support),
+          ],
+      subcategories:
+          subcategories ??
+          [
+            subcategory('sub-1', 'cat-1', 'Billing migration'),
+            subcategory('mode-s', 'cat-support', 'Unblock'),
+          ],
+    ),
+    settingsApi: FakeSettingsApi(
+      settings: const AppSettings(supportPeople: ['Priya', 'Sam']),
+    ),
+    entryApi: entries,
+    timerApi: timer,
+  );
+  return (state: state, timerApi: timer, entryApi: entries);
+}
+
+/// Puts a timer on the fake server so the app sees one after load.
+void seedRunningTimer(
+  FakeTimerApi api, {
+  String categoryId = 'cat-1',
+  String subcategoryId = 'sub-1',
+  String description = 'Backfill script',
+  String person = '',
+}) {
+  final now = DateTime.now().toUtc();
+  api.timer = TimerSnapshot(
+    categoryId: categoryId,
+    subcategoryId: subcategoryId,
+    description: description,
+    person: person,
+    startedAt: now.subtract(const Duration(minutes: 20)),
+    segmentStartedAt: now.subtract(const Duration(minutes: 20)),
+    elapsed: const Duration(minutes: 20),
+  );
+}
+
+/// Pumps the real app on Today and returns its state.
+Future<AppState> pumpApp(
+  WidgetTester tester, {
+  required FakeTimerApi timerApi,
+  FakeEntryApi? entryApi,
+  List<Category>? categories,
+  List<Subcategory>? subcategories,
+  List<String> roster = const ['Priya', 'Sam'],
+}) async {
+  tester.view.physicalSize = const Size(1600, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    WdidApp(
+      authApi: FakeAuthApi(),
+      initialSession: signedInSession(),
+      initialRoute: '/today',
+      categoryApiBuilder: (_) => FakeCategoryApi(
+        categories:
+            categories ??
+            [
+              category('cat-1', 'Initiatives'),
+              category('cat-support', 'Support', role: CategoryRole.support),
+            ],
+        subcategories:
+            subcategories ??
+            [
+              subcategory('sub-1', 'cat-1', 'Billing migration'),
+              subcategory('mode-s', 'cat-support', 'Unblock'),
+            ],
+      ),
+      settingsApiBuilder: (_) =>
+          FakeSettingsApi(settings: AppSettings(supportPeople: roster)),
+      entryApiBuilder: (_) => entryApi ?? FakeEntryApi(),
+      timerApiBuilder: (_) => timerApi,
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  // Dispose the app so its poll ticker does not outlive the test.
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  return AppStateScope.read(tester.element(find.byType(AppShell)));
+}
+
+void main() {
+  test('a stash resumes as a fresh timer and is consumed', () async {
+    final harness = buildState();
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(
+        categoryId: 'cat-1',
+        subcategoryId: 'sub-1',
+        description: 'Backfill script',
+      ),
+    );
+
+    expect(harness.state.interruptedTimer, isNotNull);
+    expect(
+      harness.state.interruptedTimerLabel,
+      'Initiatives · Billing migration',
+    );
+
+    await harness.state.resumeInterruptedTimer();
+
+    expect(harness.timerApi.startCalls, 1);
+    expect(harness.timerApi.timer!.categoryId, 'cat-1');
+    expect(harness.timerApi.timer!.subcategoryId, 'sub-1');
+    expect(harness.timerApi.timer!.description, 'Backfill script');
+    expect(
+      harness.state.interruptedTimer,
+      isNull,
+      reason: 'resuming consumes the stash',
+    );
+  });
+
+  test('a new interrupt overwrites the stash', () async {
+    final harness = buildState();
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(categoryId: 'cat-1', subcategoryId: 'sub-1'),
+    );
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(categoryId: 'cat-support'),
+    );
+
+    expect(harness.state.interruptedTimer!.categoryId, 'cat-support');
+    expect(harness.state.interruptedTimer!.subcategoryId, isEmpty);
+  });
+
+  test('the default support category is the most recently used one', () async {
+    final harness = buildState(
+      categories: [
+        category('cat-support-a', 'Support A', role: CategoryRole.support),
+        category('cat-support-b', 'Support B', role: CategoryRole.support),
+        category('cat-1', 'Initiatives'),
+      ],
+      subcategories: [
+        subcategory('mode-a', 'cat-support-a', 'Unblock'),
+        subcategory('mode-b', 'cat-support-b', 'Pairing'),
+      ],
+    );
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+
+    expect(
+      harness.state.defaultSupportCategory!.id,
+      'cat-support-a',
+      reason: 'without history the first support category is the fallback',
+    );
+
+    await harness.state.startTimer(categoryId: 'cat-support-b', person: 'Sam');
+    await harness.state.stopTimer();
+
+    expect(harness.state.defaultSupportCategory!.id, 'cat-support-b');
+  });
+
+  testWidgets(
+    'header interrupt saves the initiative and starts support in place',
+    (tester) async {
+      final timerApi = FakeTimerApi();
+      seedRunningTimer(timerApi);
+      final entryApi = FakeEntryApi();
+      final state = await pumpApp(
+        tester,
+        timerApi: timerApi,
+        entryApi: entryApi,
+      );
+
+      expect(find.byType(TodayScreen), findsOneWidget);
+      expect(find.text('Interrupt'), findsOneWidget);
+
+      await tester.tap(find.text('Interrupt'));
+      await tester.pumpAndSettle();
+
+      // The running initiative was saved through the normal stop path.
+      expect(timerApi.savedEntries, hasLength(1));
+      expect(timerApi.savedEntries.single.categoryId, 'cat-1');
+      expect(timerApi.savedEntries.single.subcategoryId, 'sub-1');
+      expect(timerApi.savedEntries.single.description, 'Backfill script');
+      expect(state.interruptedTimer, isNotNull);
+      expect(state.interruptedTimer!.categoryId, 'cat-1');
+      expect(state.interruptedTimer!.subcategoryId, 'sub-1');
+      expect(state.interruptedTimer!.description, 'Backfill script');
+
+      // The person picker is anchored in the header, not a route.
+      expect(find.text('Start a support timer'), findsOneWidget);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(MenuAnchor),
+          matching: find.widgetWithText(ChoiceChip, 'Priya'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(timerApi.startCalls, 1);
+      expect(timerApi.lastStartCategoryId, 'cat-support');
+      expect(timerApi.lastStartSubcategoryId, isEmpty);
+      expect(timerApi.lastStartDescription, isEmpty);
+      expect(timerApi.lastStartPerson, 'Priya');
+      expect(find.byType(TodayScreen), findsOneWidget);
+      expect(find.text('Start a support timer'), findsNothing);
+    },
+  );
+
+  testWidgets('cancelling the under-a-minute decision starts nothing', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()
+      ..stopConflict = const TimerConflict(TimerConflictReason.tooShort);
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Less than a minute'), findsOneWidget);
+
+    await tester.tap(find.text('Keep working'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(timerApi.startCalls, 0);
+    expect(timerApi.timer, isNotNull, reason: 'the timer keeps running');
+    expect(state.interruptedTimer, isNull);
+    expect(find.text('Start a support timer'), findsNothing);
+  });
+
+  testWidgets('cancelling the block-limit decision starts nothing', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()
+      ..stopConflict = const TimerConflict(TimerConflictReason.blockLimit);
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('Still working on Initiatives · Billing migration?'),
+      findsOneWidget,
+    );
+    expect(find.text('Keep'), findsOneWidget);
+
+    // Dismissing the barrier is the cancel path for this dialog.
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(timerApi.startCalls, 0);
+    expect(timerApi.timer, isNotNull);
+    expect(state.interruptedTimer, isNull);
+    expect(find.text('Start a support timer'), findsNothing);
+  });
+
+  testWidgets('the Today support strip starts a support timer with one tap', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    await pumpApp(tester, timerApi: timerApi);
+
+    final strip = find.byType(SupportNowStrip);
+    expect(strip, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: strip,
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartSubcategoryId, isEmpty);
+    expect(timerApi.lastStartDescription, isEmpty);
+    expect(timerApi.lastStartPerson, 'Priya');
+    expect(find.byType(TodayScreen), findsOneWidget);
+  });
+
+  testWidgets('the Today support strip stops the running timer first', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    final strip = find.byType(SupportNowStrip);
+    await tester.tap(
+      find.descendant(
+        of: strip,
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.savedEntries, hasLength(1));
+    expect(timerApi.savedEntries.single.categoryId, 'cat-1');
+    expect(timerApi.stopActions, [TimerStopAction.save]);
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPerson, 'Sam');
+    expect(state.interruptedTimer!.categoryId, 'cat-1');
+    expect(state.interruptedTimer!.subcategoryId, 'sub-1');
+    expect(find.byType(TodayScreen), findsOneWidget);
+  });
+
+  testWidgets('Resume restores the interruption as a new block', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Interrupt the initiative and pick the person.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(timerApi.timer!.categoryId, 'cat-support');
+
+    // Stop the interrupt timer from the Today card.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Nothing resumes automatically; the offer is explicit in the card and
+    // in the stop snackbar.
+    final label = 'Resume Initiatives · Billing migration';
+    expect(timerApi.timer, isNull);
+    expect(timerApi.startCalls, 1);
+    expect(find.text(label), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, label));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2);
+    expect(timerApi.lastStartCategoryId, 'cat-1');
+    expect(timerApi.lastStartSubcategoryId, 'sub-1');
+    expect(timerApi.lastStartDescription, 'Backfill script');
+    expect(state.interruptedTimer, isNull);
+
+    // Let the stop snackbar retire before checking the offer is gone.
+    await tester.pump(const Duration(seconds: 5));
+    expect(
+      find.text(label),
+      findsNothing,
+      reason: 'the offer disappears once the stash is consumed',
+    );
+  });
+
+  testWidgets('the interrupt entry is flagged No mode and re-files on a tap', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final entryApi = FakeEntryApi();
+    final state = await pumpApp(
+      tester,
+      timerApi: timerApi,
+      entryApi: entryApi,
+      categories: [
+        category('cat-1', 'Initiatives'),
+        category('cat-support', 'Support', role: CategoryRole.support),
+        category('cat-mentoring', 'Mentoring', role: CategoryRole.support),
+      ],
+      subcategories: [
+        subcategory('sub-1', 'cat-1', 'Billing migration'),
+        subcategory('mode-s', 'cat-support', 'Unblock'),
+        subcategory('mode-m', 'cat-mentoring', 'Pairing'),
+      ],
+    );
+
+    // Interrupt the initiative and start the support timer.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Stop the interrupt timer so the support entry lands on Today.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('No mode'), findsOneWidget);
+    expect(find.text('Set mode'), findsOneWidget);
+
+    await tester.tap(find.text('Set mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pairing').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(entryApi.updateCalls, 1);
+    final updated = entryApi.entries.singleWhere(
+      (entry) => entry.categoryId == 'cat-mentoring',
+    );
+    expect(updated.subcategoryId, 'mode-m');
+    expect(find.textContaining('Mentoring · Pairing'), findsOneWidget);
+    expect(find.text('No mode'), findsNothing);
+    expect(find.text('Set mode'), findsNothing);
+    expect(
+      state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
+      isTrue,
+    );
+  });
+
+  testWidgets('header Start opens the person picker for a support default', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Leave a support category as the remembered start category.
+    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+    expect(state.activeTimer, isNull);
+    expect(state.lastCategoryId, 'cat-support');
+
+    await tester.tap(find.text('Start timer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start a support timer'), findsOneWidget);
+    expect(
+      find.text('Who are you supporting? Add a person first.'),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2, reason: 'setup start plus the picker start');
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartSubcategoryId, isEmpty);
+    expect(timerApi.lastStartPerson, 'Sam');
+  });
+
+  testWidgets('header Start still starts an initiative default directly', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+    expect(state.lastCategoryId, 'cat-1');
+
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Start a support timer'), findsNothing);
+    expect(timerApi.startCalls, 2, reason: 'setup start plus the button start');
+    expect(timerApi.lastStartCategoryId, 'cat-1');
+  });
+
+  testWidgets('T opens the person picker for a support default too', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AlertDialog, 'Start support'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPerson, 'Sam');
+  });
+}
