@@ -6,9 +6,11 @@ import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
+import 'package:wdid_web/screens/today_screen.dart';
 import 'package:wdid_web/state/app_state.dart';
 import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/utils/time_utils.dart';
+import 'package:wdid_web/widgets/app_shell.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -70,6 +72,76 @@ buildState({
     timerApi: timer,
   );
   return (state: state, timerApi: timer, entryApi: entries);
+}
+
+/// Puts a timer on the fake server so the app sees one after load.
+void seedRunningTimer(
+  FakeTimerApi api, {
+  String categoryId = 'cat-1',
+  String subcategoryId = 'sub-1',
+  String description = 'Backfill script',
+  String person = '',
+}) {
+  final now = DateTime.now().toUtc();
+  api.timer = TimerSnapshot(
+    categoryId: categoryId,
+    subcategoryId: subcategoryId,
+    description: description,
+    person: person,
+    startedAt: now.subtract(const Duration(minutes: 20)),
+    segmentStartedAt: now.subtract(const Duration(minutes: 20)),
+    elapsed: const Duration(minutes: 20),
+  );
+}
+
+/// Pumps the real app on Today and returns its state.
+Future<AppState> pumpApp(
+  WidgetTester tester, {
+  required FakeTimerApi timerApi,
+  FakeEntryApi? entryApi,
+  List<Category>? categories,
+  List<Subcategory>? subcategories,
+  List<String> roster = const ['Priya', 'Sam'],
+}) async {
+  tester.view.physicalSize = const Size(1600, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  await tester.pumpWidget(
+    WdidApp(
+      authApi: FakeAuthApi(),
+      initialSession: signedInSession(),
+      initialRoute: '/today',
+      categoryApiBuilder: (_) => FakeCategoryApi(
+        categories:
+            categories ??
+            [
+              category('cat-1', 'Initiatives'),
+              category('cat-support', 'Support', role: CategoryRole.support),
+            ],
+        subcategories:
+            subcategories ??
+            [
+              subcategory('sub-1', 'cat-1', 'Billing migration'),
+              subcategory('mode-s', 'cat-support', 'Unblock'),
+            ],
+      ),
+      settingsApiBuilder: (_) => FakeSettingsApi(
+        settings: AppSettings(supportPeople: roster),
+      ),
+      entryApiBuilder: (_) => entryApi ?? FakeEntryApi(),
+      timerApiBuilder: (_) => timerApi,
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  // Dispose the app so its poll ticker does not outlive the test.
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  return AppStateScope.read(tester.element(find.byType(AppShell)));
 }
 
 void main() {
@@ -149,5 +221,103 @@ void main() {
     await harness.state.stopTimer();
 
     expect(harness.state.defaultSupportCategory!.id, 'cat-support-b');
+  });
+
+  testWidgets(
+    'header interrupt saves the initiative and starts support in place',
+    (tester) async {
+      final timerApi = FakeTimerApi();
+      seedRunningTimer(timerApi);
+      final entryApi = FakeEntryApi();
+      final state = await pumpApp(
+        tester,
+        timerApi: timerApi,
+        entryApi: entryApi,
+      );
+
+      expect(find.byType(TodayScreen), findsOneWidget);
+      expect(find.text('Interrupt'), findsOneWidget);
+
+      await tester.tap(find.text('Interrupt'));
+      await tester.pumpAndSettle();
+
+      // The running initiative was saved through the normal stop path.
+      expect(timerApi.savedEntries, hasLength(1));
+      expect(timerApi.savedEntries.single.categoryId, 'cat-1');
+      expect(timerApi.savedEntries.single.subcategoryId, 'sub-1');
+      expect(timerApi.savedEntries.single.description, 'Backfill script');
+      expect(state.interruptedTimer, isNotNull);
+      expect(state.interruptedTimer!.categoryId, 'cat-1');
+      expect(state.interruptedTimer!.subcategoryId, 'sub-1');
+      expect(state.interruptedTimer!.description, 'Backfill script');
+
+      // The person picker is anchored in the header, not a route.
+      expect(find.text('Who are you supporting?'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Priya'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(timerApi.startCalls, 1);
+      expect(timerApi.lastStartCategoryId, 'cat-support');
+      expect(timerApi.lastStartSubcategoryId, isEmpty);
+      expect(timerApi.lastStartDescription, isEmpty);
+      expect(timerApi.lastStartPerson, 'Priya');
+      expect(find.byType(TodayScreen), findsOneWidget);
+      expect(find.text('Who are you supporting?'), findsNothing);
+    },
+  );
+
+  testWidgets('cancelling the under-a-minute decision starts nothing', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()
+      ..stopConflict = const TimerConflict(TimerConflictReason.tooShort);
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Less than a minute'), findsOneWidget);
+
+    await tester.tap(find.text('Keep working'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(timerApi.startCalls, 0);
+    expect(timerApi.timer, isNotNull, reason: 'the timer keeps running');
+    expect(state.interruptedTimer, isNull);
+    expect(find.text('Who are you supporting?'), findsNothing);
+  });
+
+  testWidgets('cancelling the block-limit decision starts nothing', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()
+      ..stopConflict = const TimerConflict(TimerConflictReason.blockLimit);
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('Still working on Initiatives · Billing migration?'),
+      findsOneWidget,
+    );
+    expect(find.text('Keep'), findsOneWidget);
+
+    // Dismissing the barrier is the cancel path for this dialog.
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(timerApi.startCalls, 0);
+    expect(timerApi.timer, isNotNull);
+    expect(state.interruptedTimer, isNull);
+    expect(find.text('Who are you supporting?'), findsNothing);
   });
 }
