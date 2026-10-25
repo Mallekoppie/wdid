@@ -63,6 +63,7 @@ type Fixture struct {
 	Taxonomy TaxonomyFixture
 	People   PeopleFixture
 	Settings SettingsFixture
+	Entries  EntriesFixture
 }
 
 type fixtureDomain struct {
@@ -78,6 +79,7 @@ func (f *Fixture) domains() []fixtureDomain {
 		{file: "taxonomy.json", dest: &f.Taxonomy},
 		{file: "people.json", dest: &f.People},
 		{file: "settings.json", dest: &f.Settings},
+		{file: "entries.json", dest: &f.Entries},
 	}
 }
 
@@ -198,6 +200,9 @@ func (f Fixture) validate() error {
 	}
 	if !f.Settings.ReviewCadence.Valid() {
 		return fmt.Errorf("fixture settings: invalid reviewCadence %q", f.Settings.ReviewCadence)
+	}
+	if err := f.validateEntries(); err != nil {
+		return err
 	}
 	return nil
 }

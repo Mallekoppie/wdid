@@ -232,6 +232,16 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 		}
 	}
 
+	location, err := time.LoadLocation(settings.Timezone)
+	if err != nil {
+		return Summary{}, fmt.Errorf("load demo timezone %q: %w", settings.Timezone, err)
+	}
+	entryCount, err := seedEntries(database, opts.Scenario, user, fixture, location, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Entries = entryCount
+
 	return withActiveTimer(database, user.ID, summary)
 }
 

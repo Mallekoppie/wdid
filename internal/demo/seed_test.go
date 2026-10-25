@@ -130,8 +130,8 @@ func TestSeedEmptyCreatesAccountSettingsAndTaxonomy(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 3, 10)
+	assertNoRows(t, database, user.ID, 0)
+	assertSummary(t, summary, 3, 10, 0)
 }
 
 func TestSeedDemoAppliesTheFixture(t *testing.T) {
@@ -272,8 +272,8 @@ func TestSeedDemoAppliesTheFixture(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 5, 16)
+	assertNoRows(t, database, user.ID, 62)
+	assertSummary(t, summary, 5, 16, 62)
 }
 
 func TestSeedDemoAppliesFixtureDirectoryOverrides(t *testing.T) {
@@ -543,15 +543,15 @@ func seedSnapshot(t *testing.T, path, scenario string) snapshot {
 	return result
 }
 
-func assertNoRows(t *testing.T, database *store.Store, userID string) {
+func assertNoRows(t *testing.T, database *store.Store, userID string, entries int) {
 	t.Helper()
 
-	entries, err := database.WorkEntries(userID, store.WorkEntryFilter{})
+	storedEntries, err := database.WorkEntries(userID, store.WorkEntryFilter{})
 	if err != nil {
 		t.Fatalf("list entries: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("entries = %+v, want none", entries)
+	if len(storedEntries) != entries {
+		t.Fatalf("entries = %+v, want %d", storedEntries, entries)
 	}
 
 	notes, err := database.Notes(userID, store.NoteFilter{})
@@ -585,18 +585,18 @@ func assertNoRows(t *testing.T, database *store.Store, userID string) {
 	}
 }
 
-func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories int) {
+func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, entries int) {
 	t.Helper()
 
 	if summary.Users != 1 ||
 		summary.Categories != categories ||
 		summary.Subcategories != subcategories ||
-		summary.Entries != 0 ||
+		summary.Entries != entries ||
 		summary.Notes != 0 ||
 		summary.Milestones != 0 ||
 		summary.CheckIns != 0 ||
 		summary.ActiveTimer {
-		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories and no rows",
-			summary, categories, subcategories)
+		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d entries and no other rows",
+			summary, categories, subcategories, entries)
 	}
 }
