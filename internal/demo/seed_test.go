@@ -131,7 +131,7 @@ func TestSeedEmptyCreatesAccountSettingsAndTaxonomy(t *testing.T) {
 	}
 
 	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 3, 10)
+	assertSummary(t, summary, 3, 10, 0, 0)
 }
 
 func TestSeedDemoAppliesTheFixture(t *testing.T) {
@@ -272,8 +272,7 @@ func TestSeedDemoAppliesTheFixture(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 5, 16)
+	assertSummary(t, summary, 5, 16, 11, 20)
 }
 
 func TestSeedDemoAppliesFixtureDirectoryOverrides(t *testing.T) {
@@ -585,18 +584,18 @@ func assertNoRows(t *testing.T, database *store.Store, userID string) {
 	}
 }
 
-func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories int) {
+func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, notes, milestones int) {
 	t.Helper()
 
 	if summary.Users != 1 ||
 		summary.Categories != categories ||
 		summary.Subcategories != subcategories ||
 		summary.Entries != 0 ||
-		summary.Notes != 0 ||
-		summary.Milestones != 0 ||
+		summary.Notes != notes ||
+		summary.Milestones != milestones ||
 		summary.CheckIns != 0 ||
 		summary.ActiveTimer {
-		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories and no rows",
-			summary, categories, subcategories)
+		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d notes, %d milestones and no entries/check-ins",
+			summary, categories, subcategories, notes, milestones)
 	}
 }

@@ -232,6 +232,20 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 		}
 	}
 
+	// Notes and milestones reference subcategories, so they come after the
+	// taxonomy. Both are independent of the work entries (#8) and check-ins
+	// (#10) domains.
+	notes, err := seedNotes(database, user.ID, opts.Scenario, fixture, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Notes = notes
+	milestones, err := seedMilestones(database, user.ID, opts.Scenario, fixture, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Milestones = milestones
+
 	return withActiveTimer(database, user.ID, summary)
 }
 
