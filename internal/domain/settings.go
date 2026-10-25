@@ -82,6 +82,15 @@ type Settings struct {
 	Density                Density       `json:"density"`
 	JournalStartDate       string        `json:"journalStartDate,omitempty"`
 	UpdatedAt              time.Time     `json:"updatedAt"`
+
+	// SupportPeople is the per-user roster of names offered wherever a support
+	// person is entered. It is a list of names, not references to a Person
+	// entity, so renaming or removing one never rewrites historical entries.
+	SupportPeople []string `json:"supportPeople,omitempty"`
+	// SupportPeopleSeeded records that the roster has been seeded from the
+	// account's existing support entries. It is an internal marker and is never
+	// sent over the wire: once set, a deliberately emptied roster stays empty.
+	SupportPeopleSeeded bool `json:"supportPeopleSeeded,omitempty"`
 }
 
 // DefaultSettings returns the settings every new account starts with.
@@ -110,5 +119,6 @@ func (s *Settings) Normalize() {
 	s.AIBaseURL = strings.TrimSpace(s.AIBaseURL)
 	s.AIModel = strings.TrimSpace(s.AIModel)
 	s.JournalStartDate = strings.TrimSpace(s.JournalStartDate)
+	s.SupportPeople = NormalizeList(s.SupportPeople)
 	s.UpdatedAt = utc(s.UpdatedAt)
 }

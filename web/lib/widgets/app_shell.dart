@@ -10,6 +10,7 @@ import 'forms/entry_form.dart';
 import 'forms/shortcuts_dialog.dart';
 import 'forms/support_dialog.dart';
 import 'nav_rail.dart';
+import 'person_picker.dart';
 import 'timer_actions.dart';
 
 class AppShell extends StatefulWidget {
@@ -33,10 +34,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   bool get _isEditing {
-    final widget = FocusManager.instance.primaryFocus?.context?.widget;
-    if (widget == null) return false;
-    return widget is EditableText ||
-        widget.runtimeType.toString().contains('EditableText');
+    // The primary focus node of a text field belongs to the internal Focus
+    // widget that EditableText builds, so the focused widget is never
+    // EditableText itself. Walk up from the focused context instead.
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+    return focusContext.findAncestorStateOfType<EditableTextState>() != null;
   }
 
   void _beginGoSequence() {
@@ -47,11 +50,53 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  /// The keyboard shortcut has no header anchor to pop a menu from, so it uses
+  /// a compact dialog with the same shared picker as the header button.
+  Future<String?> _askForPerson() {
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Start support'),
+        content: SizedBox(
+          width: 320,
+          child: PersonPicker(
+            autofocus: true,
+            onSelected: (name) => Navigator.of(context).pop(name),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _toggleTimer() async {
     final state = AppStateScope.read(context);
     try {
       if (state.activeTimer == null) {
-        await state.startTimer();
+        final remembered = state.lastCategoryId;
+        if (remembered != null && state.isSupportCategory(remembered)) {
+          final category = state.defaultSupportCategory;
+          if (category == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Add a support category before starting support.',
+                ),
+              ),
+            );
+            return;
+          }
+          final person = await _askForPerson();
+          if (person == null || !mounted) return;
+          await state.startSupportTimer(person: person, category: category);
+        } else {
+          await state.startTimer();
+        }
         if (!mounted) return;
         final timer = state.activeTimer;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -65,7 +110,7 @@ class _AppShellState extends State<AppShell> {
         final result = await stopTimerWithDecision(context, state: state);
         if (!mounted || result == null) return;
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
+            .showSnackBar(stoppedTimerSnackBar(context, state, result));
       }
     } catch (error) {
       if (!mounted) return;

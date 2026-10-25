@@ -1,0 +1,90 @@
+{
+  "categories": [
+    {
+      "name": "Client Delivery",
+      "role": "initiative",
+      "subcategories": [
+        {
+          "name": "Acme migration",
+          "status": "active",
+          "progress": 60,
+          "targetOutcome": "Acme's production workloads run entirely on the new platform."
+        },
+        {
+          "name": "Globex onboarding",
+          "status": "active",
+          "progress": 35,
+          "targetOutcome": "Globex is live and its team can operate without hand-holding."
+        },
+        {
+          "name": "Initech audit",
+          "status": "done",
+          "progress": 100,
+          "targetOutcome": "Audit findings are delivered and signed off."
+        }
+      ]
+    },
+    {
+      "name": "Platform",
+      "role": "initiative",
+      "subcategories": [
+        {
+          "name": "Auth overhaul",
+          "status": "active",
+          "progress": 45,
+          "targetOutcome": "One auth path serves every client with session rotation."
+        },
+        {
+          "name": "Search relevance",
+          "status": "blocked",
+          "progress": 25,
+          "targetOutcome": "The benchmark query set returns its expected result in the top three."
+        },
+        {
+          "name": "Observability",
+          "status": "planned",
+          "progress": 0,
+          "targetOutcome": "Every request is traceable end to end with actionable alerts."
+        }
+      ]
+    },
+    {
+      "name": "Growth",
+      "role": "initiative",
+      "subcategories": [
+        {
+          "name": "Self-serve trial",
+          "status": "active",
+          "progress": 70,
+          "targetOutcome": "A new account reaches first value without human help."
+        },
+        {
+          "name": "Pricing experiment",
+          "status": "planned",
+          "progress": 10,
+          "targetOutcome": "One pricing model is chosen from the experiment results."
+        }
+      ]
+    },
+    {
+      "name": "Support",
+      "role": "support",
+      "subcategories": [
+        { "name": "Mentoring" },
+        { "name": "Pairing" },
+        { "name": "Incident support" },
+        { "name": "Code review" },
+        { "name": "1:1" }
+      ]
+    },
+    {
+      "name": "Other",
+      "role": "other",
+      "subcategories": [
+        { "name": "Meetings" },
+        { "name": "Admin" },
+        { "name": "Learning" }
+      ]
+    }
+  ]
+}

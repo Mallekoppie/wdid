@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/timer_api.dart';
@@ -46,6 +48,61 @@ String stoppedTimerMessage(StoppedTimer? result) {
   if (result == null) return 'Timer';
   if (result.discarded) return 'Timer discarded';
   return 'Saved ${formatDuration(result.minutes)} · ${result.summary}';
+}
+
+/// Stops the running timer for the interrupt flow. The attribution is captured
+/// before stopping because [StoppedTimer] does not carry it; the normal stop
+/// decisions still decide whether the block is saved, trimmed or discarded.
+///
+/// Returns false when the user cancelled the decision or the stop failed, in
+/// which case nothing should start. A discarded stop still lets the interrupt
+/// continue (the timer is gone), but it stashes no Resume target: there is no
+/// saved block to return to.
+Future<bool> stopForInterrupt(
+  BuildContext context, {
+  required AppState state,
+}) async {
+  final timer = state.activeTimer;
+  if (timer == null) return false;
+
+  final stash = InterruptedTimer(
+    categoryId: timer.categoryId,
+    subcategoryId: timer.subcategoryId,
+    description: timer.description,
+    person: timer.person,
+  );
+  final result = await stopTimerWithDecision(context, state: state);
+  if (result == null) return false;
+  if (!result.discarded) state.setInterruptedTimer(stash);
+  return true;
+}
+
+/// The snackbar shown after a stop. When an interrupt stash exists it also
+/// offers Resume; resuming is never automatic.
+SnackBar stoppedTimerSnackBar(
+  BuildContext context,
+  AppState state,
+  StoppedTimer? result,
+) {
+  final stash = state.interruptedTimer;
+  final messenger = ScaffoldMessenger.of(context);
+  return SnackBar(
+    content: Text(stoppedTimerMessage(result)),
+    action: stash == null
+        ? null
+        : SnackBarAction(
+            label: 'Resume ${state.interruptedTimerLabel}',
+            onPressed: () {
+              unawaited(
+                state.resumeInterruptedTimer().catchError((Object error) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Could not resume: $error')),
+                  );
+                }),
+              );
+            },
+          ),
+  );
 }
 
 class _TimerConflictDialog extends StatelessWidget {

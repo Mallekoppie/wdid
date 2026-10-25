@@ -1,0 +1,164 @@
+{
+  "milestones": [
+    {
+      "key": "acme-dry-run",
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "title": "Cutover dry run completed",
+      "dueOffsetDays": -10,
+      "done": true
+    },
+    {
+      "key": "acme-rollback-signoff",
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "title": "Rollback window signed off",
+      "dueOffsetDays": -2,
+      "done": false
+    },
+    {
+      "key": "acme-production-cutover",
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "title": "Production cutover",
+      "dueOffsetDays": 7,
+      "done": false
+    },
+    {
+      "key": "globex-kickoff",
+      "category": "Client Delivery",
+      "subcategory": "Globex onboarding",
+      "title": "Kickoff workshop delivered",
+      "dueOffsetDays": -12,
+      "done": true
+    },
+    {
+      "key": "globex-training-runbook",
+      "category": "Client Delivery",
+      "subcategory": "Globex onboarding",
+      "title": "Admin training runbook",
+      "dueOffsetDays": 0,
+      "done": false
+    },
+    {
+      "key": "initech-evidence-pack",
+      "category": "Client Delivery",
+      "subcategory": "Initech audit",
+      "title": "Evidence pack delivered",
+      "dueOffsetDays": -20,
+      "done": true
+    },
+    {
+      "key": "initech-signoff",
+      "category": "Client Delivery",
+      "subcategory": "Initech audit",
+      "title": "Findings signed off",
+      "dueOffsetDays": -6,
+      "done": true
+    },
+    {
+      "key": "auth-design-approved",
+      "category": "Platform",
+      "subcategory": "Auth overhaul",
+      "title": "Session rotation design approved",
+      "dueOffsetDays": -9,
+      "done": true
+    },
+    {
+      "key": "auth-refresh-fix",
+      "category": "Platform",
+      "subcategory": "Auth overhaul",
+      "title": "Refresh-token edge case fixed",
+      "dueOffsetDays": -1,
+      "done": false
+    },
+    {
+      "key": "auth-client-migration",
+      "category": "Platform",
+      "subcategory": "Auth overhaul",
+      "title": "Client migration",
+      "dueOffsetDays": 10,
+      "done": false
+    },
+    {
+      "key": "search-benchmark-frozen",
+      "category": "Platform",
+      "subcategory": "Search relevance",
+      "title": "Benchmark set frozen",
+      "dueOffsetDays": -15,
+      "done": true
+    },
+    {
+      "key": "search-top-three",
+      "category": "Platform",
+      "subcategory": "Search relevance",
+      "title": "Top-three result reached",
+      "dueOffsetDays": -4,
+      "done": false
+    },
+    {
+      "key": "observability-pipeline",
+      "category": "Platform",
+      "subcategory": "Observability",
+      "title": "Trace pipeline selected",
+      "dueOffsetDays": 6,
+      "done": false
+    },
+    {
+      "key": "observability-dashboard",
+      "category": "Platform",
+      "subcategory": "Observability",
+      "title": "First dashboard live",
+      "dueOffsetDays": 14,
+      "done": false
+    },
+    {
+      "key": "trial-signup-instrumented",
+      "category": "Growth",
+      "subcategory": "Self-serve trial",
+      "title": "Signup flow instrumented",
+      "dueOffsetDays": -8,
+      "done": true
+    },
+    {
+      "key": "trial-first-value-defined",
+      "category": "Growth",
+      "subcategory": "Self-serve trial",
+      "title": "First-value milestone defined",
+      "dueOffsetDays": -3,
+      "done": true
+    },
+    {
+      "key": "trial-cohort-launch",
+      "category": "Growth",
+      "subcategory": "Self-serve trial",
+      "title": "Cohort launch",
+      "dueOffsetDays": 5,
+      "done": false
+    },
+    {
+      "key": "pricing-brief",
+      "category": "Growth",
+      "subcategory": "Pricing experiment",
+      "title": "Experiment brief written",
+      "dueOffsetDays": -7,
+      "done": true
+    },
+    {
+      "key": "pricing-margin-floor",
+      "category": "Growth",
+      "subcategory": "Pricing experiment",
+      "title": "Finance margin floor confirmed",
+      "dueOffsetDays": -1,
+      "done": false
+    },
+    {
+      "key": "pricing-readout",
+      "category": "Growth",
+      "subcategory": "Pricing experiment",
+      "title": "Experiment readout",
+      "dueOffsetDays": 12,
+      "done": false
+    }
+  ]
+}

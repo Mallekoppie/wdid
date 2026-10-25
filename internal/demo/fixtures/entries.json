@@ -1,0 +1,156 @@
+{
+  "entries": [
+    {
+      "key": "weekday-standup-acme",
+      "days": ["normal-weekday"],
+      "start": "08:45",
+      "minutes": 30,
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "description": "Migration standup and blocker triage",
+      "outcome": "Cutover checklist updated and two blockers assigned.",
+      "source": "timer"
+    },
+    {
+      "key": "weekday-auth-overhaul",
+      "days": ["normal-weekday"],
+      "start": "09:15",
+      "minutes": 90,
+      "category": "Platform",
+      "subcategory": "Auth overhaul",
+      "description": "Session rotation implementation",
+      "outcome": "Refresh-token rotation merged behind a flag.",
+      "source": "manual"
+    },
+    {
+      "key": "weekday-globex-onboarding",
+      "days": ["normal-weekday"],
+      "start": "11:00",
+      "minutes": 60,
+      "category": "Client Delivery",
+      "subcategory": "Globex onboarding",
+      "description": "Globex data import rehearsal",
+      "outcome": "Import completes with a clean error report.",
+      "source": "timer"
+    },
+    {
+      "key": "weekday-team-meeting",
+      "days": ["normal-weekday"],
+      "start": "13:00",
+      "minutes": 60,
+      "category": "Other",
+      "subcategory": "Meetings",
+      "description": "Delivery sync and planning",
+      "outcome": "Next sprint scope agreed.",
+      "source": "manual"
+    },
+    {
+      "key": "weekday-self-serve-trial",
+      "days": ["normal-weekday"],
+      "start": "14:15",
+      "minutes": 75,
+      "category": "Growth",
+      "subcategory": "Self-serve trial",
+      "description": "First-run onboarding experiment",
+      "outcome": "Activation funnel instrumented end to end.",
+      "source": "timer"
+    },
+    {
+      "key": "weekday-search-relevance",
+      "days": ["normal-weekday"],
+      "start": "16:00",
+      "minutes": 45,
+      "category": "Platform",
+      "subcategory": "Search relevance",
+      "description": "Benchmark query tuning",
+      "outcome": "Top-three hit rate improved on the benchmark set.",
+      "source": "manual"
+    },
+    {
+      "key": "sparse-learning",
+      "days": ["sparse"],
+      "start": "09:30",
+      "minutes": 45,
+      "category": "Other",
+      "subcategory": "Learning",
+      "description": "Read the incident review guide",
+      "source": "manual"
+    },
+    {
+      "key": "sparse-acme",
+      "days": ["sparse"],
+      "start": "11:00",
+      "minutes": 60,
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "description": "Short migration pairing session",
+      "source": "timer"
+    },
+    {
+      "key": "oncall-incident",
+      "days": ["on-call"],
+      "start": "09:00",
+      "minutes": 90,
+      "category": "Support",
+      "subcategory": "Incident support",
+      "person": "Alex",
+      "description": "Paged for checkout latency",
+      "outcome": "Latency back under the alert threshold.",
+      "source": "timer"
+    },
+    {
+      "key": "oncall-pairing",
+      "days": ["on-call"],
+      "start": "11:00",
+      "minutes": 45,
+      "category": "Support",
+      "subcategory": "Pairing",
+      "person": "Sam",
+      "description": "Pair on the webhook retry fix",
+      "source": "manual"
+    },
+    {
+      "key": "oncall-mentoring",
+      "days": ["on-call"],
+      "start": "13:00",
+      "minutes": 60,
+      "category": "Support",
+      "subcategory": "Mentoring",
+      "person": "Noor",
+      "description": "Walk through the deployment runbook",
+      "source": "manual"
+    },
+    {
+      "key": "oncall-code-review",
+      "days": ["on-call"],
+      "start": "15:00",
+      "minutes": 30,
+      "category": "Support",
+      "subcategory": "Code review",
+      "person": "Mei",
+      "description": "Review the hotfix pull request",
+      "source": "manual"
+    },
+    {
+      "key": "oncall-one-on-one",
+      "days": ["on-call"],
+      "start": "16:00",
+      "minutes": 30,
+      "category": "Support",
+      "subcategory": "1:1",
+      "person": "Jordan",
+      "description": "Weekly one-on-one catch-up",
+      "source": "manual"
+    },
+    {
+      "key": "anchor-interrupt",
+      "days": ["anchor"],
+      "start": "15:30",
+      "minutes": 15,
+      "category": "Support",
+      "person": "Priya",
+      "description": "Unblocked Priya on the migration cutover",
+      "source": "manual"
+    }
+  ]
+}

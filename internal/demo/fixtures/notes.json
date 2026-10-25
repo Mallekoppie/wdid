@@ -1,0 +1,59 @@
+{
+  "dayNotes": [
+    {
+      "daysBeforeAnchor": 13,
+      "text": "Planning the next two weeks. Cut scope on the audit deliverable and protected Friday for review."
+    },
+    {
+      "daysBeforeAnchor": 11,
+      "text": "Incident support in the afternoon. No customer impact, but the alert threshold needs tuning."
+    },
+    {
+      "daysBeforeAnchor": 9,
+      "text": "Deep work on the pricing experiment. Three variants defined; waiting on finance for the margin floor."
+    },
+    {
+      "daysBeforeAnchor": 6,
+      "text": "Client check-in with Globex. They want the onboarding runbook before the next cohort."
+    },
+    {
+      "daysBeforeAnchor": 5,
+      "text": "Blocked most of the morning on staging credentials, then finished the observability dashboard skeleton."
+    },
+    {
+      "daysBeforeAnchor": 3,
+      "text": "Pairing with Priya on the auth session rotation. The refresh-token edge case is real; wrote it up as a milestone."
+    },
+    {
+      "daysBeforeAnchor": 1,
+      "text": "Review day. Triaged the search relevance benchmark failures and parked the pricing copy until next week."
+    },
+    {
+      "daysBeforeAnchor": 0,
+      "text": "Cutover dry run complete. Tomorrow: tighten the rollback window and confirm the Globex contact list."
+    }
+  ],
+  "projectNotes": [
+    {
+      "key": "acme-rollback-runbook",
+      "category": "Client Delivery",
+      "subcategory": "Acme migration",
+      "daysBeforeAnchor": 2,
+      "text": "The dry run surfaced two ordering gaps in the migration scripts. Both are fixed; the remaining risk is the rollback window, which needs a signed runbook before the cutover."
+    },
+    {
+      "key": "search-benchmark-review",
+      "category": "Platform",
+      "subcategory": "Search relevance",
+      "daysBeforeAnchor": 7,
+      "text": "The benchmark review turned into a longer investigation than expected, so this note captures the full picture while it is fresh. The current query set was built from last quarter's support tickets, which means it over-represents short, navigational searches and under-represents the multi-step research queries that enterprise accounts actually run. We agreed to freeze a new set of forty queries: ten short navigational, ten long research, ten typo and stemming edge cases, and ten drawn from the Globex onboarding transcripts. The first pass of the new set shows a top-three hit rate of sixty-one percent, down from the eighty-four percent reported on the old set. That drop is not a regression in the search service; it is what happens when the benchmark stops flattering us. Two failure clusters stand out. The first is synonym collapse: queries that mix a product name with an internal acronym return documents from the wrong product family because the analyzer strips the acronym as a stop word. The second is recency bias: the ranking function boosts recently edited pages so aggressively that a two-year-old canonical runbook loses to a changelog entry that mentions the same terms once. We prototyped a synonym map for the twelve most common acronyms and a capped recency boost of one point five, and together they move the top-three rate to seventy-three percent with no measurable latency change. The remaining gap is mostly long research queries, where the bigger problem is chunking: we index whole pages, so a page that answers the query in one paragraph still competes against pages that mention every term in the title. The next experiment is passage-level indexing with a page-level rollup, but that is a larger change and needs an index-format migration. My recommendation is to ship the synonym map and the recency cap this sprint, keep the new benchmark set as the release gate, and schedule the passage-indexing spike for the following sprint. I also want a dashboard that tracks the top-three rate per query family so we notice when a single family regresses instead of watching one blended number move by a point and guessing why. None of this is committed yet; it is the shape of the proposal I will bring to the platform review on Thursday, and I would rather have the reasoning written down before the meeting than reconstruct it afterward."
+    },
+    {
+      "key": "trial-first-value",
+      "category": "Growth",
+      "subcategory": "Self-serve trial",
+      "daysBeforeAnchor": 10,
+      "text": "The trial cohort reached first value faster than the last one, mostly because the empty state now points at a sample project. Next question is whether the pricing page should appear before or after the first saved entry."
+    }
+  ]
+}

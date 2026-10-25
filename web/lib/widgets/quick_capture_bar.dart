@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/entry_api.dart';
@@ -8,6 +10,7 @@ import '../utils/time_utils.dart';
 import 'app_dropdown.dart';
 import 'duration_chips.dart';
 import 'panel.dart';
+import 'person_picker.dart';
 
 /// One-line capture bar for a work entry. Enter saves; the category and
 /// subcategory pair is remembered for the next capture.
@@ -128,6 +131,7 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
         person: person,
       );
       if (!mounted) return;
+      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
       _controller.clear();
       setState(() => _saving = false);
       _focusNode.requestFocus();
@@ -198,20 +202,15 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
     }
     final support =
         state.categoryById(_categoryId)?.role == CategoryRole.support;
-    final personField = TextField(
+    final personField = PersonPicker(
       controller: _person,
       enabled: !_saving,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (_) => _save(),
+      hint: 'Who did you support?',
+      errorText: _personError,
       onChanged: (_) {
         if (_personError != null) setState(() => _personError = null);
       },
-      decoration: InputDecoration(
-        labelText: 'Person',
-        hintText: 'Who did you support?',
-        prefixIcon: const Icon(Icons.person_outline, size: 18),
-        errorText: _personError,
-      ),
+      onSubmitted: (_) => _save(),
     );
 
     final descriptionField = TextField(
