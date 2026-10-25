@@ -232,9 +232,9 @@ func assertCheckInTotals(t *testing.T, label string, got, want domain.CheckInTot
 	}
 }
 
-// expectedTotalsFromReport is an independent transcription of the RPC's
-// totalsFromReport mapping: ID keys for categories and subcategories, display
-// spelling for support people.
+// expectedTotalsFromReport is an independent transcription of
+// domain.CheckInTotalsFromReport: ID keys for categories and subcategories,
+// display spelling for support people.
 func expectedTotalsFromReport(report domain.PeriodReport) domain.CheckInTotals {
 	totals := domain.CheckInTotals{Minutes: report.TotalMinutes}
 	// The totals maps are omitempty, so an empty report section is stored and
