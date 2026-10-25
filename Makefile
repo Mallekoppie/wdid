@@ -48,12 +48,22 @@ WDID_SMOKE_EMAIL             ?= smoke@example.com
 WDID_SMOKE_PASSWORD          ?= smoke-password-123
 WDID_SMOKE_BOOTSTRAP_SECRET  ?= $(WDID_BOOTSTRAP_SECRET)
 
+# Demo loop. The demo database is separate from the default ./data/wdid.db, so
+# seeding and resetting it never touches normal development data. Port 9201
+# keeps it clear of `make run` (127.0.0.1:9200).
+DEMO_DB       ?= ./data/wdid-demo.db
+DEMO_ADDR     ?= 127.0.0.1:9201
+DEMO_SCENARIO ?= demo
+DEMO_ANCHOR   ?=
+SEED_ARGS     ?= --reset
+
 export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 export WDID_SMOKE_EMAIL WDID_SMOKE_PASSWORD WDID_SMOKE_BOOTSTRAP_SECRET
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
-        lint fmt tidy proto proto-check docker-build clean check smoke-web
+        lint fmt tidy proto proto-check docker-build clean check smoke-web \
+        seed-demo run-demo
 
 help: ## Show this help
 	@printf 'wdid targets:\n\n'
@@ -67,6 +77,15 @@ build: ## Compile cmd/wdid into bin/wdid
 	$(GO) build -trimpath -o $(BIN_DIR)/$(BINARY) $(CMD)
 
 run: ## Run the service locally using the development defaults above
+	$(GO) run $(CMD)
+
+seed-demo: ## Seed data/wdid-demo.db with the demo scenario (dev-only; resets by default)
+	WDID_DEV_MODE=true WDID_DB_PATH=$(DEMO_DB) \
+	$(GO) run $(CMD) seed $(SEED_ARGS) $(if $(DEMO_ANCHOR),--anchor $(DEMO_ANCHOR)) $(DEMO_SCENARIO)
+
+run-demo: ## Serve data/wdid-demo.db on 127.0.0.1:9201 (seeds it first if missing)
+	@test -f $(DEMO_DB) || $(MAKE) seed-demo
+	WDID_DEV_MODE=true WDID_DB_PATH=$(DEMO_DB) WDID_HTTP_ADDR=$(DEMO_ADDR) \
 	$(GO) run $(CMD)
 
 test: test-go test-web ## Run Go tests and Flutter tests

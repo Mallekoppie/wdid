@@ -52,6 +52,11 @@ func main() {
 				log.Fatalf("wdid restore: %v", err)
 			}
 			return
+		case "seed":
+			if err := runSeed(os.Args[2:], os.Stdout); err != nil {
+				log.Fatalf("wdid seed: %v", err)
+			}
+			return
 		}
 	}
 
