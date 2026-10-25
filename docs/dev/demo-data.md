@@ -44,7 +44,8 @@ WDID_DEV_MODE=true WDID_DB_PATH=./data/wdid-demo.db \
   WDID_HTTP_ADDR=127.0.0.1:9201 go run ./cmd/wdid
 ```
 
-The command shape is `wdid seed [--reset] [--anchor YYYY-MM-DD] <scenario>`.
+The command shape is
+`wdid seed [--reset] [--anchor YYYY-MM-DD] [--fixture DIR] [--timezone TZ] <scenario>`.
 Flags must come **before** the scenario name; Go's flag parser stops at the
 first positional argument.
 
@@ -64,7 +65,54 @@ Examples:
 DEMO_SCENARIO=empty make seed-demo
 DEMO_ANCHOR=2026-03-09 make seed-demo
 SEED_ARGS= make seed-demo   # no --reset: refuses if the database exists
+SEED_ARGS="--reset --timezone Asia/Tokyo" make seed-demo
+SEED_ARGS="--reset --fixture ./my-fixture" make seed-demo
 ```
+
+## Fixture overrides (`--fixture`)
+
+The `demo` scenario reads an embedded declarative fixture split by domain:
+
+| File | Contents |
+| --- | --- |
+| `taxonomy.json` | Categories, roles, projects/modes, status, progress and target outcome |
+| `people.json` | Support-person roster |
+| `settings.json` | Timezone, daily target and review cadence |
+
+`--fixture DIR` points at a directory that uses the same filenames. For each
+domain file present in `DIR`, that file replaces the embedded domain. A file
+that is missing from `DIR` falls back to the embedded copy, so a directory can
+override one domain and inherit the rest. Other files in `DIR` are ignored;
+later tickets add `entries.json`, `notes.json`, `milestones.json` and
+`check_ins.json` without changing the command.
+
+The path must be an existing directory. A missing path, a path that is not a
+directory, an unreadable file or invalid JSON (including an unknown field)
+fails the seed with the offending file named. Because the seed is atomic, the
+previous target database stays byte-identical.
+
+```sh
+WDID_DEV_MODE=true WDID_DB_PATH=./data/wdid-demo.db \
+  go run ./cmd/wdid seed --reset --fixture ./my-fixture demo
+```
+
+Example `settings.json` override:
+
+```json
+{
+  "timezone": "Europe/Amsterdam",
+  "dailyTargetMinutes": 300,
+  "reviewCadence": "monthly"
+}
+```
+
+## `--timezone` semantics
+
+`--timezone TZ` overrides the timezone in the fixture's `settings.json` (and,
+for `empty`, the default `UTC`). It wins over the fixture and must be a name
+that `time.LoadLocation` accepts, such as `Europe/Amsterdam` or `Asia/Tokyo`.
+An invalid name fails the seed before the target database is touched. This is
+useful for demoing a locale without editing the fixture.
 
 ## `--reset` semantics
 
@@ -117,10 +165,60 @@ only intentionally non-identical values).
 
 ### `demo`
 
-> Placeholder until ticket #7. `demo` is registered and documented now, but
-> currently seeds the same account, settings and taxonomy as `empty`, with no
-> work rows. Tickets #7-#10 add the declarative fixture (projects, entries,
-> notes, milestones and check-ins) without changing the command.
+The account plus the embedded fixture: **5 categories, 16 subcategories, 1
+user**, and the demo settings below. There are still **0 work entries, 0 notes,
+0 milestones and 0 check-ins**, and no active timer; tickets #8-#10 add those
+domains as independent fixture files.
+
+#### Taxonomy and projects
+
+Initiative-role subcategories are projects; support-role subcategories are
+support modes; other-role subcategories are overhead categories.
+
+| Category | Role | Project/mode (status, progress) |
+| --- | --- | --- |
+| Client Delivery | initiative | Acme migration (active, 60%), Globex onboarding (active, 35%), Initech audit (done, 100%) |
+| Platform | initiative | Auth overhaul (active, 45%), Search relevance (blocked, 25%), Observability (planned, 0%) |
+| Growth | initiative | Self-serve trial (active, 70%), Pricing experiment (planned, 10%) |
+| Support | support | Mentoring, Pairing, Incident support, Code review, 1:1 (all active) |
+| Other | other | Meetings, Admin, Learning (all active) |
+
+Category and subcategory sort order is the order shown above. The initiative
+projects carry these target outcomes:
+
+| Project | Target outcome |
+| --- | --- |
+| Acme migration | Acme's production workloads run entirely on the new platform. |
+| Globex onboarding | Globex is live and its team can operate without hand-holding. |
+| Initech audit | Audit findings are delivered and signed off. |
+| Auth overhaul | One auth path serves every client with session rotation. |
+| Search relevance | The benchmark query set returns its expected result in the top three. |
+| Observability | Every request is traceable end to end with actionable alerts. |
+| Self-serve trial | A new account reaches first value without human help. |
+| Pricing experiment | One pricing model is chosen from the experiment results. |
+
+#### Roster and settings
+
+Support-person roster, in order: **Priya, Sam, Alex, Jordan, Mei, Diego, Noor,
+Chris**.
+
+| Setting | Value |
+| --- | --- |
+| Timezone | `UTC` (override with `--timezone` or `settings.json`) |
+| Week starts | Monday (default) |
+| Daily target | 450 minutes (`7.5`) |
+| Personal review cadence | `weekly` |
+| Support people | The eight-person roster above |
+| `SupportPeopleSeeded` | `true`, so loading settings never rewrites the roster |
+
+Everything else (long-timer prompt, default duration, backup interval,
+retention, theme, density) keeps the account defaults documented for `empty`.
+
+Fixture-owned rows use deterministic IDs derived from the scenario and stable
+labels, and every timestamp derives from `--anchor`; rerunning the same
+scenario with the same anchor and fixture produces identical IDs and content.
+The bcrypt salt and the database instance ID are the only intentionally
+non-identical values.
 
 ### Expected `empty` screens
 
