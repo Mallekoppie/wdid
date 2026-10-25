@@ -67,6 +67,7 @@ type Fixture struct {
 	Entries    EntriesFixture
 	Notes      NotesFixture
 	Milestones MilestonesFixture
+	CheckIns   CheckInsFixture
 }
 
 type fixtureDomain struct {
@@ -85,6 +86,7 @@ func (f *Fixture) domains() []fixtureDomain {
 		{file: "entries.json", dest: &f.Entries},
 		{file: "notes.json", dest: &f.Notes},
 		{file: "milestones.json", dest: &f.Milestones},
+		{file: "check_ins.json", dest: &f.CheckIns},
 	}
 }
 
@@ -213,6 +215,9 @@ func (f Fixture) validate() error {
 		return err
 	}
 	if err := f.validateMilestones(); err != nil {
+		return err
+	}
+	if err := f.validateCheckIns(); err != nil {
 		return err
 	}
 	return nil

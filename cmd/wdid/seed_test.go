@@ -219,7 +219,7 @@ func TestSeedCommandDemoAppliesTheFixture(t *testing.T) {
 		"Entries: 62",
 		"Notes: 11",
 		"Milestones: 20",
-		"Check-ins: 0",
+		"Check-ins: 2",
 		"Active timer: none",
 	} {
 		if !strings.Contains(out.String(), want) {

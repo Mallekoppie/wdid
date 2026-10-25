@@ -81,13 +81,12 @@ The `demo` scenario reads an embedded declarative fixture split by domain:
 | `entries.json` | Work-entry templates expanded over the 14-day window ending at the anchor |
 | `notes.json` | Day notes and project notes |
 | `milestones.json` | Per-project milestones, due offsets and done state |
+| `check_ins.json` | Manager check-in and personal review: periods, states, focus notes and summaries (totals are computed) |
 
 `--fixture DIR` points at a directory that uses the same filenames. For each
 domain file present in `DIR`, that file replaces the embedded domain. A file
 that is missing from `DIR` falls back to the embedded copy, so a directory can
 override one domain and inherit the rest. Other files in `DIR` are ignored.
-`check_ins.json` (ticket #10) is added by its own ticket without changing the
-command.
 
 The path must be an existing directory. A missing path, a path that is not a
 directory, an unreadable file or invalid JSON (including an unknown field)
@@ -169,9 +168,8 @@ only intentionally non-identical values).
 ### `demo`
 
 The account plus the embedded fixture: **5 categories, 16 subcategories, 62
-work entries, 11 notes, 20 milestones, 1 user**, and the demo settings below.
-Check-ins are still **0**; ticket #10 adds them as an independent fixture file.
-There is no active timer.
+work entries, 11 notes, 20 milestones, 2 check-ins, 1 user**, and the demo
+settings below. There is no active timer.
 
 #### Taxonomy and projects
 
@@ -284,8 +282,8 @@ dates below use `--anchor 2026-03-09`; `dueOffsetDays` is relative to the anchor
 | Pricing experiment | Finance margin floor confirmed | -1 | 2026-03-08 | no | overdue |
 | Pricing experiment | Experiment readout | 12 | 2026-03-21 | no | upcoming |
 
-Work entries (ticket #8) are a separate fixture domain listed above; check-ins
-(ticket #10) are added by their own ticket.
+Work entries (ticket #8) and check-ins (ticket #10) are separate fixture
+domains listed above.
 
 Fixture-owned rows use deterministic IDs derived from the scenario and stable
 labels, and every timestamp derives from `--anchor`; rerunning the same
@@ -349,6 +347,76 @@ UI smoke tests can assert the anchor-day no-mode row
 `Unblocked Priya on the migration cutover`, the `No mode` / `Set mode` labels,
 and an initiative row such as `Migration standup and blocker triage` under
 `Client Delivery · Acme migration`.
+
+#### Check-ins
+
+`check_ins.json` seeds **2 artifacts** after the work entries. Totals are never
+declared in the fixture: each check-in snapshots the authoritative period report
+for its own inclusive period. That snapshot must happen before the first save
+because a final manager check-in is read-only immediately afterwards. Period and
+creation offsets are days before the anchor, so the dataset moves with
+`--anchor`.
+
+| Artifact | Kind | State | Audience | Period | Example period (`--anchor 2026-03-09`) | Created at |
+| --- | --- | --- | --- | --- | --- | --- |
+| Manager check-in | `manager` | `final` | `one_on_one` | `anchor-13 .. anchor-7` | 2026-02-24 .. 2026-03-02 | `anchor-7` 18:00 UTC |
+| Personal review | `personal` | `draft` | none | `anchor-6 .. anchor` | 2026-03-03 .. 2026-03-09 | `anchor` 18:00 UTC |
+
+The check-in list is newest first, so the personal review appears first. The
+final manager check-in is the boundary returned by `LastFinalManagerCheckIn`;
+the personal review remains editable through `SaveCheckIn` and never moves that
+boundary. Any edit to the final manager (or an attempt to delete it) returns
+`ErrFinalCheckInReadOnly`.
+
+Manager focus notes:
+
+> Cutover readiness, Globex onboarding and the auth refresh-token fix. Keep
+> support time visible next period.
+
+Manager summary (`summaryMarkdown`):
+
+```markdown
+## Previous period
+
+Shipped the auth session-rotation foundation and closed two migration ordering gaps. The Acme cutover is the main risk: the rollback window still needs a signed runbook.
+
+- Acme migration: dry run complete, blockers assigned
+- Globex onboarding: import rehearsal clean
+- Support: on-call coverage only, no escalations
+```
+
+Personal review focus notes:
+
+> What moved the projects forward this week, and where did support work
+> interrupt deep work?
+
+Personal review summary (`summaryMarkdown`, draft):
+
+```markdown
+## Draft review
+
+Steady progress on the self-serve trial and search relevance. Support stayed bounded to the on-call day. Next: protect a longer block for the cutover runbook.
+```
+
+For `--anchor 2026-03-09` the report snapshots are:
+
+| Artifact | Minutes | By category (ID keys, documented by name) | Support by person |
+| --- | --- | --- | --- |
+| Manager check-in | 1545 | Client Delivery 420, Platform 540, Growth 300, Other 285 | none |
+| Personal review | 2070 | Client Delivery 450, Platform 675, Growth 375, Other 300, Support 270 | Alex 90, Sam 45, Noor 60, Mei 30, Jordan 30, Priya 15 |
+
+By subcategory (ID keys, documented by name):
+
+* **Manager**: Acme migration 180, Auth overhaul 360, Globex onboarding 240,
+  Meetings 240, Self-serve trial 300, Search relevance 180, Learning 45.
+* **Personal**: Acme migration 150, Auth overhaul 450, Globex onboarding 300,
+  Meetings 300, Self-serve trial 375, Search relevance 225, Incident support 90,
+  Pairing 45, Mentoring 60, Code review 30, 1:1 30. The 15-minute no-mode
+  support row counts in the total and support-by-person but has no subcategory
+  key.
+
+Re-running the same scenario, anchor and fixture reproduces the same check-in
+IDs and content.
 
 ### Expected `empty` screens
 
