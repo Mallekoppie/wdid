@@ -43,10 +43,7 @@ void main() {
       ],
     );
     final settings = FakeSettingsApi();
-    final state = AppState(
-      categoryApi: categories,
-      settingsApi: settings,
-    );
+    final state = AppState(categoryApi: categories, settingsApi: settings);
     await state.load();
     addTearDown(state.dispose);
     return (state, categories, settings);
@@ -147,6 +144,57 @@ void main() {
     );
     expect(state.settings, same(original));
   });
+
+  test(
+    'set mode choices exclude modes under an archived support category',
+    () async {
+      final categories = FakeCategoryApi(
+        categories: [
+          testCategory('cat-support', 'Support', role: CategoryRole.support),
+          testCategory(
+            'cat-old',
+            'Old support',
+            role: CategoryRole.support,
+            archived: true,
+          ),
+        ],
+        subcategories: [
+          Subcategory(
+            id: 'mode-open',
+            categoryId: 'cat-support',
+            name: 'Unblock',
+            createdAt: DateTime.utc(2026, 10, 23),
+            updatedAt: DateTime.utc(2026, 10, 23),
+          ),
+          Subcategory(
+            id: 'mode-archived-cat',
+            categoryId: 'cat-old',
+            name: 'Legacy',
+            createdAt: DateTime.utc(2026, 10, 23),
+            updatedAt: DateTime.utc(2026, 10, 23),
+          ),
+          Subcategory(
+            id: 'mode-archived',
+            categoryId: 'cat-support',
+            name: 'Retired',
+            archived: true,
+            createdAt: DateTime.utc(2026, 10, 23),
+            updatedAt: DateTime.utc(2026, 10, 23),
+          ),
+        ],
+      );
+      final state = AppState(
+        categoryApi: categories,
+        settingsApi: FakeSettingsApi(),
+      );
+      await state.load();
+      addTearDown(state.dispose);
+
+      expect(state.selectableSupportModes.map((mode) => mode.id), [
+        'mode-open',
+      ], reason: 're-filing into an archived category would be invisible');
+    },
+  );
 
   test('taxonomy failures stay inside the categories surface', () async {
     final categories = FakeCategoryApi()

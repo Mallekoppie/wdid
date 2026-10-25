@@ -735,10 +735,13 @@ class AppState extends ChangeNotifier {
     return ordered;
   }
 
-  /// The support modes a new entry can use, excluding archived rows.
+  /// The support modes a new entry can use, excluding archived rows and modes
+  /// whose support category is archived (or no longer known). A mode under an
+  /// archived category would re-file an entry somewhere no selector shows.
   List<Subcategory> get selectableSupportModes => [
     for (final mode in supportModes)
-      if (!mode.archived) mode,
+      if (!mode.archived && !(categoryById(mode.categoryId)?.archived ?? true))
+        mode,
   ];
 
   /// Support-role categories a new timer can start under, excluding archived
