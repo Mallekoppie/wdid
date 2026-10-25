@@ -64,10 +64,24 @@ SEED_ARGS     ?= --reset
 # clock, so the anchor is the run's UTC date: both the seeder and the frozen
 # browser clock in scripts/browser-smoke-seeded.cjs use this same value.
 # Override SMOKE_ANCHOR only when the service itself runs on that date.
-SMOKE_PORT    ?= 9202
-SMOKE_ANCHOR  ?= $(shell date -u +%F)
-DEMO_EMAIL    ?= demo@wdid.local
-DEMO_PASSWORD ?= demo-password-123
+SMOKE_PORT      ?= 9202
+SMOKE_ANCHOR    ?= $(shell date -u +%F)
+SMOKE_SCENARIOS ?= demo empty
+DEMO_EMAIL      ?= demo@wdid.local
+DEMO_PASSWORD   ?= demo-password-123
+
+# Node + Playwright preflight shared by both browser smoke targets. $(1) names
+# the target in the error message.
+define require_browser_smoke_deps
+	@command -v node >/dev/null 2>&1 || { \
+		echo "node is required for the $(1) browser smoke test" >&2; \
+		exit 1; \
+	}
+	@node -e "require('playwright')" 2>/dev/null || { \
+		echo "playwright is required: npm install --no-save playwright (or set NODE_PATH)" >&2; \
+		exit 1; \
+	}
+endef
 
 export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
@@ -137,25 +151,11 @@ tidy: ## Tidy go.mod and go.sum
 check: lint proto-check test ## Run proto-check, lint and both test suites
 
 smoke-web: ## Drive the served app end to end in a browser (WDID_BASE_URL, Node + Playwright)
-	@command -v node >/dev/null 2>&1 || { \
-		echo "node is required for the browser smoke test" >&2; \
-		exit 1; \
-	}
-	@node -e "require('playwright')" 2>/dev/null || { \
-		echo "playwright is required: npm install --no-save playwright (or set NODE_PATH)" >&2; \
-		exit 1; \
-	}
+	$(call require_browser_smoke_deps,smoke-web)
 	node scripts/browser-smoke.cjs
 
 smoke-seeded: buildweb build ## Seed temp DBs, serve, and walk the seeded UI (Node + Playwright)
-	@command -v node >/dev/null 2>&1 || { \
-		echo "node is required for the seeded browser smoke test" >&2; \
-		exit 1; \
-	}
-	@node -e "require('playwright')" 2>/dev/null || { \
-		echo "playwright is required: npm install --no-save playwright (or set NODE_PATH)" >&2; \
-		exit 1; \
-	}
+	$(call require_browser_smoke_deps,smoke-seeded)
 	@set -euo pipefail; \
 	tmp="$$(mktemp -d)"; \
 	pid=""; \
@@ -168,7 +168,7 @@ smoke-seeded: buildweb build ## Seed temp DBs, serve, and walk the seeded UI (No
 		rm -rf "$$tmp"; \
 	}; \
 	trap cleanup EXIT INT TERM; \
-	for scenario in demo empty; do \
+	for scenario in $(SMOKE_SCENARIOS); do \
 		db="$$tmp/$$scenario.db"; \
 		echo "==> smoke-seeded: $$scenario (anchor $(SMOKE_ANCHOR))"; \
 		WDID_DEV_MODE=true WDID_DB_PATH="$$db" \

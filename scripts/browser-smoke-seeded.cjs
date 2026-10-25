@@ -99,10 +99,6 @@ function sameDay(a, b) {
   return dayNumber(a) === dayNumber(b);
 }
 
-function startOfMonth(date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 12));
-}
-
 function startOfQuarter(date) {
   const month = Math.floor(date.getUTCMonth() / 3) * 3;
   return new Date(Date.UTC(date.getUTCFullYear(), month, 1, 12));
@@ -148,8 +144,10 @@ function capitalize(value) {
 const ANCHOR_DATE = parseAnchor(ANCHOR);
 const WINDOW_START = addDays(ANCHOR_DATE, -13);
 const WEEK_START = startOfWeek(ANCHOR_DATE);
-const MONTH_START = startOfMonth(ANCHOR_DATE);
 const QUARTER_START = startOfQuarter(ANCHOR_DATE);
+// The seeded window is always 14 calendar days, anchor-13 .. anchor.
+const WINDOW_SPAN_DAYS =
+  Math.round((dayNumber(ANCHOR_DATE) - dayNumber(WINDOW_START)) / 86400000) + 1;
 
 function firstWeekday(date) {
   let cursor = date;
@@ -314,15 +312,14 @@ function supportTotals(entries) {
 const ANCHOR_ENTRIES = ALL_ENTRIES.filter(
   (entry) => entry.date === isoDate(ANCHOR_DATE),
 );
+const WINDOW_ENTRIES = entriesBetween(WINDOW_START, ANCHOR_DATE);
 const WEEK_ENTRIES = entriesBetween(WEEK_START, ANCHOR_DATE);
-const MONTH_ENTRIES = entriesBetween(MONTH_START, ANCHOR_DATE);
 const QUARTER_ENTRIES = entriesBetween(QUARTER_START, ANCHOR_DATE);
+const WINDOW_MINUTES = sumMinutes(WINDOW_ENTRIES);
+const WINDOW_DAYS_WITH_ENTRIES = distinctDays(WINDOW_ENTRIES);
 const WEEK_MINUTES = sumMinutes(WEEK_ENTRIES);
 const TODAY_MINUTES = sumMinutes(ANCHOR_ENTRIES);
 const WEEK_CATEGORIES = [...new Set(WEEK_ENTRIES.map((entry) => entry.category))];
-const MONTH_TOTAL = sumMinutes(MONTH_ENTRIES);
-const MONTH_DAYS = distinctDays(MONTH_ENTRIES);
-const MONTH_PROJECT_TOTALS = projectTotals(MONTH_ENTRIES);
 const QUARTER_PROJECT_TOTALS = projectTotals(QUARTER_ENTRIES);
 const QUARTER_CATEGORY_TOTALS = categoryTotals(QUARTER_ENTRIES);
 const QUARTER_INITIATIVE_MINUTES = [...CATEGORY_ROLE.entries()]
@@ -471,6 +468,64 @@ async function fillField(page, label, value) {
     await page.waitForTimeout(250);
   }
   fail(`could not fill the ${label} field`);
+}
+
+/// Flutter's Material date fields assume the US mm/dd/yyyy compact format.
+function compactDate(date) {
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${month}/${day}/${date.getUTCFullYear()}`;
+}
+
+/// Types a date into the range picker's input mode. The field keeps its
+/// previous value, so clear it first; a few retries cover Flutter recreating
+/// the semantics input while the picker settles.
+async function fillDateField(page, label, value) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const input = page.locator(`input[aria-label="${label}"]`).first();
+    if (await input.count()) {
+      await input.click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(120);
+      await input.selectText().catch(() => {});
+      await page.keyboard.press('Backspace').catch(() => {});
+      await input.pressSequentially(value, { delay: 10 }).catch(() => {});
+      await page.waitForTimeout(300);
+      if ((await input.inputValue().catch(() => '')) === value) return;
+    }
+    await page.waitForTimeout(250);
+  }
+  fail(`could not fill the ${label} field`);
+}
+
+/// Selects the Log's Custom range preset and enters [start]..[end] through the
+/// date-range picker's input mode. Using an explicit range keeps the assertions
+/// on the full seeded window regardless of the anchor's position in the month.
+async function selectLogWindow(page, start, end) {
+  await selectAppDropdown(page, 'This week', 'Custom range', 'Log period');
+
+  const switchToInput = page.getByRole('button', {
+    name: 'Switch to input',
+    exact: true,
+  });
+  await switchToInput
+    .first()
+    .waitFor({ state: 'attached', timeout: 10000 })
+    .catch(() => {});
+  if (await switchToInput.count()) {
+    await switchToInput.first().click();
+    await page.waitForTimeout(500);
+  }
+
+  await fillDateField(page, 'Start Date', compactDate(start));
+  await fillDateField(page, 'End Date', compactDate(end));
+  const ok = page.getByRole('button', { name: 'OK', exact: true });
+  await ok.first().waitFor({ state: 'attached', timeout: 10000 });
+  await ok.first().click();
+  await page.waitForTimeout(1500);
+  log(
+    `Log period: custom ${isoDate(start)}..${isoDate(end)} ` +
+    `(${WINDOW_SPAN_DAYS} calendar days)`,
+  );
 }
 
 async function signIn(page) {
@@ -717,18 +772,26 @@ async function assertLogDemo(page) {
   log('Log: full-window totals, filters and seeded descriptions');
   await gotoRoute(page, '/log', /Add entry/, 'Log');
 
-  await selectAppDropdown(page, 'This week', 'This month', 'Log period');
+  // Query the whole seeded window explicitly. The preset ranges would clip it
+  // when the anchor is early in the month or week.
+  if (WINDOW_SPAN_DAYS !== 14) {
+    fail(`Log: seeded window spans ${WINDOW_SPAN_DAYS} days, expected 14`);
+  }
+  await selectLogWindow(page, WINDOW_START, ANCHOR_DATE);
   await waitForTextOrLabel(
     page,
-    new RegExp(escapeRegExp(formatRange(MONTH_START, ANCHOR_DATE))),
-    'Log: month range',
+    new RegExp(escapeRegExp(formatRange(WINDOW_START, ANCHOR_DATE))),
+    'Log: window range',
   );
   await waitForTextOrLabel(
     page,
     new RegExp(
-      escapeRegExp(`${formatDuration(MONTH_TOTAL)} · ${MONTH_DAYS} days shown`),
+      escapeRegExp(
+        `${formatDuration(WINDOW_MINUTES)} · ` +
+        `${WINDOW_DAYS_WITH_ENTRIES} days shown`,
+      ),
     ),
-    'Log: month total and day count',
+    'Log: window total and day count',
   );
 
   await openMenu(
@@ -757,16 +820,14 @@ async function assertLogDemo(page) {
   await chooseMenuItem(page, 'Acme migration', 'Log subcategory');
   await page.waitForTimeout(1200);
 
-  const acme = MONTH_PROJECT_TOTALS.get('Acme migration') ||
-    { minutes: 0, entries: 0 };
-  const acmeEntries = MONTH_ENTRIES.filter(
+  const acmeEntries = WINDOW_ENTRIES.filter(
     (entry) => entry.subcategory === 'Acme migration',
   );
   await waitForTextOrLabel(
     page,
     new RegExp(
       escapeRegExp(
-        `${formatDuration(acme.minutes)} · ` +
+        `${formatDuration(sumMinutes(acmeEntries))} · ` +
         `${distinctDays(acmeEntries)} days shown`,
       ),
     ),
@@ -1057,6 +1118,49 @@ async function assertSupportDemo(page) {
     new RegExp(escapeRegExp(`${supportAttribution(noMode)} · No mode`)),
     'Support: no-mode feed row',
   );
+
+  // The Log support dialog's Mode selector must offer all five seeded modes.
+  const expectedModes = [
+    'Mentoring',
+    'Pairing',
+    'Incident support',
+    'Code review',
+    '1:1',
+  ];
+  const logSupport = page.getByRole('button', {
+    name: 'Log support',
+    exact: true,
+  });
+  await expectCount(logSupport, '>0', 'Support: log support action');
+  await logSupport.first().click();
+  const dialog = page.getByRole('dialog');
+  const saveSupport = dialog.getByRole('button', {
+    name: 'Save support',
+    exact: true,
+  });
+  await saveSupport
+    .first()
+    .waitFor({ state: 'attached', timeout: 10000 })
+    .catch(() => fail('Support: the Log support dialog did not open'));
+  await openMenu(
+    page,
+    dialog.getByRole('button', { name: expectedModes[0], exact: true }),
+    'Support mode',
+  );
+  await waitForMenuItems(page, expectedModes, 'Support mode menu');
+  await expectCount(
+    page.getByRole('menuitem'),
+    expectedModes.length,
+    'Support mode menu count',
+  );
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+  await expectCount(cancel, '>0', 'Support: dialog cancel action');
+  await cancel.first().click();
+  await dialog
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => fail('Support: the Log support dialog did not close'));
   await shot(page, `${SCENARIO}-07-support`);
 }
 

@@ -126,7 +126,7 @@ func runSeed(args []string, out io.Writer) error {
 		return fmt.Errorf("replace demo database: %w", err)
 	}
 	replaced = true
-	syncDir(dir)
+	store.SyncDir(dir)
 
 	fmt.Fprintf(out, "Seeded scenario: %s\n", scenario)
 	fmt.Fprintf(out, "Database: %s\n", target)
@@ -162,16 +162,4 @@ func parseSeedAnchor(value string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid --anchor %q: want YYYY-MM-DD", value)
 	}
 	return parsed, nil
-}
-
-// syncDir persists a rename. It is best-effort: the file itself is already
-// synced and some filesystems reject directory fsync. This mirrors
-// internal/store's restore helper, which is unexported.
-func syncDir(dir string) {
-	handle, err := os.Open(dir)
-	if err != nil {
-		return
-	}
-	defer handle.Close()
-	_ = handle.Sync()
 }

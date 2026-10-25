@@ -157,6 +157,10 @@ The account, default settings and the deterministic default taxonomy only:
 * Default settings: `UTC`, week starts Monday, 450-minute daily target,
   personal review off, 240-minute long-timer prompt, 30-minute default
   duration, 6-hour backup interval, 30-snapshot retention.
+* The settings record also carries the internal `SupportPeopleSeeded` marker
+  (`true`), so loading settings never populates the roster. The `empty`
+  scenario has no entries to derive support names from, and its roster stays
+  deliberately empty even though the default taxonomy includes support modes.
 * 0 work entries, 0 notes, 0 milestones, 0 check-ins, no active timer.
 
 Identifiers are derived from the scenario name and stable labels with

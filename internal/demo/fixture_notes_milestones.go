@@ -72,16 +72,6 @@ func (f Fixture) projectRefs() map[string]domain.CategoryRole {
 	return refs
 }
 
-func fixtureProjectRef(category, subcategory string) string {
-	return strings.TrimSpace(category) + "/" + strings.TrimSpace(subcategory)
-}
-
-// fixtureSubcategoryID must match the ID seedDemo derives for the same
-// category/subcategory pair.
-func fixtureSubcategoryID(scenario, category, subcategory string) string {
-	return stableID(scenario, "subcategory", fixtureProjectRef(category, subcategory))
-}
-
 // validateNotes rejects ambiguous or inconsistent note fixtures. The dataset is
 // spec-driven, so the validator checks structure and project attachments but
 // leaves counts and exact texts to the fixture and its tests.
@@ -213,7 +203,7 @@ func seedNotes(database *store.Store, userID, scenario string, fixture Fixture, 
 		record := domain.Note{
 			ID:            stableID(scenario, "note", "project/"+fixtureProjectRef(note.Category, note.Subcategory)+"/"+strings.TrimSpace(note.Key)),
 			UserID:        userID,
-			SubcategoryID: fixtureSubcategoryID(scenario, note.Category, note.Subcategory),
+			SubcategoryID: stableSubcategoryID(scenario, note.Category, note.Subcategory),
 			Text:          strings.TrimSpace(note.Text),
 			CreatedAt:     date.Add(10*time.Hour + time.Duration(i)*time.Minute),
 		}
@@ -235,7 +225,7 @@ func seedMilestones(database *store.Store, userID, scenario string, fixture Fixt
 		record := domain.Milestone{
 			ID:            stableID(scenario, "milestone", fixtureProjectRef(milestone.Category, milestone.Subcategory)+"/"+strings.TrimSpace(milestone.Key)),
 			UserID:        userID,
-			SubcategoryID: fixtureSubcategoryID(scenario, milestone.Category, milestone.Subcategory),
+			SubcategoryID: stableSubcategoryID(scenario, milestone.Category, milestone.Subcategory),
 			Title:         strings.TrimSpace(milestone.Title),
 			DueDate:       due.Format(domain.DateLayout),
 			Done:          milestone.Done,

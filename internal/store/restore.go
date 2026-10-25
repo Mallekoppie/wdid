@@ -78,7 +78,7 @@ func (s *Store) Restore(snapshotPath string) (RestoreResult, error) {
 		return reopenAfterFailure(
 			result, fmt.Errorf("replace database: %w", err))
 	}
-	syncDir(filepath.Dir(s.dbPath))
+	SyncDir(filepath.Dir(s.dbPath))
 
 	// Reopen the restored file and rebuild derived data before reporting
 	// success. A concurrent request may have reopened the replaced file while
@@ -119,7 +119,7 @@ func (s *Store) rollback(result RestoreResult, cause error) (RestoreResult, erro
 			defer os.Remove(stagedPath)
 			_ = platform.Database.BoltDb.Close()
 			if renameErr := os.Rename(stagedPath, s.dbPath); renameErr == nil {
-				syncDir(filepath.Dir(s.dbPath))
+				SyncDir(filepath.Dir(s.dbPath))
 				_ = platform.SetupBoltDB()
 			}
 		}
@@ -138,7 +138,7 @@ func (s *Store) copyCurrentDatabase() (string, error) {
 		_ = os.Remove(destination)
 		return "", err
 	}
-	syncDir(filepath.Dir(s.dbPath))
+	SyncDir(filepath.Dir(s.dbPath))
 	return destination, nil
 }
 
@@ -228,9 +228,10 @@ func copyFile(sourcePath, destinationPath string) error {
 	return nil
 }
 
-// syncDir persists a rename. It is best-effort: the file itself is already
-// synced and some filesystems reject directory fsync.
-func syncDir(dir string) {
+// SyncDir persists a rename. It is best-effort: the file itself is already
+// synced and some filesystems reject directory fsync. Restore and the demo
+// seeder share it so the atomic-replacement contract is implemented once.
+func SyncDir(dir string) {
 	handle, err := os.Open(dir)
 	if err != nil {
 		return

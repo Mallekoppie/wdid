@@ -34,8 +34,9 @@ type Options struct {
 	// value means today in UTC. The time-of-day component is ignored.
 	Anchor time.Time
 	// Fixture is an optional directory of per-domain JSON files that override
-	// the embedded fixture. A missing or empty file falls back to the embedded
-	// domain. Only the "demo" scenario reads it.
+	// the embedded fixture. A missing file falls back to the embedded domain;
+	// an empty or malformed file is a JSON decode error. Only the "demo"
+	// scenario reads it.
 	Fixture string
 	// Timezone overrides the fixture's (or, for "empty", the default's)
 	// timezone. An empty value keeps the scenario's timezone.
@@ -131,39 +132,23 @@ func seedBase(database *store.Store, opts Options) (Summary, error) {
 		return Summary{}, fmt.Errorf("save demo settings: %w", err)
 	}
 
-	summary := Summary{Users: 1}
-	for sortOrder, seed := range store.DefaultTaxonomy() {
-		category := domain.Category{
-			ID:        stableID(opts.Scenario, "category", seed.Name),
-			UserID:    user.ID,
-			Name:      seed.Name,
-			Role:      seed.Role,
-			SortOrder: sortOrder,
-			CreatedAt: anchor,
-			UpdatedAt: anchor,
+	taxonomy := make([]taxonomySeed, 0, len(store.DefaultTaxonomy()))
+	for _, seed := range store.DefaultTaxonomy() {
+		subcategories := make([]taxonomySeedSubcategory, 0, len(seed.Subcategories))
+		for _, name := range seed.Subcategories {
+			subcategories = append(subcategories, taxonomySeedSubcategory{Name: name})
 		}
-		if err := database.SaveCategory(category); err != nil {
-			return Summary{}, fmt.Errorf("save demo category %q: %w", seed.Name, err)
-		}
-		summary.Categories++
-
-		for subOrder, name := range seed.Subcategories {
-			subcategory := domain.Subcategory{
-				ID:         stableID(opts.Scenario, "subcategory", seed.Name+"/"+name),
-				UserID:     user.ID,
-				CategoryID: category.ID,
-				Name:       name,
-				Status:     domain.SubcategoryActive,
-				SortOrder:  subOrder,
-				CreatedAt:  anchor,
-				UpdatedAt:  anchor,
-			}
-			if err := database.SaveSubcategory(subcategory); err != nil {
-				return Summary{}, fmt.Errorf("save demo subcategory %q: %w", name, err)
-			}
-			summary.Subcategories++
-		}
+		taxonomy = append(taxonomy, taxonomySeed{
+			Name:          seed.Name,
+			Role:          seed.Role,
+			Subcategories: subcategories,
+		})
 	}
+	summary, err := seedTaxonomy(database, opts.Scenario, user.ID, anchor, taxonomy)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Users = 1
 
 	return withActiveTimer(database, user.ID, summary)
 }
@@ -190,47 +175,28 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 		return Summary{}, fmt.Errorf("save demo settings: %w", err)
 	}
 
-	summary := Summary{Users: 1}
-	for sortOrder, seed := range fixture.Taxonomy.Categories {
-		name := strings.TrimSpace(seed.Name)
-		category := domain.Category{
-			ID:        stableID(opts.Scenario, "category", name),
-			UserID:    user.ID,
-			Name:      name,
-			Role:      seed.Role,
-			SortOrder: sortOrder,
-			CreatedAt: anchor,
-			UpdatedAt: anchor,
-		}
-		if err := database.SaveCategory(category); err != nil {
-			return Summary{}, fmt.Errorf("save demo category %q: %w", name, err)
-		}
-		summary.Categories++
-
-		for subOrder, subSeed := range seed.Subcategories {
-			subName := strings.TrimSpace(subSeed.Name)
-			status := subSeed.Status
-			if status == "" {
-				status = domain.SubcategoryActive
-			}
-			subcategory := domain.Subcategory{
-				ID:            stableID(opts.Scenario, "subcategory", name+"/"+subName),
-				UserID:        user.ID,
-				CategoryID:    category.ID,
-				Name:          subName,
-				Status:        status,
+	taxonomy := make([]taxonomySeed, 0, len(fixture.Taxonomy.Categories))
+	for _, seed := range fixture.Taxonomy.Categories {
+		subcategories := make([]taxonomySeedSubcategory, 0, len(seed.Subcategories))
+		for _, subSeed := range seed.Subcategories {
+			subcategories = append(subcategories, taxonomySeedSubcategory{
+				Name:          subSeed.Name,
+				Status:        subSeed.Status,
 				Progress:      subSeed.Progress,
-				TargetOutcome: strings.TrimSpace(subSeed.TargetOutcome),
-				SortOrder:     subOrder,
-				CreatedAt:     anchor,
-				UpdatedAt:     anchor,
-			}
-			if err := database.SaveSubcategory(subcategory); err != nil {
-				return Summary{}, fmt.Errorf("save demo subcategory %q: %w", subName, err)
-			}
-			summary.Subcategories++
+				TargetOutcome: subSeed.TargetOutcome,
+			})
 		}
+		taxonomy = append(taxonomy, taxonomySeed{
+			Name:          seed.Name,
+			Role:          seed.Role,
+			Subcategories: subcategories,
+		})
 	}
+	summary, err := seedTaxonomy(database, opts.Scenario, user.ID, anchor, taxonomy)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Users = 1
 
 	// Work entries derive their LocalDate from the resolved timezone. Check-ins
 	// run next because each one snapshots the authoritative report for its
@@ -263,6 +229,78 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 	summary.Milestones = milestones
 
 	return withActiveTimer(database, user.ID, summary)
+}
+
+// taxonomySeed is one category to write, with its subcategories in display
+// order. It is the shared shape the built-in taxonomy and the fixture are
+// converted into before seeding.
+type taxonomySeed struct {
+	Name          string
+	Role          domain.CategoryRole
+	Subcategories []taxonomySeedSubcategory
+}
+
+// taxonomySeedSubcategory is one subcategory below a taxonomySeed. An empty
+// status means active.
+type taxonomySeedSubcategory struct {
+	Name          string
+	Status        domain.SubcategoryStatus
+	Progress      int
+	TargetOutcome string
+}
+
+// seedTaxonomy writes the category/subcategory tree shared by both scenarios.
+// It preserves the input order as the sort order, derives IDs through the
+// stable helpers, defaults an empty status to active, and reports the counts.
+// The production account path (seedUserTx) is intentionally separate.
+func seedTaxonomy(
+	database *store.Store,
+	scenario, userID string,
+	anchor time.Time,
+	taxonomy []taxonomySeed,
+) (Summary, error) {
+	var summary Summary
+	for sortOrder, seed := range taxonomy {
+		name := strings.TrimSpace(seed.Name)
+		category := domain.Category{
+			ID:        stableCategoryID(scenario, name),
+			UserID:    userID,
+			Name:      name,
+			Role:      seed.Role,
+			SortOrder: sortOrder,
+			CreatedAt: anchor,
+			UpdatedAt: anchor,
+		}
+		if err := database.SaveCategory(category); err != nil {
+			return Summary{}, fmt.Errorf("save demo category %q: %w", name, err)
+		}
+		summary.Categories++
+
+		for subOrder, subSeed := range seed.Subcategories {
+			subName := strings.TrimSpace(subSeed.Name)
+			status := subSeed.Status
+			if status == "" {
+				status = domain.SubcategoryActive
+			}
+			subcategory := domain.Subcategory{
+				ID:            stableSubcategoryID(scenario, name, subName),
+				UserID:        userID,
+				CategoryID:    category.ID,
+				Name:          subName,
+				Status:        status,
+				Progress:      subSeed.Progress,
+				TargetOutcome: strings.TrimSpace(subSeed.TargetOutcome),
+				SortOrder:     subOrder,
+				CreatedAt:     anchor,
+				UpdatedAt:     anchor,
+			}
+			if err := database.SaveSubcategory(subcategory); err != nil {
+				return Summary{}, fmt.Errorf("save demo subcategory %q: %w", subName, err)
+			}
+			summary.Subcategories++
+		}
+	}
+	return summary, nil
 }
 
 // demoFixtureSettings starts from the account defaults and applies only the

@@ -168,10 +168,10 @@ func seedEntries(
 			if !ok {
 				return count, fmt.Errorf("fixture entry %q: category %q does not exist", fixtureEntry.Key, fixtureEntry.Category)
 			}
-			categoryID := stableID(scenario, "category", strings.TrimSpace(category.Name))
+			categoryID := stableCategoryID(scenario, category.Name)
 			subcategoryID := ""
 			if subcategory := strings.TrimSpace(fixtureEntry.Subcategory); subcategory != "" {
-				subcategoryID = stableID(scenario, "subcategory", strings.TrimSpace(category.Name)+"/"+subcategory)
+				subcategoryID = stableSubcategoryID(scenario, category.Name, subcategory)
 			}
 
 			start, err := entryClockMinutes(fixtureEntry.Start)
