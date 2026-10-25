@@ -79,13 +79,15 @@ The `demo` scenario reads an embedded declarative fixture split by domain:
 | `people.json` | Support-person roster |
 | `settings.json` | Timezone, daily target and review cadence |
 | `entries.json` | Work-entry templates expanded over the 14-day window ending at the anchor |
+| `notes.json` | Day notes and project notes |
+| `milestones.json` | Per-project milestones, due offsets and done state |
 
 `--fixture DIR` points at a directory that uses the same filenames. For each
 domain file present in `DIR`, that file replaces the embedded domain. A file
 that is missing from `DIR` falls back to the embedded copy, so a directory can
-override one domain and inherit the rest. Other files in `DIR` are ignored;
-later tickets add `notes.json`, `milestones.json` and `check_ins.json` without
-changing the command.
+override one domain and inherit the rest. Other files in `DIR` are ignored.
+`check_ins.json` (ticket #10) is added by its own ticket without changing the
+command.
 
 The path must be an existing directory. A missing path, a path that is not a
 directory, an unreadable file or invalid JSON (including an unknown field)
@@ -167,9 +169,9 @@ only intentionally non-identical values).
 ### `demo`
 
 The account plus the embedded fixture: **5 categories, 16 subcategories, 62
-work entries, 1 user**, and the demo settings below. Notes, milestones and
-check-ins are still **0**; tickets #9 and #10 add those domains as independent
-fixture files. There is no active timer.
+work entries, 11 notes, 20 milestones, 1 user**, and the demo settings below.
+Check-ins are still **0**; ticket #10 adds them as an independent fixture file.
+There is no active timer.
 
 #### Taxonomy and projects
 
@@ -214,6 +216,76 @@ Chris**.
 
 Everything else (long-timer prompt, default duration, backup interval,
 retention, theme, density) keeps the account defaults documented for `empty`.
+
+#### Notes
+
+The fixture seeds **11 notes**: eight day notes and three project notes. A day
+note has a date and no project; a project note has an initiative project and no
+date. Every date is an offset from `--anchor`, so the dataset stays inside the
+14-day demo window for any anchor. The anchor-day note (`daysBeforeAnchor: 0`)
+is the note Today displays. Example dates below use `--anchor 2026-03-09`.
+
+| Days before anchor | Example date | Day note |
+| --- | --- | --- |
+| 13 | 2026-02-24 | Planning the next two weeks. Cut scope on the audit deliverable and protected Friday for review. |
+| 11 | 2026-02-26 | Incident support in the afternoon. No customer impact, but the alert threshold needs tuning. |
+| 9 | 2026-02-28 | Deep work on the pricing experiment. Three variants defined; waiting on finance for the margin floor. |
+| 6 | 2026-03-03 | Client check-in with Globex. They want the onboarding runbook before the next cohort. |
+| 5 | 2026-03-04 | Blocked most of the morning on staging credentials, then finished the observability dashboard skeleton. |
+| 3 | 2026-03-06 | Pairing with Priya on the auth session rotation. The refresh-token edge case is real; wrote it up as a milestone. |
+| 1 | 2026-03-08 | Review day. Triaged the search relevance benchmark failures and parked the pricing copy until next week. |
+| 0 | 2026-03-09 | Cutover dry run complete. Tomorrow: tighten the rollback window and confirm the Globex contact list. |
+
+The three project notes attach to different initiative projects, so each project
+detail screen shows one:
+
+| Project (category) | Days before anchor | Example date | Note |
+| --- | --- | --- | --- |
+| Acme migration (Client Delivery) | 2 | 2026-03-07 | The dry run surfaced two ordering gaps in the migration scripts. Both are fixed; the remaining risk is the rollback window, which needs a signed runbook before the cutover. |
+| Search relevance (Platform) | 7 | 2026-03-02 | The **long note**: 2,366 characters in one unwrapped paragraph, from "The benchmark review turned into a longer investigation than expected" to "reconstruct it afterward." The full text lives in `notes.json`; the UI renders it without a `maxLines` clamp, so the project-detail page must not overflow horizontally. |
+| Self-serve trial (Growth) | 10 | 2026-02-27 | The trial cohort reached first value faster than the last one, mostly because the empty state now points at a sample project. Next question is whether the pricing page should appear before or after the first saved entry. |
+
+All note texts stay under the 4,000-character domain limit.
+
+#### Milestones
+
+Each initiative project carries **2-3 milestones** (20 in total, 2-3 per
+project). There is no status field: status is derived from `done` and the due
+date relative to the anchor.
+
+* **done**: `done` is true and the due date is before the anchor.
+* **overdue**: not done and the due date is before the anchor.
+* **upcoming**: not done and the due date is on or after the anchor. A due date
+  equal to the anchor (`dueOffsetDays: 0`) counts as upcoming.
+
+The fixture produces **9 done, 4 overdue and 7 upcoming** milestones. Example
+dates below use `--anchor 2026-03-09`; `dueOffsetDays` is relative to the anchor.
+
+| Project | Title | Due offset | Example due | Done | Status |
+| --- | --- | --- | --- | --- | --- |
+| Acme migration | Cutover dry run completed | -10 | 2026-02-27 | yes | done |
+| Acme migration | Rollback window signed off | -2 | 2026-03-07 | no | overdue |
+| Acme migration | Production cutover | 7 | 2026-03-16 | no | upcoming |
+| Globex onboarding | Kickoff workshop delivered | -12 | 2026-02-25 | yes | done |
+| Globex onboarding | Admin training runbook | 0 | 2026-03-09 | no | upcoming |
+| Initech audit | Evidence pack delivered | -20 | 2026-02-17 | yes | done |
+| Initech audit | Findings signed off | -6 | 2026-03-03 | yes | done |
+| Auth overhaul | Session rotation design approved | -9 | 2026-02-28 | yes | done |
+| Auth overhaul | Refresh-token edge case fixed | -1 | 2026-03-08 | no | overdue |
+| Auth overhaul | Client migration | 10 | 2026-03-19 | no | upcoming |
+| Search relevance | Benchmark set frozen | -15 | 2026-02-22 | yes | done |
+| Search relevance | Top-three result reached | -4 | 2026-03-05 | no | overdue |
+| Observability | Trace pipeline selected | 6 | 2026-03-15 | no | upcoming |
+| Observability | First dashboard live | 14 | 2026-03-23 | no | upcoming |
+| Self-serve trial | Signup flow instrumented | -8 | 2026-03-01 | yes | done |
+| Self-serve trial | First-value milestone defined | -3 | 2026-03-06 | yes | done |
+| Self-serve trial | Cohort launch | 5 | 2026-03-14 | no | upcoming |
+| Pricing experiment | Experiment brief written | -7 | 2026-03-02 | yes | done |
+| Pricing experiment | Finance margin floor confirmed | -1 | 2026-03-08 | no | overdue |
+| Pricing experiment | Experiment readout | 12 | 2026-03-21 | no | upcoming |
+
+Work entries (ticket #8) are a separate fixture domain listed above; check-ins
+(ticket #10) are added by their own ticket.
 
 Fixture-owned rows use deterministic IDs derived from the scenario and stable
 labels, and every timestamp derives from `--anchor`; rerunning the same

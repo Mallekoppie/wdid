@@ -232,6 +232,9 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 		}
 	}
 
+	// Work entries derive their LocalDate from the resolved timezone. Notes and
+	// milestones reference subcategories. All three are independent fixture
+	// domains, and check-ins (#10) will join them without changing this order.
 	location, err := time.LoadLocation(settings.Timezone)
 	if err != nil {
 		return Summary{}, fmt.Errorf("load demo timezone %q: %w", settings.Timezone, err)
@@ -241,6 +244,17 @@ func seedDemo(database *store.Store, opts Options) (Summary, error) {
 		return Summary{}, err
 	}
 	summary.Entries = entryCount
+
+	notes, err := seedNotes(database, user.ID, opts.Scenario, fixture, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Notes = notes
+	milestones, err := seedMilestones(database, user.ID, opts.Scenario, fixture, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+	summary.Milestones = milestones
 
 	return withActiveTimer(database, user.ID, summary)
 }

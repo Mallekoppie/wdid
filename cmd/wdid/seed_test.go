@@ -217,8 +217,8 @@ func TestSeedCommandDemoAppliesTheFixture(t *testing.T) {
 		"Categories: 5",
 		"Subcategories: 16",
 		"Entries: 62",
-		"Notes: 0",
-		"Milestones: 0",
+		"Notes: 11",
+		"Milestones: 20",
 		"Check-ins: 0",
 		"Active timer: none",
 	} {

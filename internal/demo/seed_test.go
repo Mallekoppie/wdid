@@ -130,8 +130,8 @@ func TestSeedEmptyCreatesAccountSettingsAndTaxonomy(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID, 0)
-	assertSummary(t, summary, 3, 10, 0)
+	assertNoRows(t, database, user.ID, 0, 0, 0)
+	assertSummary(t, summary, 3, 10, 0, 0, 0)
 }
 
 func TestSeedDemoAppliesTheFixture(t *testing.T) {
@@ -272,8 +272,8 @@ func TestSeedDemoAppliesTheFixture(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID, 62)
-	assertSummary(t, summary, 5, 16, 62)
+	assertNoRows(t, database, user.ID, 62, 11, 20)
+	assertSummary(t, summary, 5, 16, 62, 11, 20)
 }
 
 func TestSeedDemoAppliesFixtureDirectoryOverrides(t *testing.T) {
@@ -543,7 +543,7 @@ func seedSnapshot(t *testing.T, path, scenario string) snapshot {
 	return result
 }
 
-func assertNoRows(t *testing.T, database *store.Store, userID string, entries int) {
+func assertNoRows(t *testing.T, database *store.Store, userID string, entries, notes, milestones int) {
 	t.Helper()
 
 	storedEntries, err := database.WorkEntries(userID, store.WorkEntryFilter{})
@@ -554,20 +554,20 @@ func assertNoRows(t *testing.T, database *store.Store, userID string, entries in
 		t.Fatalf("entries = %+v, want %d", storedEntries, entries)
 	}
 
-	notes, err := database.Notes(userID, store.NoteFilter{})
+	storedNotes, err := database.Notes(userID, store.NoteFilter{})
 	if err != nil {
 		t.Fatalf("list notes: %v", err)
 	}
-	if len(notes) != 0 {
-		t.Fatalf("notes = %+v, want none", notes)
+	if len(storedNotes) != notes {
+		t.Fatalf("notes = %+v, want %d", storedNotes, notes)
 	}
 
-	milestones, err := database.Milestones(userID, "")
+	storedMilestones, err := database.Milestones(userID, "")
 	if err != nil {
 		t.Fatalf("list milestones: %v", err)
 	}
-	if len(milestones) != 0 {
-		t.Fatalf("milestones = %+v, want none", milestones)
+	if len(storedMilestones) != milestones {
+		t.Fatalf("milestones = %+v, want %d", storedMilestones, milestones)
 	}
 
 	checkIns, err := database.CheckIns(userID, "")
@@ -585,18 +585,18 @@ func assertNoRows(t *testing.T, database *store.Store, userID string, entries in
 	}
 }
 
-func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, entries int) {
+func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, entries, notes, milestones int) {
 	t.Helper()
 
 	if summary.Users != 1 ||
 		summary.Categories != categories ||
 		summary.Subcategories != subcategories ||
 		summary.Entries != entries ||
-		summary.Notes != 0 ||
-		summary.Milestones != 0 ||
+		summary.Notes != notes ||
+		summary.Milestones != milestones ||
 		summary.CheckIns != 0 ||
 		summary.ActiveTimer {
-		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d entries and no other rows",
-			summary, categories, subcategories, entries)
+		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d entries, %d notes, %d milestones and no check-ins",
+			summary, categories, subcategories, entries, notes, milestones)
 	}
 }

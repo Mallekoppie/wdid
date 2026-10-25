@@ -14,9 +14,10 @@ import (
 	"github.com/Mallekoppie/wdid/internal/domain"
 )
 
-// The embedded fixture is split by domain so later tickets can add entries,
-// notes, milestones and check-ins as new files. The seed command only ever
-// passes a directory, so adding a domain never changes its interface.
+// The embedded fixture is split by domain so each dataset lives in its own
+// file. Entries (#8) and check-ins (#10) remain separate domains. The seed
+// command only ever passes a directory, so adding a domain never changes its
+// interface.
 //
 //go:embed fixtures/*.json
 var embeddedFixtures embed.FS
@@ -60,10 +61,12 @@ type SettingsFixture struct {
 // Fixture is the decoded declarative demo dataset. Each domain is independent:
 // a later ticket adds a field, an embedded file and one fixtureDomain entry.
 type Fixture struct {
-	Taxonomy TaxonomyFixture
-	People   PeopleFixture
-	Settings SettingsFixture
-	Entries  EntriesFixture
+	Taxonomy   TaxonomyFixture
+	People     PeopleFixture
+	Settings   SettingsFixture
+	Entries    EntriesFixture
+	Notes      NotesFixture
+	Milestones MilestonesFixture
 }
 
 type fixtureDomain struct {
@@ -72,14 +75,16 @@ type fixtureDomain struct {
 }
 
 // domains lists the per-domain fixture files and their destinations. Later
-// tickets extend this list (entries.json, notes.json, milestones.json,
-// check_ins.json) without touching cmd/wdid.
+// tickets extend this list (entries.json, check_ins.json) without touching
+// cmd/wdid.
 func (f *Fixture) domains() []fixtureDomain {
 	return []fixtureDomain{
 		{file: "taxonomy.json", dest: &f.Taxonomy},
 		{file: "people.json", dest: &f.People},
 		{file: "settings.json", dest: &f.Settings},
 		{file: "entries.json", dest: &f.Entries},
+		{file: "notes.json", dest: &f.Notes},
+		{file: "milestones.json", dest: &f.Milestones},
 	}
 }
 
@@ -202,6 +207,12 @@ func (f Fixture) validate() error {
 		return fmt.Errorf("fixture settings: invalid reviewCadence %q", f.Settings.ReviewCadence)
 	}
 	if err := f.validateEntries(); err != nil {
+		return err
+	}
+	if err := f.validateNotes(); err != nil {
+		return err
+	}
+	if err := f.validateMilestones(); err != nil {
 		return err
 	}
 	return nil
