@@ -57,13 +57,25 @@ DEMO_SCENARIO ?= demo
 DEMO_ANCHOR   ?=
 SEED_ARGS     ?= --reset
 
+# Seeded browser smoke test. Unlike smoke-web, this target owns the whole
+# lifecycle: it seeds throwaway databases, starts the service on SMOKE_PORT,
+# drives the seeded UI for each scenario, then stops the service and removes
+# the databases. The service resolves Today and "this week" from its own
+# clock, so the anchor is the run's UTC date: both the seeder and the frozen
+# browser clock in scripts/browser-smoke-seeded.cjs use this same value.
+# Override SMOKE_ANCHOR only when the service itself runs on that date.
+SMOKE_PORT    ?= 9202
+SMOKE_ANCHOR  ?= $(shell date -u +%F)
+DEMO_EMAIL    ?= demo@wdid.local
+DEMO_PASSWORD ?= demo-password-123
+
 export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 export WDID_SMOKE_EMAIL WDID_SMOKE_PASSWORD WDID_SMOKE_BOOTSTRAP_SECRET
 
 .PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
         lint fmt tidy proto proto-check docker-build clean check smoke-web \
-        seed-demo run-demo
+        smoke-seeded seed-demo run-demo
 
 help: ## Show this help
 	@printf 'wdid targets:\n\n'
@@ -134,6 +146,72 @@ smoke-web: ## Drive the served app end to end in a browser (WDID_BASE_URL, Node 
 		exit 1; \
 	}
 	node scripts/browser-smoke.cjs
+
+smoke-seeded: buildweb build ## Seed temp DBs, serve, and walk the seeded UI (Node + Playwright)
+	@command -v node >/dev/null 2>&1 || { \
+		echo "node is required for the seeded browser smoke test" >&2; \
+		exit 1; \
+	}
+	@node -e "require('playwright')" 2>/dev/null || { \
+		echo "playwright is required: npm install --no-save playwright (or set NODE_PATH)" >&2; \
+		exit 1; \
+	}
+	@set -euo pipefail; \
+	tmp="$$(mktemp -d)"; \
+	pid=""; \
+	log="$$tmp/server.log"; \
+	cleanup() { \
+		if [ -n "$$pid" ]; then \
+			kill "$$pid" 2>/dev/null || true; \
+			wait "$$pid" 2>/dev/null || true; \
+		fi; \
+		rm -rf "$$tmp"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	for scenario in demo empty; do \
+		db="$$tmp/$$scenario.db"; \
+		echo "==> smoke-seeded: $$scenario (anchor $(SMOKE_ANCHOR))"; \
+		WDID_DEV_MODE=true WDID_DB_PATH="$$db" \
+			./bin/wdid seed --reset --anchor $(SMOKE_ANCHOR) "$$scenario"; \
+		WDID_DEV_MODE=true WDID_DB_PATH="$$db" \
+			WDID_HTTP_ADDR=127.0.0.1:$(SMOKE_PORT) \
+			WDID_BOOTSTRAP_SECRET=$(WDID_BOOTSTRAP_SECRET) \
+			WDID_JWT_SECRET=$(WDID_JWT_SECRET) \
+			WDID_ALLOWED_ORIGINS=$(WDID_ALLOWED_ORIGINS) \
+			./bin/wdid >"$$log" 2>&1 & \
+		pid=$$!; \
+		ready=0; \
+		for _ in $$(seq 1 100); do \
+			if curl -fsS "http://127.0.0.1:$(SMOKE_PORT)/healthz" >/dev/null 2>&1; then \
+				ready=1; \
+				break; \
+			fi; \
+			if ! kill -0 "$$pid" 2>/dev/null; then \
+				echo "smoke-seeded: server exited before becoming ready" >&2; \
+				cat "$$log" >&2; \
+				exit 1; \
+			fi; \
+			sleep 0.1; \
+		done; \
+		if [ "$$ready" -ne 1 ]; then \
+			echo "smoke-seeded: server did not become ready on port $(SMOKE_PORT)" >&2; \
+			cat "$$log" >&2; \
+			exit 1; \
+		fi; \
+		if ! WDID_BASE_URL="http://127.0.0.1:$(SMOKE_PORT)" \
+			WDID_SMOKE_SCENARIO="$$scenario" \
+			WDID_SMOKE_ANCHOR="$(SMOKE_ANCHOR)" \
+			WDID_SMOKE_EMAIL="$(DEMO_EMAIL)" \
+			WDID_SMOKE_PASSWORD="$(DEMO_PASSWORD)" \
+			node scripts/browser-smoke-seeded.cjs; then \
+			echo "smoke-seeded: $$scenario failed; server log:" >&2; \
+			cat "$$log" >&2; \
+			exit 1; \
+		fi; \
+		kill "$$pid" 2>/dev/null || true; \
+		wait "$$pid" 2>/dev/null || true; \
+		pid=""; \
+	done
 
 proto: ## Generate message, Connect, and Dart stubs from internal/contracts/*.proto
 	@command -v protoc >/dev/null 2>&1 || { \
