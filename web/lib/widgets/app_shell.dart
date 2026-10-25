@@ -66,8 +66,9 @@ class _AppShellState extends State<AppShell> {
       } else {
         final result = await stopTimerWithDecision(context, state: state);
         if (!mounted || result == null) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          stoppedTimerSnackBar(context, state, result),
+        );
       }
     } catch (error) {
       if (!mounted) return;

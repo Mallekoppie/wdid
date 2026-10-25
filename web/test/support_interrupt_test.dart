@@ -380,4 +380,55 @@ void main() {
     expect(state.interruptedTimer!.subcategoryId, 'sub-1');
     expect(find.byType(TodayScreen), findsOneWidget);
   });
+
+  testWidgets('Resume restores the interruption as a new block', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Interrupt the initiative and pick the person.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(timerApi.timer!.categoryId, 'cat-support');
+
+    // Stop the interrupt timer from the Today card.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Nothing resumes automatically; the offer is explicit in the card and
+    // in the stop snackbar.
+    final label = 'Resume Initiatives · Billing migration';
+    expect(timerApi.timer, isNull);
+    expect(timerApi.startCalls, 1);
+    expect(find.text(label), findsWidgets);
+
+    await tester.tap(find.widgetWithText(FilledButton, label));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2);
+    expect(timerApi.lastStartCategoryId, 'cat-1');
+    expect(timerApi.lastStartSubcategoryId, 'sub-1');
+    expect(timerApi.lastStartDescription, 'Backfill script');
+    expect(state.interruptedTimer, isNull);
+
+    // Let the stop snackbar retire before checking the offer is gone.
+    await tester.pump(const Duration(seconds: 5));
+    expect(
+      find.text(label),
+      findsNothing,
+      reason: 'the offer disappears once the stash is consumed',
+    );
+  });
 }
