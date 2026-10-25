@@ -11,6 +11,7 @@ import 'package:wdid_web/state/app_state.dart';
 import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/utils/time_utils.dart';
 import 'package:wdid_web/widgets/app_shell.dart';
+import 'package:wdid_web/widgets/support_now_strip.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -252,9 +253,14 @@ void main() {
       expect(state.interruptedTimer!.description, 'Backfill script');
 
       // The person picker is anchored in the header, not a route.
-      expect(find.text('Who are you supporting?'), findsOneWidget);
+      expect(find.text('Start a support timer'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Priya'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(MenuAnchor),
+          matching: find.widgetWithText(ChoiceChip, 'Priya'),
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
@@ -264,7 +270,7 @@ void main() {
       expect(timerApi.lastStartDescription, isEmpty);
       expect(timerApi.lastStartPerson, 'Priya');
       expect(find.byType(TodayScreen), findsOneWidget);
-      expect(find.text('Who are you supporting?'), findsNothing);
+      expect(find.text('Start a support timer'), findsNothing);
     },
   );
 
@@ -289,7 +295,7 @@ void main() {
     expect(timerApi.startCalls, 0);
     expect(timerApi.timer, isNotNull, reason: 'the timer keeps running');
     expect(state.interruptedTimer, isNull);
-    expect(find.text('Who are you supporting?'), findsNothing);
+    expect(find.text('Start a support timer'), findsNothing);
   });
 
   testWidgets('cancelling the block-limit decision starts nothing', (
@@ -318,6 +324,60 @@ void main() {
     expect(timerApi.startCalls, 0);
     expect(timerApi.timer, isNotNull);
     expect(state.interruptedTimer, isNull);
-    expect(find.text('Who are you supporting?'), findsNothing);
+    expect(find.text('Start a support timer'), findsNothing);
+  });
+
+  testWidgets('the Today support strip starts a support timer with one tap', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    await pumpApp(tester, timerApi: timerApi);
+
+    final strip = find.byType(SupportNowStrip);
+    expect(strip, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: strip,
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartSubcategoryId, isEmpty);
+    expect(timerApi.lastStartDescription, isEmpty);
+    expect(timerApi.lastStartPerson, 'Priya');
+    expect(find.byType(TodayScreen), findsOneWidget);
+  });
+
+  testWidgets('the Today support strip stops the running timer first', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    final strip = find.byType(SupportNowStrip);
+    await tester.tap(
+      find.descendant(
+        of: strip,
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.savedEntries, hasLength(1));
+    expect(timerApi.savedEntries.single.categoryId, 'cat-1');
+    expect(timerApi.stopActions, [TimerStopAction.save]);
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPerson, 'Sam');
+    expect(state.interruptedTimer!.categoryId, 'cat-1');
+    expect(state.interruptedTimer!.subcategoryId, 'sub-1');
+    expect(find.byType(TodayScreen), findsOneWidget);
   });
 }

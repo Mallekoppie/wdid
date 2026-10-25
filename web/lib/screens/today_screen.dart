@@ -15,6 +15,7 @@ import '../widgets/panel.dart';
 import '../widgets/quick_capture_bar.dart';
 import '../widgets/screen_states.dart';
 import '../widgets/service_timer_card.dart';
+import '../widgets/support_now_strip.dart';
 import '../widgets/work_entry_row.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -188,6 +189,8 @@ class _TodayScreenState extends State<TodayScreen> {
             ],
             const SizedBox(height: AppSpacing.lg),
             const ServiceTimerCard(),
+            const SizedBox(height: AppSpacing.md),
+            const SupportNowStrip(),
             const SizedBox(height: AppSpacing.md),
             const QuickCaptureBar(),
             const SizedBox(height: AppSpacing.xl),

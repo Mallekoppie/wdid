@@ -188,7 +188,7 @@ class _TimerPillState extends State<TimerPill> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Who are you supporting?', style: theme.textTheme.titleSmall),
+            Text('Start a support timer', style: theme.textTheme.titleSmall),
             const SizedBox(height: 2),
             Text(
               'One tap starts a support timer with no mode.',
