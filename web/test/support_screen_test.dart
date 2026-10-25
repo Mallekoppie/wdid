@@ -5,11 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/entry_api.dart';
+import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/utils/time_utils.dart';
+import 'package:wdid_web/widgets/panel.dart';
 import 'package:wdid_web/widgets/support_entry_row.dart';
 
 import 'fake_auth_api.dart';
@@ -76,6 +78,7 @@ Future<FakeEntryApi> pumpSupport(
   Completer<List<WorkEntry>>? logGate,
   bool settle = true,
   FakeSummaryApi? summaryApi,
+  FakeSettingsApi? settingsApi,
 }) async {
   tester.view.physicalSize = const Size(1600, 1400);
   tester.view.devicePixelRatio = 1.0;
@@ -105,7 +108,7 @@ Future<FakeEntryApi> pumpSupport(
           subcategory('mode-other', 'cat-other', 'Meetings'),
         ],
       ),
-      settingsApiBuilder: (_) => FakeSettingsApi(),
+      settingsApiBuilder: (_) => settingsApi ?? FakeSettingsApi(),
       entryApiBuilder: (_) => entryApi,
       summaryApiBuilder: (_) => summaryApi ?? FakeSummaryApi(),
     ),
@@ -396,5 +399,45 @@ void main() {
     expect(find.text('No support logged in this period'), findsWidgets);
     expect(find.text('No interactions yet'), findsOneWidget);
     expect(find.text('Could not load support'), findsNothing);
+  });
+
+  testWidgets('lists the roster in a People panel and removes a name', (
+    tester,
+  ) async {
+    final settingsApi = FakeSettingsApi(
+      settings: const AppSettings(supportPeople: ['Priya', 'Sam']),
+    );
+    await pumpSupport(
+      tester,
+      entries: [supportEntry(id: 'existing', person: 'Priya')],
+      settingsApi: settingsApi,
+    );
+
+    expect(find.widgetWithText(PanelHeader, 'People'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'Priya'), findsOneWidget);
+    expect(find.widgetWithText(InputChip, 'Sam'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Remove Sam'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(InputChip, 'Sam'), findsNothing);
+    expect(find.widgetWithText(InputChip, 'Priya'), findsOneWidget);
+    expect(settingsApi.settings.supportPeople, ['Priya']);
+    // Removing a roster name leaves the historical entry untouched.
+    expect(find.textContaining('Support · Priya · Unblock'), findsOneWidget);
+  });
+
+  testWidgets('adds a name from the People panel', (tester) async {
+    final settingsApi = FakeSettingsApi(
+      settings: const AppSettings(supportPeople: ['Priya']),
+    );
+    await pumpSupport(tester, settingsApi: settingsApi);
+
+    await tester.enterText(field('Add a person'), 'Alex');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add person'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(InputChip, 'Alex'), findsOneWidget);
+    expect(settingsApi.settings.supportPeople, ['Priya', 'Alex']);
   });
 }
