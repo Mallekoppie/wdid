@@ -216,7 +216,7 @@ func TestSeedCommandDemoAppliesTheFixture(t *testing.T) {
 		"Seeded scenario: demo",
 		"Categories: 5",
 		"Subcategories: 16",
-		"Entries: 0",
+		"Entries: 62",
 		"Notes: 11",
 		"Milestones: 20",
 		"Check-ins: 0",
