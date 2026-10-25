@@ -2107,6 +2107,61 @@ class AppState extends ChangeNotifier {
     return saveSettings(settings.copyWith(density: density));
   }
 
+  /// The account's roster of common support-person names. A person is a name,
+  /// not an entity: editing this roster never rewrites historical entries.
+  List<String> get supportPeople => settings.supportPeople;
+
+  /// Adds a name to the roster, case-insensitively and only once. The local
+  /// roster updates immediately; persistence is best-effort so capturing work
+  /// never blocks on a settings write.
+  Future<void> addSupportPerson(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || _rosterContains(trimmed)) return;
+    await _saveSupportPeople([...settings.supportPeople, trimmed]);
+  }
+
+  /// Removes every case-insensitive match from the roster. Work entries keep
+  /// their `person` string; removing a person changes only this roster.
+  Future<void> removeSupportPerson(String name) async {
+    final key = name.trim().toLowerCase();
+    if (key.isEmpty) return;
+    final remaining = [
+      for (final person in settings.supportPeople)
+        if (person.toLowerCase() != key) person,
+    ];
+    if (remaining.length == settings.supportPeople.length) return;
+    await _saveSupportPeople(remaining);
+  }
+
+  bool _rosterContains(String name) {
+    final key = name.toLowerCase();
+    return settings.supportPeople.any((person) => person.toLowerCase() == key);
+  }
+
+  Future<void> _saveSupportPeople(List<String> people) async {
+    settings = settings.copyWith(
+      supportPeople: List<String>.unmodifiable(people),
+    );
+    _notify();
+
+    final api = settingsApi;
+    // A write before the real preferences arrive would send defaults over
+    // every stored preference, including the roster we are editing.
+    if (api == null || preferencesLoading || preferencesError != null) return;
+    try {
+      final saved = await api.updateSettings(settings);
+      settings = saved.copyWith(
+        version: about?.version,
+        schemaVersion: about?.schemaVersion,
+        license: about?.license,
+      );
+      _notify();
+    } catch (_) {
+      // Keep the optimistic roster. A failed settings write must not surface as
+      // a capture error or poison the whole preferences screen.
+    }
+  }
+
   /// Loads the snapshot list and status. Non-admins never call the backup
   /// RPCs; the panel shows an explanatory read-only state instead.
   Future<void> loadBackups({bool force = false}) async {
