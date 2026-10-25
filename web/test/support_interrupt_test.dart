@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
@@ -490,5 +491,94 @@ void main() {
     expect(find.text('Set mode'), findsNothing);
     expect(state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
         isTrue);
+  });
+
+  testWidgets('header Start opens the person picker for a support default', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Leave a support category as the remembered start category.
+    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+    expect(state.activeTimer, isNull);
+    expect(state.lastCategoryId, 'cat-support');
+
+    await tester.tap(find.text('Start timer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start a support timer'), findsOneWidget);
+    expect(
+      find.text('Who are you supporting? Add a person first.'),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2, reason: 'setup start plus the picker start');
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartSubcategoryId, isEmpty);
+    expect(timerApi.lastStartPerson, 'Sam');
+  });
+
+  testWidgets('header Start still starts an initiative default directly', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+    expect(state.lastCategoryId, 'cat-1');
+
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Start a support timer'), findsNothing);
+    expect(timerApi.startCalls, 2, reason: 'setup start plus the button start');
+    expect(timerApi.lastStartCategoryId, 'cat-1');
+  });
+
+  testWidgets('T opens the person picker for a support default too', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AlertDialog, 'Start support'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPerson, 'Sam');
   });
 }
