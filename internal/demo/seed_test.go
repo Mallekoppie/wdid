@@ -131,10 +131,10 @@ func TestSeedEmptyCreatesAccountSettingsAndTaxonomy(t *testing.T) {
 	}
 
 	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 0)
+	assertSummary(t, summary, 3, 10)
 }
 
-func TestSeedDemoIsRegisteredAsAnEmptyBaseUntilFixtureLands(t *testing.T) {
+func TestSeedDemoAppliesTheFixture(t *testing.T) {
 	database := openStore(t, filepath.Join(t.TempDir(), "demo.db"))
 	t.Cleanup(func() { _ = database.Close() })
 
@@ -147,23 +147,243 @@ func TestSeedDemoIsRegisteredAsAnEmptyBaseUntilFixtureLands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read demo account: %v", err)
 	}
+
+	type wantSubcategory struct {
+		name     string
+		status   domain.SubcategoryStatus
+		progress int
+		outcome  string
+	}
+	wantTaxonomy := []struct {
+		name          string
+		role          domain.CategoryRole
+		subcategories []wantSubcategory
+	}{
+		{
+			name: "Client Delivery",
+			role: domain.CategoryRoleInitiative,
+			subcategories: []wantSubcategory{
+				{name: "Acme migration", status: domain.SubcategoryActive, progress: 60, outcome: "Acme's production workloads run entirely on the new platform."},
+				{name: "Globex onboarding", status: domain.SubcategoryActive, progress: 35, outcome: "Globex is live and its team can operate without hand-holding."},
+				{name: "Initech audit", status: domain.SubcategoryDone, progress: 100, outcome: "Audit findings are delivered and signed off."},
+			},
+		},
+		{
+			name: "Platform",
+			role: domain.CategoryRoleInitiative,
+			subcategories: []wantSubcategory{
+				{name: "Auth overhaul", status: domain.SubcategoryActive, progress: 45, outcome: "One auth path serves every client with session rotation."},
+				{name: "Search relevance", status: domain.SubcategoryBlocked, progress: 25, outcome: "The benchmark query set returns its expected result in the top three."},
+				{name: "Observability", status: domain.SubcategoryPlanned, progress: 0, outcome: "Every request is traceable end to end with actionable alerts."},
+			},
+		},
+		{
+			name: "Growth",
+			role: domain.CategoryRoleInitiative,
+			subcategories: []wantSubcategory{
+				{name: "Self-serve trial", status: domain.SubcategoryActive, progress: 70, outcome: "A new account reaches first value without human help."},
+				{name: "Pricing experiment", status: domain.SubcategoryPlanned, progress: 10, outcome: "One pricing model is chosen from the experiment results."},
+			},
+		},
+		{
+			name: "Support",
+			role: domain.CategoryRoleSupport,
+			subcategories: []wantSubcategory{
+				{name: "Mentoring", status: domain.SubcategoryActive},
+				{name: "Pairing", status: domain.SubcategoryActive},
+				{name: "Incident support", status: domain.SubcategoryActive},
+				{name: "Code review", status: domain.SubcategoryActive},
+				{name: "1:1", status: domain.SubcategoryActive},
+			},
+		},
+		{
+			name: "Other",
+			role: domain.CategoryRoleOther,
+			subcategories: []wantSubcategory{
+				{name: "Meetings", status: domain.SubcategoryActive},
+				{name: "Admin", status: domain.SubcategoryActive},
+				{name: "Learning", status: domain.SubcategoryActive},
+			},
+		},
+	}
+
 	categories, err := database.Categories(user.ID)
 	if err != nil {
 		t.Fatalf("list categories: %v", err)
 	}
-	if len(categories) != 3 {
-		t.Fatalf("demo categories = %d, want the empty base's 3", len(categories))
+	if len(categories) != len(wantTaxonomy) {
+		t.Fatalf("categories = %+v, want %d", categories, len(wantTaxonomy))
 	}
+
+	for i, want := range wantTaxonomy {
+		category := categories[i]
+		if category.Name != want.name || category.Role != want.role {
+			t.Fatalf("category %d = %s/%s, want %s/%s", i, category.Name, category.Role, want.name, want.role)
+		}
+		if category.SortOrder != i {
+			t.Fatalf("%s sort order = %d, want %d", category.Name, category.SortOrder, i)
+		}
+		if !category.CreatedAt.Equal(testAnchor) || !category.UpdatedAt.Equal(testAnchor) {
+			t.Fatalf("%s timestamps = %s/%s, want anchor %s", category.Name, category.CreatedAt, category.UpdatedAt, testAnchor)
+		}
+
+		subcategories, err := database.Subcategories(user.ID, category.ID)
+		if err != nil {
+			t.Fatalf("list %s subcategories: %v", category.Name, err)
+		}
+		if len(subcategories) != len(want.subcategories) {
+			t.Fatalf("%s subcategories = %+v, want %d", category.Name, subcategories, len(want.subcategories))
+		}
+		for j, wantSub := range want.subcategories {
+			subcategory := subcategories[j]
+			if subcategory.Name != wantSub.name || subcategory.CategoryID != category.ID {
+				t.Fatalf("%s subcategory %d = %+v, want %s", category.Name, j, subcategory, wantSub.name)
+			}
+			if subcategory.Status != wantSub.status ||
+				subcategory.Progress != wantSub.progress ||
+				subcategory.TargetOutcome != wantSub.outcome {
+				t.Fatalf("%s subcategory %d = %+v, want status %s progress %d outcome %q",
+					category.Name, j, subcategory, wantSub.status, wantSub.progress, wantSub.outcome)
+			}
+			if subcategory.SortOrder != j {
+				t.Fatalf("%s subcategory %d sort order = %d, want %d", category.Name, j, subcategory.SortOrder, j)
+			}
+			if !subcategory.CreatedAt.Equal(testAnchor) || !subcategory.UpdatedAt.Equal(testAnchor) {
+				t.Fatalf("%s subcategory %d timestamps = %s/%s, want anchor %s",
+					category.Name, j, subcategory.CreatedAt, subcategory.UpdatedAt, testAnchor)
+			}
+		}
+	}
+
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	wantRoster := []string{"Priya", "Sam", "Alex", "Jordan", "Mei", "Diego", "Noor", "Chris"}
+	if settings.Timezone != "UTC" ||
+		settings.DailyTargetMinutes != 450 ||
+		settings.ReviewCadence != domain.ReviewCadenceWeekly {
+		t.Fatalf("settings = %+v, want UTC/450/weekly", settings)
+	}
+	if !reflect.DeepEqual(settings.SupportPeople, wantRoster) || !settings.SupportPeopleSeeded {
+		t.Fatalf("support people = %v (seeded %v), want the fixture roster", settings.SupportPeople, settings.SupportPeopleSeeded)
+	}
+	if !settings.UpdatedAt.Equal(testAnchor) {
+		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
+	}
+
 	assertNoRows(t, database, user.ID)
-	assertSummary(t, summary, 0)
+	assertSummary(t, summary, 5, 16)
+}
+
+func TestSeedDemoAppliesFixtureDirectoryOverrides(t *testing.T) {
+	dir := t.TempDir()
+	writeFixtureFile(t, dir, "settings.json", `{
+		"timezone": "Europe/Amsterdam",
+		"dailyTargetMinutes": 300,
+		"reviewCadence": "monthly"
+	}`)
+	writeFixtureFile(t, dir, "people.json", `{"roster": ["Ada", "Grace"]}`)
+
+	database := openStore(t, filepath.Join(t.TempDir(), "override.db"))
+	t.Cleanup(func() { _ = database.Close() })
+
+	if _, err := demo.Seed(database, demo.Options{Scenario: "demo", Anchor: testAnchor, Fixture: dir}); err != nil {
+		t.Fatalf("seed with fixture override: %v", err)
+	}
+
+	user, err := database.UserByEmail(demo.DemoEmail)
+	if err != nil {
+		t.Fatalf("read demo account: %v", err)
+	}
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if settings.Timezone != "Europe/Amsterdam" ||
+		settings.DailyTargetMinutes != 300 ||
+		settings.ReviewCadence != domain.ReviewCadenceMonthly ||
+		!reflect.DeepEqual(settings.SupportPeople, []string{"Ada", "Grace"}) {
+		t.Fatalf("settings = %+v, want the fixture directory overrides", settings)
+	}
+
+	// taxonomy.json is absent from the override directory, so it falls back to
+	// the embedded domain.
+	categories, err := database.Categories(user.ID)
+	if err != nil {
+		t.Fatalf("list categories: %v", err)
+	}
+	if len(categories) != 5 {
+		t.Fatalf("categories = %d, want the embedded 5", len(categories))
+	}
+}
+
+func TestSeedTimezoneOverrideBeatsTheFixture(t *testing.T) {
+	database := openStore(t, filepath.Join(t.TempDir(), "timezone.db"))
+	t.Cleanup(func() { _ = database.Close() })
+
+	if _, err := demo.Seed(database, demo.Options{
+		Scenario: "demo",
+		Anchor:   testAnchor,
+		Timezone: "Asia/Tokyo",
+	}); err != nil {
+		t.Fatalf("seed with timezone override: %v", err)
+	}
+
+	user, err := database.UserByEmail(demo.DemoEmail)
+	if err != nil {
+		t.Fatalf("read demo account: %v", err)
+	}
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if settings.Timezone != "Asia/Tokyo" {
+		t.Fatalf("timezone = %q, want the --timezone override", settings.Timezone)
+	}
+	if settings.DailyTargetMinutes != 450 || settings.ReviewCadence != domain.ReviewCadenceWeekly {
+		t.Fatalf("settings = %+v, want the rest of the fixture unchanged", settings)
+	}
+}
+
+func TestSeedRejectsAnInvalidTimezone(t *testing.T) {
+	database := openStore(t, filepath.Join(t.TempDir(), "bad-timezone.db"))
+	t.Cleanup(func() { _ = database.Close() })
+
+	_, err := demo.Seed(database, demo.Options{
+		Scenario: "demo",
+		Anchor:   testAnchor,
+		Timezone: "Mars/Olympus",
+	})
+	if err == nil || !strings.Contains(err.Error(), "timezone") {
+		t.Fatalf("error = %v, want an invalid timezone error", err)
+	}
+}
+
+func TestSeedRejectsAMissingFixtureDirectory(t *testing.T) {
+	database := openStore(t, filepath.Join(t.TempDir(), "bad-fixture.db"))
+	t.Cleanup(func() { _ = database.Close() })
+
+	_, err := demo.Seed(database, demo.Options{
+		Scenario: "demo",
+		Anchor:   testAnchor,
+		Fixture:  filepath.Join(t.TempDir(), "absent"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "fixture") {
+		t.Fatalf("error = %v, want a fixture path error", err)
+	}
 }
 
 func TestSeedIsDeterministicForTheSameAnchor(t *testing.T) {
-	first := seedSnapshot(t, filepath.Join(t.TempDir(), "first.db"))
-	second := seedSnapshot(t, filepath.Join(t.TempDir(), "second.db"))
+	for _, scenario := range []string{"empty", "demo"} {
+		t.Run(scenario, func(t *testing.T) {
+			first := seedSnapshot(t, filepath.Join(t.TempDir(), "first.db"), scenario)
+			second := seedSnapshot(t, filepath.Join(t.TempDir(), "second.db"), scenario)
 
-	if !reflect.DeepEqual(first, second) {
-		t.Fatalf("same anchor produced different data:\nfirst:  %+v\nsecond: %+v", first, second)
+			if !reflect.DeepEqual(first, second) {
+				t.Fatalf("same anchor produced different %s data:\nfirst:  %+v\nsecond: %+v", scenario, first, second)
+			}
+		})
 	}
 }
 
@@ -207,24 +427,28 @@ type categorySnapshot struct {
 }
 
 type subcategorySnapshot struct {
-	ID         string
-	CategoryID string
-	Name       string
-	Status     domain.SubcategoryStatus
-	SortOrder  int
-	CreatedAt  string
-	UpdatedAt  string
+	ID            string
+	CategoryID    string
+	Name          string
+	Status        domain.SubcategoryStatus
+	Progress      int
+	TargetOutcome string
+	SortOrder     int
+	CreatedAt     string
+	UpdatedAt     string
 }
 
 type settingsSnapshot struct {
-	Timezone           string
-	WeekStart          int
-	DailyTargetMinutes int
-	ReviewCadence      domain.ReviewCadence
-	UpdatedAt          string
+	Timezone            string
+	WeekStart           int
+	DailyTargetMinutes  int
+	ReviewCadence       domain.ReviewCadence
+	SupportPeople       []string
+	SupportPeopleSeeded bool
+	UpdatedAt           string
 }
 
-func seedSnapshot(t *testing.T, path string) snapshot {
+func seedSnapshot(t *testing.T, path, scenario string) snapshot {
 	t.Helper()
 
 	database := openStore(t, path)
@@ -234,8 +458,8 @@ func seedSnapshot(t *testing.T, path string) snapshot {
 		}
 	}()
 
-	if _, err := demo.Seed(database, demo.Options{Scenario: "empty", Anchor: testAnchor}); err != nil {
-		t.Fatalf("seed empty scenario: %v", err)
+	if _, err := demo.Seed(database, demo.Options{Scenario: scenario, Anchor: testAnchor}); err != nil {
+		t.Fatalf("seed %s scenario: %v", scenario, err)
 	}
 
 	user, err := database.UserByEmail(demo.DemoEmail)
@@ -284,11 +508,13 @@ func seedSnapshot(t *testing.T, path string) snapshot {
 		CheckInCount:   len(checkIns),
 		HasActiveTimer: hasTimer,
 		Settings: settingsSnapshot{
-			Timezone:           settings.Timezone,
-			WeekStart:          settings.WeekStart,
-			DailyTargetMinutes: settings.DailyTargetMinutes,
-			ReviewCadence:      settings.ReviewCadence,
-			UpdatedAt:          settings.UpdatedAt.Format(time.RFC3339Nano),
+			Timezone:            settings.Timezone,
+			WeekStart:           settings.WeekStart,
+			DailyTargetMinutes:  settings.DailyTargetMinutes,
+			ReviewCadence:       settings.ReviewCadence,
+			SupportPeople:       settings.SupportPeople,
+			SupportPeopleSeeded: settings.SupportPeopleSeeded,
+			UpdatedAt:           settings.UpdatedAt.Format(time.RFC3339Nano),
 		},
 	}
 	for _, category := range categories {
@@ -303,13 +529,15 @@ func seedSnapshot(t *testing.T, path string) snapshot {
 	}
 	for _, subcategory := range subcategories {
 		result.Subcategories = append(result.Subcategories, subcategorySnapshot{
-			ID:         subcategory.ID,
-			CategoryID: subcategory.CategoryID,
-			Name:       subcategory.Name,
-			Status:     subcategory.Status,
-			SortOrder:  subcategory.SortOrder,
-			CreatedAt:  subcategory.CreatedAt.Format(time.RFC3339Nano),
-			UpdatedAt:  subcategory.UpdatedAt.Format(time.RFC3339Nano),
+			ID:            subcategory.ID,
+			CategoryID:    subcategory.CategoryID,
+			Name:          subcategory.Name,
+			Status:        subcategory.Status,
+			Progress:      subcategory.Progress,
+			TargetOutcome: subcategory.TargetOutcome,
+			SortOrder:     subcategory.SortOrder,
+			CreatedAt:     subcategory.CreatedAt.Format(time.RFC3339Nano),
+			UpdatedAt:     subcategory.UpdatedAt.Format(time.RFC3339Nano),
 		})
 	}
 	return result
@@ -357,17 +585,18 @@ func assertNoRows(t *testing.T, database *store.Store, userID string) {
 	}
 }
 
-func assertSummary(t *testing.T, summary demo.Summary, extraRows int) {
+func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories int) {
 	t.Helper()
 
 	if summary.Users != 1 ||
-		summary.Categories != 3 ||
-		summary.Subcategories != 10 ||
-		summary.Entries != extraRows ||
+		summary.Categories != categories ||
+		summary.Subcategories != subcategories ||
+		summary.Entries != 0 ||
 		summary.Notes != 0 ||
 		summary.Milestones != 0 ||
 		summary.CheckIns != 0 ||
 		summary.ActiveTimer {
-		t.Fatalf("summary = %+v, want 1 user, 3 categories, 10 subcategories and no rows", summary)
+		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories and no rows",
+			summary, categories, subcategories)
 	}
 }

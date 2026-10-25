@@ -28,11 +28,18 @@ const (
 // Options describes one seed run.
 type Options struct {
 	// Scenario selects the dataset. "empty" seeds only the account, default
-	// settings and default taxonomy.
+	// settings and default taxonomy; "demo" applies the declarative fixture.
 	Scenario string
 	// Anchor is the calendar date every seeded timestamp derives from. A zero
 	// value means today in UTC. The time-of-day component is ignored.
 	Anchor time.Time
+	// Fixture is an optional directory of per-domain JSON files that override
+	// the embedded fixture. A missing or empty file falls back to the embedded
+	// domain. Only the "demo" scenario reads it.
+	Fixture string
+	// Timezone overrides the fixture's (or, for "empty", the default's)
+	// timezone. An empty value keeps the scenario's timezone.
+	Timezone string
 }
 
 // Summary reports how many records the seed wrote. It is used for the CLI's
@@ -54,10 +61,7 @@ type seedFunc func(*store.Store, Options) (Summary, error)
 // fixture-backed datasets here; the command itself never needs to change.
 var scenarios = map[string]seedFunc{
 	"empty": seedBase,
-	// demo is deliberately the same bare base until ticket #7 adds its
-	// declarative fixture. It is registered now so the command and docs have
-	// their final shape.
-	"demo": seedBase,
+	"demo":  seedDemo,
 }
 
 // ScenarioNames returns the known scenario names in a stable order.
@@ -89,6 +93,9 @@ func Seed(database *store.Store, opts Options) (Summary, error) {
 	if err := ValidateScenario(opts.Scenario); err != nil {
 		return Summary{}, err
 	}
+	if err := ValidateTimezone(opts.Timezone); err != nil {
+		return Summary{}, err
+	}
 
 	opts.Anchor = anchorDate(opts.Anchor)
 	return scenarios[opts.Scenario](database, opts)
@@ -103,22 +110,21 @@ func anchorDate(anchor time.Time) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
-// seedBase writes the dataset every scenario shares: the demo admin account
-// (with a bcrypt credential), default settings, and the deterministic default
-// taxonomy. It writes no work entries, notes, milestones, check-ins or timer.
+// seedBase writes the empty scenario: the demo admin account (with a bcrypt
+// credential), default settings, and the deterministic default taxonomy. It
+// writes no work entries, notes, milestones, check-ins or timer.
 func seedBase(database *store.Store, opts Options) (Summary, error) {
 	anchor := anchorDate(opts.Anchor)
 
-	user := demoUser(opts.Scenario, anchor)
-	hash, err := bcrypt.GenerateFromPassword([]byte(DemoPassword), bcrypt.DefaultCost)
+	user, err := seedDemoAccount(database, opts.Scenario, anchor)
 	if err != nil {
-		return Summary{}, fmt.Errorf("hash demo password: %w", err)
-	}
-	if err := database.CreateSeedUser(user, string(hash)); err != nil {
-		return Summary{}, fmt.Errorf("create demo account: %w", err)
+		return Summary{}, err
 	}
 
 	settings := domain.DefaultSettings(user.ID)
+	if timezone := strings.TrimSpace(opts.Timezone); timezone != "" {
+		settings.Timezone = timezone
+	}
 	settings.SupportPeopleSeeded = true
 	settings.UpdatedAt = anchor
 	if err := database.SaveSettings(settings); err != nil {
@@ -159,12 +165,115 @@ func seedBase(database *store.Store, opts Options) (Summary, error) {
 		}
 	}
 
-	_, active, err := database.ActiveTimer(user.ID)
+	return withActiveTimer(database, user.ID, summary)
+}
+
+// seedDemo writes the account and applies the declarative fixture: settings
+// first (later entry slices derive LocalDate from the timezone), then the
+// category/project/mode tree. Fixture-owned rows use stable IDs and
+// anchor-derived timestamps, so the same scenario and anchor always produce
+// identical data.
+func seedDemo(database *store.Store, opts Options) (Summary, error) {
+	fixture, err := LoadFixture(opts.Fixture)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	anchor := anchorDate(opts.Anchor)
+	user, err := seedDemoAccount(database, opts.Scenario, anchor)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	settings := demoFixtureSettings(user.ID, fixture, opts.Timezone, anchor)
+	if err := database.SaveSettings(settings); err != nil {
+		return Summary{}, fmt.Errorf("save demo settings: %w", err)
+	}
+
+	summary := Summary{Users: 1}
+	for sortOrder, seed := range fixture.Taxonomy.Categories {
+		name := strings.TrimSpace(seed.Name)
+		category := domain.Category{
+			ID:        stableID(opts.Scenario, "category", name),
+			UserID:    user.ID,
+			Name:      name,
+			Role:      seed.Role,
+			SortOrder: sortOrder,
+			CreatedAt: anchor,
+			UpdatedAt: anchor,
+		}
+		if err := database.SaveCategory(category); err != nil {
+			return Summary{}, fmt.Errorf("save demo category %q: %w", name, err)
+		}
+		summary.Categories++
+
+		for subOrder, subSeed := range seed.Subcategories {
+			subName := strings.TrimSpace(subSeed.Name)
+			status := subSeed.Status
+			if status == "" {
+				status = domain.SubcategoryActive
+			}
+			subcategory := domain.Subcategory{
+				ID:            stableID(opts.Scenario, "subcategory", name+"/"+subName),
+				UserID:        user.ID,
+				CategoryID:    category.ID,
+				Name:          subName,
+				Status:        status,
+				Progress:      subSeed.Progress,
+				TargetOutcome: strings.TrimSpace(subSeed.TargetOutcome),
+				SortOrder:     subOrder,
+				CreatedAt:     anchor,
+				UpdatedAt:     anchor,
+			}
+			if err := database.SaveSubcategory(subcategory); err != nil {
+				return Summary{}, fmt.Errorf("save demo subcategory %q: %w", subName, err)
+			}
+			summary.Subcategories++
+		}
+	}
+
+	return withActiveTimer(database, user.ID, summary)
+}
+
+// demoFixtureSettings starts from the account defaults and applies only the
+// fixture-owned values. The roster comes from people.json, so taxonomy,
+// people and settings cannot disagree.
+func demoFixtureSettings(userID string, fixture Fixture, timezoneOverride string, anchor time.Time) domain.Settings {
+	settings := domain.DefaultSettings(userID)
+	settings.Timezone = strings.TrimSpace(fixture.Settings.Timezone)
+	settings.DailyTargetMinutes = fixture.Settings.DailyTargetMinutes
+	settings.ReviewCadence = fixture.Settings.ReviewCadence
+	settings.SupportPeople = append([]string(nil), fixture.People.Roster...)
+	settings.SupportPeopleSeeded = true
+	if timezone := strings.TrimSpace(timezoneOverride); timezone != "" {
+		settings.Timezone = timezone
+	}
+	settings.UpdatedAt = anchor
+	return settings
+}
+
+// seedDemoAccount writes the account every scenario shares through the
+// seed-safe path, which skips the randomly-identified default taxonomy.
+func seedDemoAccount(database *store.Store, scenario string, anchor time.Time) (domain.User, error) {
+	user := demoUser(scenario, anchor)
+	hash, err := bcrypt.GenerateFromPassword([]byte(DemoPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return domain.User{}, fmt.Errorf("hash demo password: %w", err)
+	}
+	if err := database.CreateSeedUser(user, string(hash)); err != nil {
+		return domain.User{}, fmt.Errorf("create demo account: %w", err)
+	}
+	return user, nil
+}
+
+// withActiveTimer records the timer state. A fresh seed never starts one, but
+// reading it back keeps the Summary honest.
+func withActiveTimer(database *store.Store, userID string, summary Summary) (Summary, error) {
+	_, active, err := database.ActiveTimer(userID)
 	if err != nil {
 		return Summary{}, fmt.Errorf("read demo timer: %w", err)
 	}
 	summary.ActiveTimer = active
-
 	return summary, nil
 }
 

@@ -20,20 +20,25 @@ import (
 // target database is only replaced after a successful seed.
 var seedScenario = demo.Seed
 
-// runSeed implements `wdid seed [--reset] [--anchor YYYY-MM-DD] <scenario>`.
+// runSeed implements
+// `wdid seed [--reset] [--anchor YYYY-MM-DD] [--fixture DIR] [--timezone TZ] <scenario>`.
 //
 // It seeds a temporary database beside the target and renames it into place
 // only after the whole seed succeeds. Every failure before the rename leaves
 // the previous target byte-identical.
 func runSeed(args []string, out io.Writer) error {
+	const usage = "usage: wdid seed [--reset] [--anchor YYYY-MM-DD] [--fixture DIR] [--timezone TZ] <scenario>"
+
 	flags := flag.NewFlagSet("seed", flag.ContinueOnError)
 	flags.SetOutput(out)
 	flags.Usage = func() {
-		fmt.Fprintln(out, "usage: wdid seed [--reset] [--anchor YYYY-MM-DD] <scenario>")
+		fmt.Fprintln(out, usage)
 		fmt.Fprintf(out, "scenarios: %s\n", strings.Join(demo.ScenarioNames(), ", "))
 	}
 	reset := flags.Bool("reset", false, "replace an existing database")
 	anchorValue := flags.String("anchor", "", "seed date in YYYY-MM-DD (default: today in UTC)")
+	fixture := flags.String("fixture", "", "directory of per-domain JSON files overriding the embedded demo fixture")
+	timezone := flags.String("timezone", "", "IANA timezone overriding the seeded settings timezone")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -41,7 +46,7 @@ func runSeed(args []string, out io.Writer) error {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("usage: wdid seed [--reset] [--anchor YYYY-MM-DD] <scenario>")
+		return errors.New(usage)
 	}
 	scenario := flags.Arg(0)
 
@@ -50,6 +55,9 @@ func runSeed(args []string, out io.Writer) error {
 		return errors.New("demo seeding is development-only; set WDID_DEV_MODE=true")
 	}
 	if err := demo.ValidateScenario(scenario); err != nil {
+		return err
+	}
+	if err := demo.ValidateTimezone(*timezone); err != nil {
 		return err
 	}
 
@@ -100,7 +108,12 @@ func runSeed(args []string, out io.Writer) error {
 		return fmt.Errorf("open temporary seed database: %w", err)
 	}
 
-	summary, seedErr := seedScenario(database, demo.Options{Scenario: scenario, Anchor: anchor})
+	summary, seedErr := seedScenario(database, demo.Options{
+		Scenario: scenario,
+		Anchor:   anchor,
+		Fixture:  *fixture,
+		Timezone: *timezone,
+	})
 	closeErr := database.Close()
 	if seedErr != nil {
 		return fmt.Errorf("seed %s scenario: %w", scenario, seedErr)

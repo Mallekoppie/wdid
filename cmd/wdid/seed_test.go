@@ -11,6 +11,7 @@ import (
 
 	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/demo"
+	"github.com/Mallekoppie/wdid/internal/domain"
 	"github.com/Mallekoppie/wdid/internal/store"
 )
 
@@ -200,6 +201,144 @@ func TestSeedCommandLeavesExistingDatabaseOnFailure(t *testing.T) {
 	seedScenario = original
 	if err := runSeed([]string{"--reset", "empty"}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("seed after a failed seed: %v", err)
+	}
+}
+
+func TestSeedCommandDemoAppliesTheFixture(t *testing.T) {
+	dbPath := setSeedEnv(t)
+
+	var out bytes.Buffer
+	if err := runSeed([]string{"--reset", "--anchor", "2026-03-09", "demo"}, &out); err != nil {
+		t.Fatalf("seed demo scenario: %v", err)
+	}
+
+	for _, want := range []string{
+		"Seeded scenario: demo",
+		"Categories: 5",
+		"Subcategories: 16",
+		"Entries: 0",
+		"Notes: 0",
+		"Milestones: 0",
+		"Check-ins: 0",
+		"Active timer: none",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output = %q, want %q", out.String(), want)
+		}
+	}
+
+	database, err := store.Open(seedStorageConfig(dbPath))
+	if err != nil {
+		t.Fatalf("open seeded database: %v", err)
+	}
+	defer database.Close()
+
+	user, err := database.UserByEmail(demo.DemoEmail)
+	if err != nil {
+		t.Fatalf("seeded account missing: %v", err)
+	}
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read seeded settings: %v", err)
+	}
+	if settings.Timezone != "UTC" || settings.DailyTargetMinutes != 450 ||
+		settings.ReviewCadence != domain.ReviewCadenceWeekly {
+		t.Fatalf("settings = %+v, want the demo fixture settings", settings)
+	}
+	if len(settings.SupportPeople) != 8 {
+		t.Fatalf("support people = %v, want the eight-person roster", settings.SupportPeople)
+	}
+}
+
+func TestSeedCommandFixtureDirectoryOverridesEmbeddedFiles(t *testing.T) {
+	dbPath := setSeedEnv(t)
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{
+		"timezone": "Europe/Amsterdam",
+		"dailyTargetMinutes": 300,
+		"reviewCadence": "monthly"
+	}`), 0o600); err != nil {
+		t.Fatalf("write fixture settings: %v", err)
+	}
+
+	if err := runSeed([]string{
+		"--reset", "--anchor", "2026-03-09", "--fixture", dir, "demo",
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("seed with --fixture: %v", err)
+	}
+
+	database, err := store.Open(seedStorageConfig(dbPath))
+	if err != nil {
+		t.Fatalf("open seeded database: %v", err)
+	}
+	defer database.Close()
+
+	user, err := database.UserByEmail(demo.DemoEmail)
+	if err != nil {
+		t.Fatalf("seeded account missing: %v", err)
+	}
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read seeded settings: %v", err)
+	}
+	if settings.Timezone != "Europe/Amsterdam" ||
+		settings.DailyTargetMinutes != 300 ||
+		settings.ReviewCadence != domain.ReviewCadenceMonthly {
+		t.Fatalf("settings = %+v, want the --fixture override", settings)
+	}
+}
+
+func TestSeedCommandTimezoneOverridesTheFixture(t *testing.T) {
+	dbPath := setSeedEnv(t)
+
+	if err := runSeed([]string{
+		"--reset", "--anchor", "2026-03-09", "--timezone", "Asia/Tokyo", "demo",
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("seed with --timezone: %v", err)
+	}
+
+	database, err := store.Open(seedStorageConfig(dbPath))
+	if err != nil {
+		t.Fatalf("open seeded database: %v", err)
+	}
+	defer database.Close()
+
+	user, err := database.UserByEmail(demo.DemoEmail)
+	if err != nil {
+		t.Fatalf("seeded account missing: %v", err)
+	}
+	settings, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read seeded settings: %v", err)
+	}
+	if settings.Timezone != "Asia/Tokyo" {
+		t.Fatalf("timezone = %q, want the --timezone override", settings.Timezone)
+	}
+}
+
+func TestSeedCommandRejectsAnInvalidTimezone(t *testing.T) {
+	dbPath := setSeedEnv(t)
+
+	err := runSeed([]string{"--timezone", "Mars/Olympus", "demo"}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "timezone") {
+		t.Fatalf("error = %v, want an invalid timezone error", err)
+	}
+	if _, statErr := os.Stat(dbPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("database at %s exists after a timezone refusal", dbPath)
+	}
+}
+
+func TestSeedCommandRejectsAMissingFixtureDirectory(t *testing.T) {
+	dbPath := setSeedEnv(t)
+
+	missing := filepath.Join(t.TempDir(), "absent")
+	err := runSeed([]string{"--fixture", missing, "demo"}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "fixture") {
+		t.Fatalf("error = %v, want a fixture path error", err)
+	}
+	if _, statErr := os.Stat(dbPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("database at %s exists after a fixture refusal", dbPath)
 	}
 }
 
