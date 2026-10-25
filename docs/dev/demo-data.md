@@ -433,6 +433,74 @@ of the empty states.
 | Check-ins | `No check-ins yet`; `Create check-in`; the live review shows `Nothing logged in this period` and `Save empty review` |
 | Settings | `UTC`, daily target `7.5`, personal review `Off`, and the default taxonomy above |
 
+## Manual UI checklist
+
+`make smoke-seeded` is the automated companion to this checklist. It seeds a
+throwaway database per scenario, starts the service on `127.0.0.1:9202`, and
+walks all six screens with Playwright; `./data/` is never touched. It needs
+Node and Playwright: `node -e "require('playwright')"` must resolve, either via
+`npm install --no-save playwright` or by pointing `NODE_PATH` at an existing
+install (`NODE_PATH=/path/to/node_modules make smoke-seeded`).
+
+**Use the current UTC date as the anchor.** The service resolves Today and
+"This week" from its own clock (`EntryService.ListEntries` with `today` and
+`SummaryService.GetPeriodReport` with `currentWeek`), not from the browser. A
+seeded anchor in the past therefore leaves Today empty even though every other
+screen shows the data. `make smoke-seeded` derives the anchor from
+`date -u +%F`, seeds with `--anchor <date>`, and freezes the browser clock to
+the same date at midday UTC. Do the same by hand:
+
+```sh
+make seed-demo          # --anchor defaults to today, UTC
+make run-demo           # http://127.0.0.1:9201
+
+# Empty scenario, afterwards:
+DEMO_SCENARIO=empty make seed-demo
+make run-demo
+```
+
+Sign in as `demo@wdid.local` / `demo-password-123`. All dates below use an
+**example Monday anchor (2026-03-16)** for a concrete layout. Content that does
+not depend on the anchor - descriptions, note text, project and milestone
+titles, check-in totals and settings - is identical on every run. Date-derived
+content moves with the anchor:
+
+* The 14-day window is `anchor-13 .. anchor`.
+* The sparse day is the first weekday in the window.
+* The on-call day is the latest Saturday on or before the anchor.
+* Today shows the six normal-weekday rows plus the 15-minute interrupt on any
+  weekday, the five on-call rows plus the interrupt on Saturday, and only the
+  interrupt on Sunday.
+* The full window always has 62 entries / 60h 15m. The Log's "days shown"
+  counts only days with entries: 11 for a Monday-Saturday anchor, 12 for a
+  Sunday anchor (the anchor-day interrupt).
+* The manager and personal check-in halves are anchor-invariant: 26 entries /
+  25h 45m and 36 entries / 34h 30m.
+
+### `demo` scenario
+
+| Screen | Expected |
+| --- | --- |
+| Today | Heading date equals the anchor (e.g. `Mon 16 Mar 2026`); idle `Start a timer`, no `Running`/`Timer paused` card. Anchor-day rows include `Client Delivery · Acme migration` / `Migration standup and blocker triage`, `Platform · Auth overhaul` / `Session rotation implementation`, `Client Delivery · Globex onboarding` / `Globex data import rehearsal`, `Other · Meetings` / `Delivery sync and planning`, `Growth · Self-serve trial` / `First-run onboarding experiment`, `Platform · Search relevance` / `Benchmark query tuning`, and `Support · Priya` / `Unblocked Priya on the migration cutover` with `No mode` + `Set mode` (on a weekday; see the weekday rule above). `Week by category` is populated. Example Monday anchor: `6h 15m this week`, `6h 15m logged this week`; a Sunday anchor shows `34h 30m`. The note textarea holds `Cutover dry run complete. Tomorrow: tighten the rollback window and confirm the Globex contact list.` |
+| Log | Choose period `This month`: the full 14-day window is in range for a mid/late-month anchor. The full window is `60h 15m`; the header reports the days with entries (`11 days shown`, or `12` for a Sunday anchor). Category menu lists `Client Delivery`, `Platform`, `Growth` (plus `Support`, `Other`); after choosing `Client Delivery`, the Subcategory menu lists `Acme migration`, `Globex onboarding`, `Initech audit`. With both filters set: `5h 30m · 10 days shown` for the full window, and rows include `Migration standup and blocker triage` and `Short migration pairing session`. |
+| Initiatives | `8 projects · 46h logged this quarter` when the full window is inside the current quarter (true for a mid-quarter anchor). Cards for Acme migration, Globex onboarding, Initech audit, Auth overhaul, Search relevance, Observability, Self-serve trial and Pricing experiment, with categories, statuses (`Active`, `Blocked`, `Planned`, `Done`), target outcome and progress (Acme 60%, Globex 35%, Initech 100%, Auth 45%, Search 25%, Observability 0%, Self-serve 70%, Pricing 10%). |
+| Project detail | Open **Acme migration**: `Client Delivery`, target outcome `Acme's production workloads run entirely on the new platform.`, `60%`. Notes tab: `The dry run surfaced two ordering gaps in the migration scripts. Both are fixed; the remaining risk is the rollback window, which needs a signed runbook before the cutover.` Milestones tab: `3 milestones`, `Cutover dry run completed` checked with `Due <anchor-10>`, `Rollback window signed off` unchecked with `Due <anchor-2>`, `Production cutover` unchecked with `Due <anchor+7>` (Monday anchor example: `6 Mar`, `14 Mar`, `23 Mar`). Report tab: `Project report`, `This quarter 5h 30m`, `Entries 10`, `1 of 3 complete`. Also open **Search relevance** → Notes: the long benchmark note (starts `The benchmark review turned into a longer investigation…`, ends `…reconstruct it afterward.`) renders with no horizontal page overflow. |
+| Support | `4h 30m · 6 people · 6 interactions`. People chips for Priya, Sam, Alex, Jordan, Mei, Diego, Noor, Chris. `By mode` shows Incident support 1h 30m, Mentoring 1h, Pairing 45m, Code review 30m, 1:1 30m; `By person` lists the six supported people (Alex 1h 30m, Noor 1h, Sam 45m, Jordan 30m, Mei 30m, Priya 15m). The feed includes `Support · Alex · Incident support`, the rest of the on-call rows, and the mode-less `Support · Priya · No mode` row. |
+| Check-ins | Subtitle `2 shown`, newest first. Manager card period `<anchor-13> → <anchor-7>` (Monday example `3 Mar → 9 Mar 2026`) with `Manager`, `1:1`, `Final`, `25h 45m`, `7` days; personal card period `<anchor-6> → <anchor>` (`10 Mar → 16 Mar 2026`) with `Personal`, `Draft`, `34h 30m`, `7` days. Manager detail: `Final check-in — read-only boundary for the next period.`, stats 25h 45m / 7 days / 26 entries / 0m support / 0 interactions, aggregates `Time by category` (Client Delivery 7h, Platform 9h, Growth 5h, Other 4h 45m), `Time by project`, `Support by person`, `Weekly rhythm`. Personal detail: `Personal review — editable, and never moves the manager boundary.`, 34h 30m / 7 days / 36 entries / 4h 30m support / 6 interactions, the focus notes and the `## Draft review` summary (`Steady progress on the self-serve trial and search relevance.`); `Edit review` opens a period dialog with `Cancel` and `Save review` (cancel it, do not save). Live review `#/checkins/review?start=<anchor-13>&end=<anchor>`: `14 days`, logged `60h 15m`, entries `62`, support `4h 30m`, with the same aggregate panels. Do not save. |
+| Settings | `Timezone` `UTC`, week starts Monday, `Daily target` `7.5`, `Personal review` `Weekly`. Categories list Client Delivery, Platform, Growth, Support, Other with the project and mode chips (Acme migration … 1:1; Meetings, Admin, Learning). |
+
+### `empty` scenario
+
+| Screen | Expected |
+| --- | --- |
+| Today | `Nothing logged yet` / `Capture your first entry above.`; idle `Start a timer`; `0m this week`; `Week by category` shows `No time logged in this period.`; the day-note textarea is empty. |
+| Log | Default `This week`: `Nothing logged in this period` / `Capture work on Today or widen the date range.` and the `Add entry` action. |
+| Initiatives | `0 projects · 0m logged this quarter`, `No projects yet`, `New project`. |
+| Project detail | No card to open; a direct `#/initiatives/<id>` URL reports the project is not found. |
+| Support | Header `0m · 0 people · 0 interactions`; `No people yet. Add a name here or while logging support.`; `No support logged in this period`; `Log support`. |
+| Check-ins | Subtitle `Turn captured work into a review-ready period report.`; `No check-ins yet`; `Create check-in`. Live review `#/checkins/review` shows `Nothing logged in this period` and `Save empty review`. |
+| Settings | `Timezone` `UTC`, `Daily target` `7.5`, `Personal review` `Off`. Categories: `Initiatives` (`No subcategories.`), `Support` (Review, Pair, Unblock, Mentor, Incident, Other), `Other` (Meetings, Admin, Learning, Unplanned). |
+
 ## Where the data lives
 
 * Database: `./data/wdid-demo.db` (gitignored, like all `*.db` files).
