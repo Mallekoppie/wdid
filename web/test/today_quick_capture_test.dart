@@ -450,6 +450,32 @@ void main() {
 
     expect(find.text('Recovered day note.'), findsOneWidget);
   });
+
+  testWidgets('a name typed in quick capture joins the roster', (tester) async {
+    final entryApi = FakeEntryApi();
+    final settingsApi = FakeSettingsApi();
+    await pumpToday(
+      tester,
+      entryApi: entryApi,
+      settingsApi: settingsApi,
+      categoryApi: FakeCategoryApi(
+        categories: [
+          category('cat-support', 'Support', role: CategoryRole.support),
+        ],
+        subcategories: [subcategory('sub-review', 'cat-support', 'Review')],
+      ),
+    );
+
+    await tester.enterText(descriptionField(), 'Reviewed the migration plan');
+    await tester.enterText(personField(), 'Alex');
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    expect(entryApi.drafts, hasLength(1));
+    expect(entryApi.drafts.single.person, 'Alex');
+    expect(settingsApi.settings.supportPeople, ['Alex']);
+    expect(find.widgetWithText(ChoiceChip, 'Alex'), findsWidgets);
+  });
 }
 
 Finder dayNoteField() => find.byWidgetPredicate(

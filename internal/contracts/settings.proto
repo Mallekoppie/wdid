@@ -51,6 +51,10 @@ message Settings {
   DensityPreference density = 14;
   string journal_start_date = 15;
   google.protobuf.Timestamp updated_at = 16;
+  // The per-user roster of support-person names offered by the client. A
+  // person is a name on a work entry, not an entity: this list never rewrites
+  // historical entries.
+  repeated string support_people = 17;
 }
 
 // About describes the running build and database schema.

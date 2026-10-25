@@ -94,6 +94,28 @@ class StoppedTimer {
   final bool discarded;
 }
 
+/// The attribution of a timer stopped by an interrupt, kept in memory so the
+/// Today timer card and the stop snackbar can offer a fresh Resume timer.
+///
+/// This is UI state only: it never changes what the stopped entry stored, and
+/// losing it on a reload is acceptable. Resuming consumes it.
+class InterruptedTimer {
+  const InterruptedTimer({
+    required this.categoryId,
+    this.subcategoryId = '',
+    this.description = '',
+    this.person = '',
+  });
+
+  final String categoryId;
+  final String subcategoryId;
+  final String description;
+
+  /// Carried so resuming an interrupted support timer still satisfies the
+  /// support-person requirement.
+  final String person;
+}
+
 /// One Log listing request. The Log screen rebuilds it whenever a filter
 /// changes, and mutations reload through it so overlap flags stay current.
 class LogQuery {
@@ -222,6 +244,11 @@ class AppState extends ChangeNotifier {
   String? preferencesError;
   AboutInfo? about;
 
+  /// Roster edits made while the real preferences were unavailable, keyed
+  /// case-insensitively. A null value means remove. The last edit for a name
+  /// wins, so an add followed by a remove never survives a late load.
+  final Map<String, String?> _pendingRoster = {};
+
   /// The signed-in user's entries for today, newest first.
   List<WorkEntry> entries = const [];
   bool entriesLoading = false;
@@ -279,6 +306,14 @@ class AppState extends ChangeNotifier {
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
   String? lastSubcategoryId;
+
+  /// The most recently used support-role category. Kept separately from
+  /// [lastCategoryId] so a later initiative capture does not erase which
+  /// support category the one-tap support flows should start with.
+  String? _lastSupportCategoryId;
+
+  /// The interrupt's resume target. Memory only; cleared when resumed.
+  InterruptedTimer? _interruptedTimer;
 
   ActiveTimer? activeTimer;
 
@@ -360,20 +395,50 @@ class AppState extends ChangeNotifier {
     preferencesLoading = true;
     preferencesError = null;
     _notify();
+    var replayPendingRoster = false;
     try {
       final snapshot = await api.getSettings();
       about = snapshot.about;
-      settings = snapshot.settings.copyWith(
+      final loaded = snapshot.settings.copyWith(
         version: snapshot.about.version,
         schemaVersion: snapshot.about.schemaVersion,
         license: snapshot.about.license,
       );
+      if (_pendingRoster.isEmpty) {
+        settings = loaded;
+      } else {
+        // Roster edits queued during the gate win over the server's copy, but
+        // every other preference still comes from the server unchanged.
+        settings = loaded.copyWith(
+          supportPeople: List<String>.unmodifiable(
+            _applyPendingRoster(loaded.supportPeople),
+          ),
+        );
+        replayPendingRoster = true;
+      }
     } catch (error) {
       preferencesError = error.toString();
     } finally {
       preferencesLoading = false;
       _notify();
     }
+    // Replay after the loading gate opens so the write carries the real
+    // preferences instead of the defaults.
+    if (replayPendingRoster) await _persistSupportPeople();
+  }
+
+  /// Applies queued roster edits on top of the server's roster.
+  List<String> _applyPendingRoster(List<String> base) {
+    final people = [...base];
+    _pendingRoster.forEach((key, name) {
+      final index = people.indexWhere((person) => person.toLowerCase() == key);
+      if (name == null) {
+        if (index != -1) people.removeAt(index);
+      } else if (index == -1) {
+        people.add(name);
+      }
+    });
+    return people;
   }
 
   /// Loads today's work entries from the service. Failures stay local to the
@@ -670,11 +735,46 @@ class AppState extends ChangeNotifier {
     return ordered;
   }
 
-  /// The support modes a new entry can use, excluding archived rows.
+  /// The support modes a new entry can use, excluding archived rows and modes
+  /// whose support category is archived (or no longer known). A mode under an
+  /// archived category would re-file an entry somewhere no selector shows.
   List<Subcategory> get selectableSupportModes => [
     for (final mode in supportModes)
-      if (!mode.archived) mode,
+      if (!mode.archived && !(categoryById(mode.categoryId)?.archived ?? true))
+        mode,
   ];
+
+  /// Support-role categories a new timer can start under, excluding archived
+  /// rows.
+  List<Category> get selectableSupportCategories => [
+    for (final category in supportCategories)
+      if (!category.archived) category,
+  ];
+
+  /// The support category the one-tap support flows start with.
+  ///
+  /// This is the most recently used support category, then the remembered
+  /// capture category when it is support, and finally the first selectable
+  /// support category. With more than one support-role category the newest
+  /// history wins; the ticket's explicit assumption.
+  Category? get defaultSupportCategory {
+    final selectable = selectableSupportCategories;
+    if (selectable.isEmpty) return null;
+
+    bool matches(Category category, String? id) =>
+        id != null && category.id == id;
+
+    for (final category in selectable) {
+      if (matches(category, _lastSupportCategoryId)) return category;
+    }
+    for (final category in selectable) {
+      if (matches(category, lastCategoryId)) return category;
+    }
+    return selectable.first;
+  }
+
+  /// The most recently used support category, if any.
+  String? get lastSupportCategoryId => _lastSupportCategoryId;
 
   /// True when the category is a support-role category, so the caller can
   /// require a person and keep the entry off project timelines.
@@ -685,6 +785,83 @@ class AppState extends ChangeNotifier {
   String supportModeLabel(String subcategoryId) {
     if (subcategoryId.isEmpty) return 'No mode';
     return subcategoryById(subcategoryId)?.name ?? 'No mode';
+  }
+
+  /// The attribution of the timer an interrupt stopped, for "Resume …".
+  /// Empty when there is no stash.
+  String get interruptedTimerLabel {
+    final stash = _interruptedTimer;
+    if (stash == null) return '';
+    final subcategory = subcategoryById(stash.subcategoryId);
+    return [
+      categoryById(stash.categoryId)?.name ?? 'Unknown category',
+      if (subcategory != null) subcategory.name,
+      if (stash.person.isNotEmpty) stash.person,
+    ].join(' · ');
+  }
+
+  /// The attribution an interrupt saved for Resume, or null.
+  InterruptedTimer? get interruptedTimer => _interruptedTimer;
+
+  /// Stashes the attribution of the timer an interrupt stopped. A new
+  /// interrupt overwrites any previous stash.
+  void setInterruptedTimer(InterruptedTimer stash) {
+    _interruptedTimer = stash;
+    _notify();
+  }
+
+  /// Forgets the stash without starting anything.
+  void clearInterruptedTimer() {
+    if (_interruptedTimer == null) return;
+    _interruptedTimer = null;
+    _notify();
+  }
+
+  /// Starts a fresh timer with the stashed attribution and consumes the stash.
+  /// The stopped block is never reused; this is new elapsed time.
+  Future<void> resumeInterruptedTimer() async {
+    final stash = _interruptedTimer;
+    if (stash == null) return;
+    // Preserve while starting so a failed start keeps the offer; consume only
+    // once the new timer exists.
+    await startTimer(
+      categoryId: stash.categoryId,
+      subcategoryId: stash.subcategoryId,
+      description: stash.description,
+      person: stash.person,
+      preserveInterruptedTimer: true,
+    );
+    clearInterruptedTimer();
+  }
+
+  /// Starts a support timer with one tap: the default support category, no
+  /// mode and no description. "Interrupt" is UI state only; the stored entry
+  /// is an ordinary support entry. [preserveInterruptedTimer] keeps the
+  /// interrupt stash when this start is the second half of an interruption.
+  Future<void> startSupportTimer({
+    required String person,
+    Category? category,
+    bool preserveInterruptedTimer = false,
+  }) {
+    final target = category ?? defaultSupportCategory;
+    if (target == null) {
+      throw const TimerFailure(
+        'Add a support category before starting support.',
+      );
+    }
+    return startTimer(
+      categoryId: target.id,
+      subcategoryId: '',
+      description: '',
+      person: person,
+      preserveInterruptedTimer: preserveInterruptedTimer,
+    );
+  }
+
+  void _rememberSupportCategory(String categoryId) {
+    if (categoryId.isNotEmpty && isSupportCategory(categoryId)) {
+      _lastSupportCategoryId = categoryId;
+    }
   }
 
   /// Initiative categories a new project can be filed under.
@@ -833,11 +1010,16 @@ class AppState extends ChangeNotifier {
     return projectById(subcategoryId) == null ? null : subcategoryId;
   }
 
+  /// Starts a timer. A manual start retires any interrupt stash, because the
+  /// old Resume offer would otherwise point at a block the user has moved on
+  /// from. The interrupt flow passes [preserveInterruptedTimer] so support can
+  /// end before the interrupted work is offered again.
   Future<void> startTimer({
     String description = '',
     String categoryId = '',
     String subcategoryId = '',
     String person = '',
+    bool preserveInterruptedTimer = false,
   }) async {
     final api = timerApi;
     if (api == null) {
@@ -890,8 +1072,12 @@ class AppState extends ChangeNotifier {
         await syncTimer();
         rethrow;
       }
+      // Only a successful start retires the offer: a failed one keeps it
+      // resumable.
+      if (!preserveInterruptedTimer) _interruptedTimer = null;
       lastCategoryId = resolvedCategory;
       lastSubcategoryId = resolvedSubcategory;
+      _rememberSupportCategory(resolvedCategory);
       _startTicker();
       _notify();
     }
@@ -976,6 +1162,7 @@ class AppState extends ChangeNotifier {
       entries = _newestFirst([entry, ...entries]);
       lastCategoryId = entry.categoryId;
       lastSubcategoryId = entry.subcategoryId;
+      _rememberSupportCategory(entry.categoryId);
       // A saved block must appear in an already-loaded Log and Support view,
       // not only in Today and the reports.
       unawaited(refreshLog());
@@ -1416,6 +1603,7 @@ class AppState extends ChangeNotifier {
     }
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
+    _rememberSupportCategory(draft.categoryId);
     _refreshProjectIfOpen(entry.subcategoryId);
     _refreshSupportIfLoaded();
     _refreshReports();
@@ -1427,6 +1615,7 @@ class AppState extends ChangeNotifier {
     final updated = await _entryApi().updateEntry(entry);
     entries = _replaceEntry(entries, updated);
     logEntries = _replaceEntry(logEntries, updated);
+    _rememberSupportCategory(updated.categoryId);
     // The entry may have moved into or out of the open project.
     if (projectEntries.any((existing) => existing.id == updated.id)) {
       _refreshProjectIfOpen(projectEntriesProjectId!);
@@ -2105,6 +2294,78 @@ class AppState extends ChangeNotifier {
 
   Future<void> setDensity(DensityPreference density) {
     return saveSettings(settings.copyWith(density: density));
+  }
+
+  /// The account's roster of common support-person names. A person is a name,
+  /// not an entity: editing this roster never rewrites historical entries.
+  List<String> get supportPeople => settings.supportPeople;
+
+  /// Adds a name to the roster, case-insensitively and only once. The local
+  /// roster updates immediately; persistence is best-effort so capturing work
+  /// never blocks on a settings write.
+  Future<void> addSupportPerson(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || _rosterContains(trimmed)) return;
+    _pendingRoster[trimmed.toLowerCase()] = trimmed;
+    await _saveSupportPeople([...settings.supportPeople, trimmed]);
+  }
+
+  /// Removes every case-insensitive match from the roster. Work entries keep
+  /// their `person` string; removing a person changes only this roster.
+  Future<void> removeSupportPerson(String name) async {
+    final key = name.trim().toLowerCase();
+    if (key.isEmpty) return;
+    final remaining = [
+      for (final person in settings.supportPeople)
+        if (person.toLowerCase() != key) person,
+    ];
+    if (remaining.length == settings.supportPeople.length) return;
+    _pendingRoster[key] = null;
+    await _saveSupportPeople(remaining);
+  }
+
+  bool _rosterContains(String name) {
+    final key = name.toLowerCase();
+    return settings.supportPeople.any((person) => person.toLowerCase() == key);
+  }
+
+  Future<void> _saveSupportPeople(List<String> people) async {
+    settings = settings.copyWith(
+      supportPeople: List<String>.unmodifiable(people),
+    );
+    _notify();
+    await _persistSupportPeople();
+  }
+
+  /// Writes the current settings when the real preferences are available.
+  /// Queued roster edits survive a failed write and are replayed by the next
+  /// successful load or write.
+  Future<void> _persistSupportPeople() async {
+    final api = settingsApi;
+    // A write before the real preferences arrive would send defaults over
+    // every stored preference, including the roster we are editing.
+    if (api == null || preferencesLoading || preferencesError != null) return;
+
+    final submitted = Map<String, String?>.of(_pendingRoster);
+    try {
+      final saved = await api.updateSettings(settings);
+      settings = saved.copyWith(
+        version: about?.version,
+        schemaVersion: about?.schemaVersion,
+        license: about?.license,
+      );
+      // Replayed edits are now stored. An edit made while the write was in
+      // flight keeps its own entry and retries later.
+      for (final entry in submitted.entries) {
+        if (_pendingRoster[entry.key] == entry.value) {
+          _pendingRoster.remove(entry.key);
+        }
+      }
+      _notify();
+    } catch (_) {
+      // Keep the optimistic roster and pending edits. A failed settings write
+      // must not surface as a capture error or poison the preferences screen.
+    }
   }
 
   /// Loads the snapshot list and status. Non-admins never call the backup

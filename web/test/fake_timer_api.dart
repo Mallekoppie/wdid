@@ -19,6 +19,13 @@ class FakeTimerApi implements TimerApi {
   int startCalls = 0;
   int getActiveCalls = 0;
 
+  /// The raw arguments of the most recent start. The snapshot substitutes a
+  /// default description, so tests asserting "no description" read these.
+  String? lastStartCategoryId;
+  String? lastStartSubcategoryId;
+  String? lastStartDescription;
+  String? lastStartPerson;
+
   /// Every entry this fake's stop produced, in order. Tests can pass this list
   /// to a fake entry service so a stopped timer is visible to reloads.
   final List<WorkEntry> savedEntries = [];
@@ -37,6 +44,10 @@ class FakeTimerApi implements TimerApi {
     String person = '',
   }) async {
     startCalls++;
+    lastStartCategoryId = categoryId;
+    lastStartSubcategoryId = subcategoryId;
+    lastStartDescription = description;
+    lastStartPerson = person;
     if (timer != null) {
       throw const TimerFailure('A timer is already running.');
     }

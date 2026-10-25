@@ -8,6 +8,7 @@ import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/time_utils.dart';
 import 'panel.dart';
+import 'person_picker.dart';
 import 'searchable_dropdown.dart';
 import 'timer_actions.dart';
 
@@ -59,6 +60,7 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
 
   Future<void> _start() async {
     final state = AppStateScope.read(context);
+    final person = _person.text.trim();
     setState(() {
       _busy = true;
       _error = null;
@@ -68,8 +70,9 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
         categoryId: _categoryId,
         subcategoryId: _subcategoryId,
         description: _description.text,
-        person: _person.text,
+        person: person,
       );
+      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
       if (!mounted) return;
       setState(() => _busy = false);
       _description.clear();
@@ -114,13 +117,29 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
       setState(() => _busy = false);
       if (result != null) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(stoppedTimerMessage(result))));
+            .showSnackBar(stoppedTimerSnackBar(context, state, result));
       }
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<void> _resume() async {
+    final state = AppStateScope.read(context);
+    setState(() => _busy = true);
+    try {
+      await state.resumeInterruptedTimer();
+      if (!mounted) return;
+      setState(() => _busy = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not resume the timer: $error')),
+      );
     }
   }
 
@@ -223,11 +242,26 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
     }
     final support =
         state.categoryById(_categoryId)?.role == CategoryRole.support;
+    final stash = state.interruptedTimer;
 
     return Panel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (stash != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: _busy ? null : _resume,
+                    icon: const Icon(Icons.replay, size: 16),
+                    label: Text('Resume ${state.interruptedTimerLabel}'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           const PanelHeader(
             title: 'Start a timer',
             subtitle: 'Choose a category and subcategory. The timer follows you everywhere.',
@@ -335,16 +369,11 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
             const SizedBox(height: AppSpacing.sm),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
-              child: TextField(
+              child: PersonPicker(
                 controller: _person,
                 enabled: !_busy,
-                textInputAction: TextInputAction.done,
+                hint: 'Who are you supporting?',
                 onSubmitted: (_) => unawaited(_start()),
-                decoration: const InputDecoration(
-                  labelText: 'Person',
-                  hintText: 'Who are you supporting?',
-                  prefixIcon: Icon(Icons.person_outline, size: 18),
-                ),
               ),
             ),
           ],

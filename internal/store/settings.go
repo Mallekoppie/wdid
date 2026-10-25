@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
+
+	"github.com/Mallekoppie/goslow/platform"
+	"go.etcd.io/bbolt"
 
 	"github.com/Mallekoppie/wdid/internal/domain"
 )
@@ -26,6 +30,83 @@ func (s *Store) SaveSettings(settings domain.Settings) error {
 		return err
 	}
 	return saveObject(userBucket(settings.UserID, settingsBucket), settingsKey, settings)
+}
+
+// EnsureSupportPeople materialises the user's settings record and seeds the
+// support-person roster from that account's existing support-role entries the
+// first time it runs. The read-check-write happens in one transaction, so the
+// seed runs exactly once even under concurrent loads. The internal seeded
+// marker means a deliberately emptied roster is never re-seeded.
+func (s *Store) EnsureSupportPeople(userID string) (domain.Settings, error) {
+	// Decode into a zero value, not the defaults: omitempty fields are absent
+	// from a record where the user deliberately cleared them, and decoding
+	// over the defaults would resurrect those values on the write-back.
+	var settings domain.Settings
+
+	err := platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
+		bucket := userBucket(userID, settingsBucket)
+		err := readTxObject(tx, bucket, settingsKey, &settings)
+		if errors.Is(err, ErrNotFound) {
+			settings = domain.DefaultSettings(userID)
+		} else if err != nil {
+			return err
+		}
+		if settings.SupportPeopleSeeded {
+			return nil
+		}
+
+		people, err := supportPeopleFromEntriesTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		settings.SupportPeople = domain.NormalizeList(append(settings.SupportPeople, people...))
+		settings.SupportPeopleSeeded = true
+		settings.Normalize()
+		return putJSON(tx, bucket, settingsKey, settings)
+	})
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	return settings, nil
+}
+
+// supportPeopleFromEntriesTx collects the Person values on support-role
+// entries, in bucket (UUIDv7) order. It returns the raw spellings; the caller
+// canonicalises them so the first spelling and the order are preserved.
+func supportPeopleFromEntriesTx(tx *bbolt.Tx, userID string) ([]string, error) {
+	roles := make(map[string]domain.CategoryRole)
+	if categories := tx.Bucket([]byte(userBucket(userID, categoriesBucket))); categories != nil {
+		cursor := categories.Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			var category domain.Category
+			if err := json.Unmarshal(value, &category); err != nil {
+				return nil, fmt.Errorf("decode category: %w", err)
+			}
+			roles[category.ID] = category.Role
+		}
+	}
+
+	entries := tx.Bucket([]byte(userBucket(userID, entriesBucket)))
+	if entries == nil {
+		return nil, nil
+	}
+
+	var people []string
+	cursor := entries.Cursor()
+	for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+		var entry domain.WorkEntry
+		if err := json.Unmarshal(value, &entry); err != nil {
+			return nil, fmt.Errorf("decode entry: %w", err)
+		}
+		if roles[entry.CategoryID] != domain.CategoryRoleSupport {
+			continue
+		}
+		if strings.TrimSpace(entry.Person) == "" {
+			continue
+		}
+		people = append(people, entry.Person)
+	}
+	return people, nil
 }
 
 // PrimarySettings returns the settings of the workspace's primary account. The

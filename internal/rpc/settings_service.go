@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -68,17 +67,10 @@ func (s *SettingsService) Register(mux *http.ServeMux, options ...connect.Handle
 	mux.Handle(prefix, handler)
 }
 
-// settingsForUser returns the account's saved settings, falling back to the
-// defaults every new account starts with.
+// settingsForUser returns the account's saved settings, materialising the
+// default record and seeding the support-person roster on the first load.
 func (s *SettingsService) settingsForUser(userID string) (domain.Settings, error) {
-	settings, err := s.store.Settings(userID)
-	if errors.Is(err, store.ErrNotFound) {
-		return domain.DefaultSettings(userID), nil
-	}
-	if err != nil {
-		return domain.Settings{}, err
-	}
-	return settings, nil
+	return s.store.EnsureSupportPeople(userID)
 }
 
 // backupSettingsChanged reports whether a request tries to change an
@@ -143,6 +135,14 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	settings := fromProtoSettings(request.Msg.GetSettings())
 	settings.UserID = userID
 	settings.UpdatedAt = time.Now().UTC()
+	// Seed before replacing the roster, so an administrator whose first settings
+	// call is an update still records the seeded marker exactly once.
+	if _, err := s.store.EnsureSupportPeople(userID); err != nil {
+		return nil, toConnectError(err)
+	}
+	// An explicit save replaces the roster and marks it as seeded; otherwise the
+	// next load would resurrect names the client deliberately removed.
+	settings.SupportPeopleSeeded = true
 
 	if !isAdmin {
 		current, err := s.settingsForUser(userID)
@@ -159,6 +159,8 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 		settings.BackupRetention = current.BackupRetention
 	}
 
+	// Canonicalise before saving so the response carries exactly what is stored.
+	settings.Normalize()
 	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
@@ -316,6 +318,7 @@ func toProtoSettings(settings domain.Settings) *wdidv1.Settings {
 		Density:              toProtoDensity(settings.Density),
 		JournalStartDate:     settings.JournalStartDate,
 		UpdatedAt:            updatedAt,
+		SupportPeople:        settings.SupportPeople,
 	}
 }
 
@@ -336,6 +339,7 @@ func fromProtoSettings(settings *wdidv1.Settings) domain.Settings {
 		Theme:                  fromProtoTheme(settings.GetTheme()),
 		Density:                fromProtoDensity(settings.GetDensity()),
 		JournalStartDate:       settings.GetJournalStartDate(),
+		SupportPeople:          settings.GetSupportPeople(),
 	}
 }
 

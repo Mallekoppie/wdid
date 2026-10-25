@@ -203,8 +203,12 @@ type Settings struct {
 	Density              DensityPreference      `protobuf:"varint,14,opt,name=density,proto3,enum=wdid.v1.DensityPreference" json:"density,omitempty"`
 	JournalStartDate     string                 `protobuf:"bytes,15,opt,name=journal_start_date,json=journalStartDate,proto3" json:"journal_start_date,omitempty"`
 	UpdatedAt            *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// The per-user roster of support-person names offered by the client. A
+	// person is a name on a work entry, not an entity: this list never rewrites
+	// historical entries.
+	SupportPeople []string `protobuf:"bytes,17,rep,name=support_people,json=supportPeople,proto3" json:"support_people,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -345,6 +349,13 @@ func (x *Settings) GetJournalStartDate() string {
 func (x *Settings) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *Settings) GetSupportPeople() []string {
+	if x != nil {
+		return x.SupportPeople
 	}
 	return nil
 }
@@ -1137,7 +1148,7 @@ var File_settings_proto protoreflect.FileDescriptor
 
 const file_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x0esettings.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa1\x06\n" +
+	"\x0esettings.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc8\x06\n" +
 	"\bSettings\x12\x1a\n" +
 	"\btimezone\x18\x01 \x01(\tR\btimezone\x12\x1d\n" +
 	"\n" +
@@ -1157,7 +1168,8 @@ const file_settings_proto_rawDesc = "" +
 	"\adensity\x18\x0e \x01(\x0e2\x1a.wdid.v1.DensityPreferenceR\adensity\x12,\n" +
 	"\x12journal_start_date\x18\x0f \x01(\tR\x10journalStartDate\x129\n" +
 	"\n" +
-	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"b\n" +
+	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0esupport_people\x18\x11 \x03(\tR\rsupportPeople\"b\n" +
 	"\x05About\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0eschema_version\x18\x02 \x01(\x05R\rschemaVersion\x12\x18\n" +

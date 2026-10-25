@@ -15,6 +15,8 @@ class WorkEntryRow extends StatelessWidget {
     this.category,
     this.subcategory,
     required this.onEditOutcome,
+    this.supportModes = const [],
+    this.onSetMode,
   });
 
   final WorkEntry entry;
@@ -22,11 +24,22 @@ class WorkEntryRow extends StatelessWidget {
   final Subcategory? subcategory;
   final ValueChanged<WorkEntry> onEditOutcome;
 
+  /// The support modes offered when an interrupt entry has no mode yet. Both
+  /// this and [onSetMode] must be supplied for the control to render, so
+  /// existing direct constructions keep compiling unchanged.
+  final List<Subcategory> supportModes;
+  final ValueChanged<Subcategory>? onSetMode;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final support = category?.role == CategoryRole.support;
+    final needsMode =
+        support &&
+        entry.subcategoryId.isEmpty &&
+        onSetMode != null &&
+        supportModes.isNotEmpty;
     final accent = support ? scheme.tertiary : scheme.primary;
     final verticalPadding = AppTheme.isCompact(context) ? 6.0 : 10.0;
 
@@ -123,6 +136,50 @@ class WorkEntryRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 2),
+          if (needsMode)
+            Padding(
+              padding: const EdgeInsets.only(left: 104, bottom: 2),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: PopupMenuButton<Subcategory>(
+                  tooltip: 'Set support mode',
+                  onSelected: onSetMode,
+                  itemBuilder: (context) => [
+                    for (final mode in supportModes)
+                      PopupMenuItem<Subcategory>(
+                        value: mode,
+                        child: Text(mode.name),
+                      ),
+                  ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.label_outline,
+                        size: 13,
+                        color: scheme.tertiary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'No mode',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: scheme.tertiary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Set mode',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (entry.outcome.isEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 104),
