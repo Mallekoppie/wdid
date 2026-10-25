@@ -94,6 +94,28 @@ class StoppedTimer {
   final bool discarded;
 }
 
+/// The attribution of a timer stopped by an interrupt, kept in memory so the
+/// Today timer card and the stop snackbar can offer a fresh Resume timer.
+///
+/// This is UI state only: it never changes what the stopped entry stored, and
+/// losing it on a reload is acceptable. Resuming consumes it.
+class InterruptedTimer {
+  const InterruptedTimer({
+    required this.categoryId,
+    this.subcategoryId = '',
+    this.description = '',
+    this.person = '',
+  });
+
+  final String categoryId;
+  final String subcategoryId;
+  final String description;
+
+  /// Carried so resuming an interrupted support timer still satisfies the
+  /// support-person requirement.
+  final String person;
+}
+
 /// One Log listing request. The Log screen rebuilds it whenever a filter
 /// changes, and mutations reload through it so overlap flags stay current.
 class LogQuery {
@@ -279,6 +301,14 @@ class AppState extends ChangeNotifier {
   /// The last attribution used by quick capture, remembered for the next one.
   String? lastCategoryId;
   String? lastSubcategoryId;
+
+  /// The most recently used support-role category. Kept separately from
+  /// [lastCategoryId] so a later initiative capture does not erase which
+  /// support category the one-tap support flows should start with.
+  String? _lastSupportCategoryId;
+
+  /// The interrupt's resume target. Memory only; cleared when resumed.
+  InterruptedTimer? _interruptedTimer;
 
   ActiveTimer? activeTimer;
 
@@ -676,6 +706,38 @@ class AppState extends ChangeNotifier {
       if (!mode.archived) mode,
   ];
 
+  /// Support-role categories a new timer can start under, excluding archived
+  /// rows.
+  List<Category> get selectableSupportCategories => [
+    for (final category in supportCategories)
+      if (!category.archived) category,
+  ];
+
+  /// The support category the one-tap support flows start with.
+  ///
+  /// This is the most recently used support category, then the remembered
+  /// capture category when it is support, and finally the first selectable
+  /// support category. With more than one support-role category the newest
+  /// history wins; the ticket's explicit assumption.
+  Category? get defaultSupportCategory {
+    final selectable = selectableSupportCategories;
+    if (selectable.isEmpty) return null;
+
+    bool matches(Category category, String? id) =>
+        id != null && category.id == id;
+
+    for (final category in selectable) {
+      if (matches(category, _lastSupportCategoryId)) return category;
+    }
+    for (final category in selectable) {
+      if (matches(category, lastCategoryId)) return category;
+    }
+    return selectable.first;
+  }
+
+  /// The most recently used support category, if any.
+  String? get lastSupportCategoryId => _lastSupportCategoryId;
+
   /// True when the category is a support-role category, so the caller can
   /// require a person and keep the entry off project timelines.
   bool isSupportCategory(String categoryId) =>
@@ -685,6 +747,76 @@ class AppState extends ChangeNotifier {
   String supportModeLabel(String subcategoryId) {
     if (subcategoryId.isEmpty) return 'No mode';
     return subcategoryById(subcategoryId)?.name ?? 'No mode';
+  }
+
+  /// The attribution of the timer an interrupt stopped, for "Resume …".
+  /// Empty when there is no stash.
+  String get interruptedTimerLabel {
+    final stash = _interruptedTimer;
+    if (stash == null) return '';
+    final subcategory = subcategoryById(stash.subcategoryId);
+    return [
+      categoryById(stash.categoryId)?.name ?? 'Unknown category',
+      if (subcategory != null) subcategory.name,
+      if (stash.person.isNotEmpty) stash.person,
+    ].join(' · ');
+  }
+
+  /// The attribution an interrupt saved for Resume, or null.
+  InterruptedTimer? get interruptedTimer => _interruptedTimer;
+
+  /// Stashes the attribution of the timer an interrupt stopped. A new
+  /// interrupt overwrites any previous stash.
+  void setInterruptedTimer(InterruptedTimer stash) {
+    _interruptedTimer = stash;
+    _notify();
+  }
+
+  /// Forgets the stash without starting anything.
+  void clearInterruptedTimer() {
+    if (_interruptedTimer == null) return;
+    _interruptedTimer = null;
+    _notify();
+  }
+
+  /// Starts a fresh timer with the stashed attribution and consumes the stash.
+  /// The stopped block is never reused; this is new elapsed time.
+  Future<void> resumeInterruptedTimer() async {
+    final stash = _interruptedTimer;
+    if (stash == null) return;
+    await startTimer(
+      categoryId: stash.categoryId,
+      subcategoryId: stash.subcategoryId,
+      description: stash.description,
+      person: stash.person,
+    );
+    // Only consume the stash once the new timer exists, so a failed start can
+    // be retried from the same offer.
+    clearInterruptedTimer();
+  }
+
+  /// Starts a support timer with one tap: the default support category, no
+  /// mode and no description. "Interrupt" is UI state only; the stored entry
+  /// is an ordinary support entry.
+  Future<void> startSupportTimer({required String person, Category? category}) {
+    final target = category ?? defaultSupportCategory;
+    if (target == null) {
+      throw const TimerFailure(
+        'Add a support category before starting support.',
+      );
+    }
+    return startTimer(
+      categoryId: target.id,
+      subcategoryId: '',
+      description: '',
+      person: person,
+    );
+  }
+
+  void _rememberSupportCategory(String categoryId) {
+    if (categoryId.isNotEmpty && isSupportCategory(categoryId)) {
+      _lastSupportCategoryId = categoryId;
+    }
   }
 
   /// Initiative categories a new project can be filed under.
@@ -892,6 +1024,7 @@ class AppState extends ChangeNotifier {
       }
       lastCategoryId = resolvedCategory;
       lastSubcategoryId = resolvedSubcategory;
+      _rememberSupportCategory(resolvedCategory);
       _startTicker();
       _notify();
     }
@@ -976,6 +1109,7 @@ class AppState extends ChangeNotifier {
       entries = _newestFirst([entry, ...entries]);
       lastCategoryId = entry.categoryId;
       lastSubcategoryId = entry.subcategoryId;
+      _rememberSupportCategory(entry.categoryId);
       // A saved block must appear in an already-loaded Log and Support view,
       // not only in Today and the reports.
       unawaited(refreshLog());
@@ -1416,6 +1550,7 @@ class AppState extends ChangeNotifier {
     }
     lastCategoryId = draft.categoryId;
     lastSubcategoryId = draft.subcategoryId;
+    _rememberSupportCategory(draft.categoryId);
     _refreshProjectIfOpen(entry.subcategoryId);
     _refreshSupportIfLoaded();
     _refreshReports();
@@ -1427,6 +1562,7 @@ class AppState extends ChangeNotifier {
     final updated = await _entryApi().updateEntry(entry);
     entries = _replaceEntry(entries, updated);
     logEntries = _replaceEntry(logEntries, updated);
+    _rememberSupportCategory(updated.categoryId);
     // The entry may have moved into or out of the open project.
     if (projectEntries.any((existing) => existing.id == updated.id)) {
       _refreshProjectIfOpen(projectEntriesProjectId!);
