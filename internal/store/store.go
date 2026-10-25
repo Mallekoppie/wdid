@@ -121,6 +121,17 @@ func (s *Store) CreateUser(user domain.User) error {
 	})
 }
 
+// CreateSeedUser stores an account with its local credential and email index in
+// one transaction, without the default taxonomy and settings that
+// CreateUser-backed paths seed. A caller that owns the account's records, such
+// as the demo seeder, uses it to avoid inheriting randomly identified defaults.
+func (s *Store) CreateSeedUser(user domain.User, passwordHash string) error {
+	user.Normalize()
+	return platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
+		return createUserRecordTx(tx, user, &passwordHash)
+	})
+}
+
 // UserByID returns an account by identifier.
 func (s *Store) UserByID(id string) (domain.User, error) {
 	var user domain.User
@@ -331,9 +342,19 @@ func saveObject(bucket, id string, object interface{}) error {
 	return platform.Database.BoltDb.SaveObject(bucket, id, object)
 }
 
-// createUserTx writes the profile, optional credential and email index in the
-// caller's transaction.
+// createUserTx writes the account records and then the default taxonomy and
+// settings. Production account creation goes through it so an account either
+// has its data core or does not exist at all.
 func createUserTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
+	if err := createUserRecordTx(tx, user, passwordHash); err != nil {
+		return err
+	}
+	return seedUserTx(tx, user)
+}
+
+// createUserRecordTx writes the profile, optional credential and email index in
+// the caller's transaction. It does not create any user-owned seed records.
+func createUserRecordTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
 	emails, err := tx.CreateBucketIfNotExists([]byte(sysUserEmailsBucket))
 	if err != nil {
 		return fmt.Errorf("create email bucket: %w", err)
@@ -356,7 +377,7 @@ func createUserTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
 		return err
 	}
 
-	return seedUserTx(tx, user)
+	return nil
 }
 
 // readTxObject reads one record inside an open transaction. A missing bucket
