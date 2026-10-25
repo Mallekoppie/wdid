@@ -21,27 +21,36 @@ const (
 	indexVersion     = 1
 )
 
-type seedCategory struct {
-	name          string
-	role          domain.CategoryRole
-	subcategories []string
+// DefaultCategory describes one entry in the taxonomy every new account
+// receives.
+type DefaultCategory struct {
+	Name          string
+	Role          domain.CategoryRole
+	Subcategories []string
 }
 
-// seedTaxonomy is the taxonomy every new account receives. Seeds are ordinary
-// user-owned records: they can be renamed, extended and archived, and no code
-// may special-case them by name.
-var seedTaxonomy = []seedCategory{
-	{name: "Initiatives", role: domain.CategoryRoleInitiative},
+// defaultTaxonomy is the taxonomy every new account receives. Seeds are
+// ordinary user-owned records: they can be renamed, extended and archived, and
+// no code may special-case them by name.
+var defaultTaxonomy = []DefaultCategory{
+	{Name: "Initiatives", Role: domain.CategoryRoleInitiative},
 	{
-		name:          "Support",
-		role:          domain.CategoryRoleSupport,
-		subcategories: []string{"Review", "Pair", "Unblock", "Mentor", "Incident", "Other"},
+		Name:          "Support",
+		Role:          domain.CategoryRoleSupport,
+		Subcategories: []string{"Review", "Pair", "Unblock", "Mentor", "Incident", "Other"},
 	},
 	{
-		name:          "Other",
-		role:          domain.CategoryRoleOther,
-		subcategories: []string{"Meetings", "Admin", "Learning", "Unplanned"},
+		Name:          "Other",
+		Role:          domain.CategoryRoleOther,
+		Subcategories: []string{"Meetings", "Admin", "Learning", "Unplanned"},
 	},
+}
+
+// DefaultTaxonomy returns the taxonomy every new account receives. It is the
+// single source of truth for production account seeding and the demo seeder.
+// Callers must not modify the returned slice or its subcategory slices.
+func DefaultTaxonomy() []DefaultCategory {
+	return defaultTaxonomy
 }
 
 // seedUserTx writes the seeded taxonomy and default settings in the account
@@ -53,12 +62,12 @@ func seedUserTx(tx *bbolt.Tx, user domain.User) error {
 		now = time.Now().UTC()
 	}
 
-	for sortOrder, seed := range seedTaxonomy {
+	for sortOrder, seed := range defaultTaxonomy {
 		category := domain.Category{
 			ID:        domain.NewID(),
 			UserID:    user.ID,
-			Name:      seed.name,
-			Role:      seed.role,
+			Name:      seed.Name,
+			Role:      seed.Role,
 			SortOrder: sortOrder,
 			CreatedAt: now,
 			UpdatedAt: now,
@@ -67,7 +76,7 @@ func seedUserTx(tx *bbolt.Tx, user domain.User) error {
 			return err
 		}
 
-		for subOrder, name := range seed.subcategories {
+		for subOrder, name := range seed.Subcategories {
 			subcategory := domain.Subcategory{
 				ID:         domain.NewID(),
 				UserID:     user.ID,

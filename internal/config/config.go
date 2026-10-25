@@ -141,6 +141,7 @@ func LoadStorage() Config {
 		BackupDir:       envString("WDID_BACKUP_DIR", defaultBackupDir(dbPath)),
 		BackupInterval:  envDuration("WDID_BACKUP_INTERVAL", defaultBackupInterval),
 		BackupRetention: envInt("WDID_BACKUP_RETENTION", defaultBackupRetention),
+		DevMode:         envBool("WDID_DEV_MODE", false),
 		StorageOnly:     true,
 	}
 }
