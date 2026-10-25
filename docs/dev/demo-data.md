@@ -78,13 +78,14 @@ The `demo` scenario reads an embedded declarative fixture split by domain:
 | `taxonomy.json` | Categories, roles, projects/modes, status, progress and target outcome |
 | `people.json` | Support-person roster |
 | `settings.json` | Timezone, daily target and review cadence |
+| `entries.json` | Work-entry templates expanded over the 14-day window ending at the anchor |
 
 `--fixture DIR` points at a directory that uses the same filenames. For each
 domain file present in `DIR`, that file replaces the embedded domain. A file
 that is missing from `DIR` falls back to the embedded copy, so a directory can
 override one domain and inherit the rest. Other files in `DIR` are ignored;
-later tickets add `entries.json`, `notes.json`, `milestones.json` and
-`check_ins.json` without changing the command.
+later tickets add `notes.json`, `milestones.json` and `check_ins.json` without
+changing the command.
 
 The path must be an existing directory. A missing path, a path that is not a
 directory, an unreadable file or invalid JSON (including an unknown field)
@@ -165,10 +166,10 @@ only intentionally non-identical values).
 
 ### `demo`
 
-The account plus the embedded fixture: **5 categories, 16 subcategories, 1
-user**, and the demo settings below. There are still **0 work entries, 0 notes,
-0 milestones and 0 check-ins**, and no active timer; tickets #8-#10 add those
-domains as independent fixture files.
+The account plus the embedded fixture: **5 categories, 16 subcategories, 62
+work entries, 1 user**, and the demo settings below. Notes, milestones and
+check-ins are still **0**; tickets #9 and #10 add those domains as independent
+fixture files. There is no active timer.
 
 #### Taxonomy and projects
 
@@ -219,6 +220,63 @@ labels, and every timestamp derives from `--anchor`; rerunning the same
 scenario with the same anchor and fixture produces identical IDs and content.
 The bcrypt salt and the database instance ID are the only intentionally
 non-identical values.
+
+#### Work entries
+
+`entries.json` holds 14 templates. Each template names a window-relative day
+selector, a local wall-clock start, duration, category/project or mode, optional
+person, description, optional outcome and source. A selector is expanded once
+per matching day, so the dataset shape does not depend on the anchor's weekday:
+
+| Selector | Matching days | Entries per matching day |
+| --- | --- | --- |
+| `normal-weekday` | every weekday in the window except the sparse day | 6 |
+| `sparse` | the first weekday in the window | 2 |
+| `on-call` | the latest Saturday on or before the anchor | 5 |
+| `anchor` | the anchor day | 1 (the no-mode interrupt) |
+
+The window is the 14 calendar days `anchor-13 .. anchor` inclusive in the
+resolved settings timezone (`UTC` by default). Every 14-day window contains two
+Saturdays; the on-call day is the later one (the latest Saturday on or before
+the anchor). The sparse day is the first weekday in the window, and the other
+weekend days are empty apart from the anchor-day interrupt when the anchor
+itself falls on a Sunday.
+
+The resulting shape for any anchor:
+
+* 62 entries across the 14 days.
+* Normal weekdays: 6 entries; a weekday anchor also carries the interrupt (7).
+* Sparse day: 2 entries.
+* On-call Saturday: 5 support entries; a Saturday anchor also carries the
+  interrupt (6).
+* Weekend anchor that is not the on-call Saturday (a Sunday): only the
+  interrupt.
+* Other weekend days: 0 entries.
+* Every day's blocks are non-overlapping local times between 08:45 and 16:45.
+
+Attribution uses the seeded taxonomy and roster. Weekday templates cover
+Client Delivery, Platform and Growth projects plus `Other · Meetings`; the
+sparse day uses `Other · Learning` and `Client Delivery · Acme migration`; the
+on-call day covers all five support modes (`Incident support`, `Pairing`,
+`Mentoring`, `Code review`, `1:1`) with roster people. Entries mix `timer` and
+`manual` sources.
+
+Exactly one support entry has **no mode** and falls on the **anchor day**, so
+Today renders it as `No mode` with a `Set mode` action. It is the 15-minute
+`Support · Priya` row starting at 15:30.
+
+Representative literal rows (stable for any anchor; only the date moves):
+
+| Day | Time | Attribution | Description | Minutes | Source |
+| --- | --- | --- | --- | --- | --- |
+| Any normal weekday | 08:45 | Client Delivery · Acme migration | Migration standup and blocker triage | 30 | timer |
+| Any normal weekday | 09:15 | Platform · Auth overhaul | Session rotation implementation | 90 | manual |
+| Anchor day | 15:30 | Support · Priya · No mode | Unblocked Priya on the migration cutover | 15 | manual |
+
+UI smoke tests can assert the anchor-day no-mode row
+`Unblocked Priya on the migration cutover`, the `No mode` / `Set mode` labels,
+and an initiative row such as `Migration standup and blocker triage` under
+`Client Delivery · Acme migration`.
 
 ### Expected `empty` screens
 
