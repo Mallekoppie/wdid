@@ -55,6 +55,21 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
   _SupportPeriod _period = _SupportPeriod.quarter;
   AppState? _state;
   bool _loaded = false;
+  final _newPerson = TextEditingController();
+
+  @override
+  void dispose() {
+    _newPerson.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addPerson() async {
+    final name = _newPerson.text.trim();
+    if (name.isEmpty) return;
+    final state = AppStateScope.read(context);
+    _newPerson.clear();
+    await state.addSupportPerson(name);
+  }
 
   @override
   void didChangeDependencies() {
@@ -144,6 +159,71 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
     }
   }
 
+  Widget _peoplePanel(AppState state, ThemeData theme) {
+    final scheme = theme.colorScheme;
+    final people = state.supportPeople;
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const PanelHeader(
+            title: 'People',
+            subtitle:
+                'Names offered wherever you record support. Removing one '
+                'leaves past entries untouched.',
+            icon: Icons.people_outline,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (people.isEmpty)
+            Text(
+              'No people yet. Add a name here or while logging support.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final person in people)
+                  InputChip(
+                    label: Text(person),
+                    deleteButtonTooltipMessage: 'Remove $person',
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: () =>
+                        unawaited(state.removeSupportPerson(person)),
+                  ),
+              ],
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _newPerson,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => unawaited(_addPerson()),
+                  decoration: const InputDecoration(
+                    labelText: 'Add a person',
+                    hintText: 'Priya',
+                    prefixIcon: Icon(Icons.person_add_alt_1_outlined, size: 18),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              FilledButton.icon(
+                onPressed: () => unawaited(_addPerson()),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add person'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppStateScope.of(context);
@@ -218,6 +298,8 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.lg),
+            _peoplePanel(state, theme),
             const SizedBox(height: AppSpacing.lg),
             LayoutBuilder(
               builder: (context, constraints) {
@@ -452,7 +534,6 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
     );
   }
 }
-
 
 class _SupportDayHeader extends StatelessWidget {
   const _SupportDayHeader({required this.day, required this.minutes});

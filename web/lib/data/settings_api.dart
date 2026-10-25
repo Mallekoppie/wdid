@@ -280,6 +280,7 @@ class GrpcSettingsApi implements SettingsApi {
         aiModel: settings.aiModel,
         redactUrls: settings.aiRedact,
         journalStartDate: settings.journalStartDate,
+        supportPeople: settings.supportPeople.toList(),
       );
 
   generated.Settings _toProto(AppSettings settings) => generated.Settings(
@@ -298,6 +299,7 @@ class GrpcSettingsApi implements SettingsApi {
     theme: _themeToProto(settings.theme),
     density: _densityToProto(settings.density),
     journalStartDate: settings.journalStartDate,
+    supportPeople: settings.supportPeople,
   );
 
   SettingsFailure _failure(GrpcError error) {

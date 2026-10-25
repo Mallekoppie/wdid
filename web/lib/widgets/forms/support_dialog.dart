@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../data/entry_api.dart';
@@ -11,6 +13,7 @@ import '../../theme/app_tokens.dart';
 import '../../utils/time_utils.dart';
 import '../app_dropdown.dart';
 import '../duration_chips.dart';
+import '../person_picker.dart';
 import 'dialog_frame.dart';
 
 /// The service-backed support form.
@@ -217,6 +220,7 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
         );
       }
       if (!mounted) return;
+      if (person.isNotEmpty) unawaited(widget.state.addSupportPerson(person));
       Navigator.of(context).pop(saved);
     } on EntryFailure catch (error) {
       if (!mounted) return;
@@ -289,14 +293,11 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: PersonPicker(
                     controller: _person,
                     autofocus: widget.existing == null,
-                    decoration: InputDecoration(
-                      labelText: 'Person',
-                      hintText: 'Priya',
-                      errorText: _fieldError('person'),
-                    ),
+                    hint: 'Priya',
+                    errorText: _fieldError('person'),
                     validator: (value) =>
                         (value == null || value.trim().isEmpty)
                         ? 'Who did you support?'

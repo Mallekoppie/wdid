@@ -284,4 +284,43 @@ void main() {
       expect(restored.status.lastBackupSizeBytes, 4096);
     },
   );
+
+  test('getSettings maps the support-people roster', () async {
+    final rpc = FakeSettingsRpc()
+      ..getResponse = generated.GetSettingsResponse(
+        settings: generated.Settings(supportPeople: ['Priya', 'Sam']),
+        about: generated.About(
+          version: '0.1.0',
+          schemaVersion: 1,
+          license: 'MIT',
+        ),
+      );
+
+    final snapshot = await GrpcSettingsApi(rpc: rpc).getSettings();
+
+    expect(snapshot.settings.supportPeople, ['Priya', 'Sam']);
+  });
+
+  test('updateSettings sends and returns the support-people roster', () async {
+    final rpc = FakeSettingsRpc()
+      ..updateResponse = generated.UpdateSettingsResponse(
+        settings: generated.Settings(supportPeople: ['Priya', 'Sam']),
+      );
+
+    final saved = await GrpcSettingsApi(rpc: rpc)
+        .updateSettings(const AppSettings(supportPeople: ['Priya', 'Sam']));
+
+    expect(rpc.updateRequest!.settings.supportPeople, ['Priya', 'Sam']);
+    expect(saved.supportPeople, ['Priya', 'Sam']);
+  });
+
+  test('an unrelated settings change keeps the roster', () {
+    const settings = AppSettings(supportPeople: ['Priya', 'Sam']);
+
+    final changed = settings.copyWith(timezone: 'Europe/Amsterdam');
+    expect(changed.supportPeople, ['Priya', 'Sam']);
+
+    final roundTripped = AppSettings.fromJson(settings.toJson());
+    expect(roundTripped.supportPeople, ['Priya', 'Sam']);
+  });
 }

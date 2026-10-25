@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/drafts.dart';
@@ -8,6 +10,7 @@ import '../../state/app_state_scope.dart';
 import '../../theme/app_tokens.dart';
 import '../../utils/time_utils.dart';
 import '../app_dropdown.dart';
+import '../person_picker.dart';
 import 'dialog_frame.dart';
 
 /// The service-backed work-entry form used inline by the Log and inside
@@ -169,6 +172,7 @@ class _EntryFormState extends State<EntryForm> {
           ),
         );
       }
+      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
       await state.refreshLog();
       if (!mounted) return;
       widget.onSaved(saved);
@@ -347,13 +351,7 @@ class _EntryFormState extends State<EntryForm> {
             ),
             const SizedBox(height: AppSpacing.sm),
             if (support || _person.text.isNotEmpty) ...[
-              TextFormField(
-                controller: _person,
-                decoration: const InputDecoration(
-                  labelText: 'Person',
-                  hintText: 'Priya',
-                ),
-              ),
+              PersonPicker(controller: _person, label: 'Person', hint: 'Priya'),
               const SizedBox(height: AppSpacing.sm),
             ],
             TextFormField(
