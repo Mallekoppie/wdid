@@ -33,10 +33,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   bool get _isEditing {
-    final widget = FocusManager.instance.primaryFocus?.context?.widget;
-    if (widget == null) return false;
-    return widget is EditableText ||
-        widget.runtimeType.toString().contains('EditableText');
+    // The primary focus node of a text field belongs to the internal Focus
+    // widget that EditableText builds, so the focused widget is never
+    // EditableText itself. Walk up from the focused context instead.
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+    return focusContext.findAncestorStateOfType<EditableTextState>() != null;
   }
 
   void _beginGoSequence() {
