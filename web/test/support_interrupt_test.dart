@@ -431,4 +431,64 @@ void main() {
       reason: 'the offer disappears once the stash is consumed',
     );
   });
+
+  testWidgets('the interrupt entry is flagged No mode and re-files on a tap', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final entryApi = FakeEntryApi();
+    final state = await pumpApp(
+      tester,
+      timerApi: timerApi,
+      entryApi: entryApi,
+      categories: [
+        category('cat-1', 'Initiatives'),
+        category('cat-support', 'Support', role: CategoryRole.support),
+        category('cat-mentoring', 'Mentoring', role: CategoryRole.support),
+      ],
+      subcategories: [
+        subcategory('sub-1', 'cat-1', 'Billing migration'),
+        subcategory('mode-s', 'cat-support', 'Unblock'),
+        subcategory('mode-m', 'cat-mentoring', 'Pairing'),
+      ],
+    );
+
+    // Interrupt the initiative and start the support timer.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Stop the interrupt timer so the support entry lands on Today.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('No mode'), findsOneWidget);
+    expect(find.text('Set mode'), findsOneWidget);
+
+    await tester.tap(find.text('Set mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pairing').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(entryApi.updateCalls, 1);
+    final updated = entryApi.entries.singleWhere(
+      (entry) => entry.categoryId == 'cat-mentoring',
+    );
+    expect(updated.subcategoryId, 'mode-m');
+    expect(find.textContaining('Mentoring · Pairing'), findsOneWidget);
+    expect(find.text('No mode'), findsNothing);
+    expect(find.text('Set mode'), findsNothing);
+    expect(state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
+        isTrue);
+  });
 }
