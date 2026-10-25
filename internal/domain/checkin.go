@@ -69,6 +69,28 @@ type CheckInTotals struct {
 	SupportByPerson map[string]int `json:"supportByPerson,omitempty"`
 }
 
+// CheckInTotalsFromReport snapshots the authoritative period report into the
+// totals a check-in stores at creation. Rows are keyed by category and
+// subcategory ID; support people keep their display spelling.
+func CheckInTotalsFromReport(report PeriodReport) CheckInTotals {
+	totals := CheckInTotals{
+		Minutes:         report.TotalMinutes,
+		ByCategory:      make(map[string]int, len(report.Categories)),
+		BySubcategory:   make(map[string]int, len(report.Subcategories)),
+		SupportByPerson: make(map[string]int, len(report.SupportPeople)),
+	}
+	for _, category := range report.Categories {
+		totals.ByCategory[category.CategoryID] = category.Minutes
+	}
+	for _, subcategory := range report.Subcategories {
+		totals.BySubcategory[subcategory.SubcategoryID] = subcategory.Minutes
+	}
+	for _, person := range report.SupportPeople {
+		totals.SupportByPerson[person.Person] = person.Minutes
+	}
+	return totals
+}
+
 // SummarySource says whether a summary update is the user's own text or
 // generated output. Only generated text is blocked from replacing a manual
 // edit without confirmation.

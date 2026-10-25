@@ -1,0 +1,25 @@
+{
+  "checkIns": [
+    {
+      "key": "previous-period-manager",
+      "kind": "manager",
+      "state": "final",
+      "audience": "one_on_one",
+      "periodStartOffset": 13,
+      "periodEndOffset": 7,
+      "createdDaysBeforeAnchor": 7,
+      "focusNotes": "Cutover readiness, Globex onboarding and the auth refresh-token fix. Keep support time visible next period.",
+      "summaryMarkdown": "## Previous period\n\nShipped the auth session-rotation foundation and closed two migration ordering gaps. The Acme cutover is the main risk: the rollback window still needs a signed runbook.\n\n- Acme migration: dry run complete, blockers assigned\n- Globex onboarding: import rehearsal clean\n- Support: on-call coverage only, no escalations"
+    },
+    {
+      "key": "current-period-personal",
+      "kind": "personal",
+      "state": "draft",
+      "periodStartOffset": 6,
+      "periodEndOffset": 0,
+      "createdDaysBeforeAnchor": 0,
+      "focusNotes": "What moved the projects forward this week, and where did support work interrupt deep work?",
+      "summaryMarkdown": "## Draft review\n\nSteady progress on the self-serve trial and search relevance. Support stayed bounded to the on-call day. Next: protect a longer block for the cutover runbook."
+    }
+  ]
+}

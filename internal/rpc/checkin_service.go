@@ -195,7 +195,7 @@ func (s *CheckInService) CreateCheckIn(ctx context.Context, request *connect.Req
 	if err != nil {
 		return nil, toConnectError(err)
 	}
-	checkIn.Totals = totalsFromReport(report)
+	checkIn.Totals = domain.CheckInTotalsFromReport(report)
 
 	if err := s.store.SaveCheckIn(checkIn); err != nil {
 		return nil, toConnectError(err)
@@ -274,7 +274,7 @@ func (s *CheckInService) UpdateCheckIn(ctx context.Context, request *connect.Req
 		if reportErr != nil {
 			return nil, toConnectError(reportErr)
 		}
-		checkIn.Totals = totalsFromReport(report)
+		checkIn.Totals = domain.CheckInTotalsFromReport(report)
 	}
 
 	if err := s.store.SaveCheckIn(checkIn); err != nil {
@@ -354,28 +354,6 @@ func nextLocalDay(date string, location *time.Location) (string, error) {
 		return "", err
 	}
 	return parsed.AddDate(0, 0, 1).Format(domain.DateLayout), nil
-}
-
-// totalsFromReport takes the snapshot a check-in stores at creation. The
-// detail screen still reads the live report; these totals let a listing render
-// its cards without one report request per row.
-func totalsFromReport(report domain.PeriodReport) domain.CheckInTotals {
-	totals := domain.CheckInTotals{
-		Minutes:         report.TotalMinutes,
-		ByCategory:      make(map[string]int, len(report.Categories)),
-		BySubcategory:   make(map[string]int, len(report.Subcategories)),
-		SupportByPerson: make(map[string]int, len(report.SupportPeople)),
-	}
-	for _, category := range report.Categories {
-		totals.ByCategory[category.CategoryID] = category.Minutes
-	}
-	for _, subcategory := range report.Subcategories {
-		totals.BySubcategory[subcategory.SubcategoryID] = subcategory.Minutes
-	}
-	for _, person := range report.SupportPeople {
-		totals.SupportByPerson[person.Person] = person.Minutes
-	}
-	return totals
 }
 
 // --- wire mapping ---------------------------------------------------------

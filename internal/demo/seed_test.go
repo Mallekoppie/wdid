@@ -130,8 +130,8 @@ func TestSeedEmptyCreatesAccountSettingsAndTaxonomy(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID, 0, 0, 0)
-	assertSummary(t, summary, 3, 10, 0, 0, 0)
+	assertNoRows(t, database, user.ID, 0, 0, 0, 0)
+	assertSummary(t, summary, 3, 10, 0, 0, 0, 0)
 }
 
 func TestSeedDemoAppliesTheFixture(t *testing.T) {
@@ -272,8 +272,8 @@ func TestSeedDemoAppliesTheFixture(t *testing.T) {
 		t.Fatalf("settings updated at = %s, want anchor %s", settings.UpdatedAt, testAnchor)
 	}
 
-	assertNoRows(t, database, user.ID, 62, 11, 20)
-	assertSummary(t, summary, 5, 16, 62, 11, 20)
+	assertNoRows(t, database, user.ID, 62, 11, 20, 2)
+	assertSummary(t, summary, 5, 16, 62, 11, 20, 2)
 }
 
 func TestSeedDemoAppliesFixtureDirectoryOverrides(t *testing.T) {
@@ -543,7 +543,7 @@ func seedSnapshot(t *testing.T, path, scenario string) snapshot {
 	return result
 }
 
-func assertNoRows(t *testing.T, database *store.Store, userID string, entries, notes, milestones int) {
+func assertNoRows(t *testing.T, database *store.Store, userID string, entries, notes, milestones, checkIns int) {
 	t.Helper()
 
 	storedEntries, err := database.WorkEntries(userID, store.WorkEntryFilter{})
@@ -570,12 +570,12 @@ func assertNoRows(t *testing.T, database *store.Store, userID string, entries, n
 		t.Fatalf("milestones = %+v, want %d", storedMilestones, milestones)
 	}
 
-	checkIns, err := database.CheckIns(userID, "")
+	storedCheckIns, err := database.CheckIns(userID, "")
 	if err != nil {
 		t.Fatalf("list check-ins: %v", err)
 	}
-	if len(checkIns) != 0 {
-		t.Fatalf("check-ins = %+v, want none", checkIns)
+	if len(storedCheckIns) != checkIns {
+		t.Fatalf("check-ins = %+v, want %d", storedCheckIns, checkIns)
 	}
 
 	if _, active, err := database.ActiveTimer(userID); err != nil {
@@ -585,7 +585,7 @@ func assertNoRows(t *testing.T, database *store.Store, userID string, entries, n
 	}
 }
 
-func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, entries, notes, milestones int) {
+func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories, entries, notes, milestones, checkIns int) {
 	t.Helper()
 
 	if summary.Users != 1 ||
@@ -594,9 +594,9 @@ func assertSummary(t *testing.T, summary demo.Summary, categories, subcategories
 		summary.Entries != entries ||
 		summary.Notes != notes ||
 		summary.Milestones != milestones ||
-		summary.CheckIns != 0 ||
+		summary.CheckIns != checkIns ||
 		summary.ActiveTimer {
-		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d entries, %d notes, %d milestones and no check-ins",
-			summary, categories, subcategories, entries, notes, milestones)
+		t.Fatalf("summary = %+v, want 1 user, %d categories, %d subcategories, %d entries, %d notes, %d milestones, %d check-ins and no active timer",
+			summary, categories, subcategories, entries, notes, milestones, checkIns)
 	}
 }
