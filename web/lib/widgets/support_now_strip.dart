@@ -45,6 +45,7 @@ class _SupportNowStripState extends State<SupportNowStrip> {
     }
 
     setState(() => _busy = true);
+    var preserveInterruptedTimer = false;
     try {
       if (state.activeTimer != null) {
         final proceed = await stopForInterrupt(context, state: state);
@@ -53,8 +54,14 @@ class _SupportNowStripState extends State<SupportNowStrip> {
           setState(() => _busy = false);
           return;
         }
+        // Only an interrupt that actually stopped a timer has a stash to keep.
+        preserveInterruptedTimer = true;
       }
-      await state.startSupportTimer(person: person, category: category);
+      await state.startSupportTimer(
+        person: person,
+        category: category,
+        preserveInterruptedTimer: preserveInterruptedTimer,
+      );
       if (!mounted) return;
       setState(() => _busy = false);
       _person.clear();

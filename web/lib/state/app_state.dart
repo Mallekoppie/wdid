@@ -819,21 +819,27 @@ class AppState extends ChangeNotifier {
   Future<void> resumeInterruptedTimer() async {
     final stash = _interruptedTimer;
     if (stash == null) return;
+    // Preserve while starting so a failed start keeps the offer; consume only
+    // once the new timer exists.
     await startTimer(
       categoryId: stash.categoryId,
       subcategoryId: stash.subcategoryId,
       description: stash.description,
       person: stash.person,
+      preserveInterruptedTimer: true,
     );
-    // Only consume the stash once the new timer exists, so a failed start can
-    // be retried from the same offer.
     clearInterruptedTimer();
   }
 
   /// Starts a support timer with one tap: the default support category, no
   /// mode and no description. "Interrupt" is UI state only; the stored entry
-  /// is an ordinary support entry.
-  Future<void> startSupportTimer({required String person, Category? category}) {
+  /// is an ordinary support entry. [preserveInterruptedTimer] keeps the
+  /// interrupt stash when this start is the second half of an interruption.
+  Future<void> startSupportTimer({
+    required String person,
+    Category? category,
+    bool preserveInterruptedTimer = false,
+  }) {
     final target = category ?? defaultSupportCategory;
     if (target == null) {
       throw const TimerFailure(
@@ -845,6 +851,7 @@ class AppState extends ChangeNotifier {
       subcategoryId: '',
       description: '',
       person: person,
+      preserveInterruptedTimer: preserveInterruptedTimer,
     );
   }
 
@@ -1000,11 +1007,16 @@ class AppState extends ChangeNotifier {
     return projectById(subcategoryId) == null ? null : subcategoryId;
   }
 
+  /// Starts a timer. A manual start retires any interrupt stash, because the
+  /// old Resume offer would otherwise point at a block the user has moved on
+  /// from. The interrupt flow passes [preserveInterruptedTimer] so support can
+  /// end before the interrupted work is offered again.
   Future<void> startTimer({
     String description = '',
     String categoryId = '',
     String subcategoryId = '',
     String person = '',
+    bool preserveInterruptedTimer = false,
   }) async {
     final api = timerApi;
     if (api == null) {
@@ -1057,6 +1069,9 @@ class AppState extends ChangeNotifier {
         await syncTimer();
         rethrow;
       }
+      // Only a successful start retires the offer: a failed one keeps it
+      // resumable.
+      if (!preserveInterruptedTimer) _interruptedTimer = null;
       lastCategoryId = resolvedCategory;
       lastSubcategoryId = resolvedSubcategory;
       _rememberSupportCategory(resolvedCategory);

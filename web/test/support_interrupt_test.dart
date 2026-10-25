@@ -191,6 +191,70 @@ void main() {
     expect(harness.state.interruptedTimer!.subcategoryId, isEmpty);
   });
 
+  test('a manual start clears the interrupt stash', () async {
+    final harness = buildState();
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(categoryId: 'cat-1', subcategoryId: 'sub-1'),
+    );
+
+    await harness.state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
+
+    expect(
+      harness.state.interruptedTimer,
+      isNull,
+      reason: 'an unrelated start must not leave a stale Resume offer',
+    );
+  });
+
+  test('a failed start keeps the interrupt stash', () async {
+    final harness = buildState();
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+    // A timer on the server the client has not synced yet makes the start fail.
+    seedRunningTimer(harness.timerApi);
+
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(categoryId: 'cat-1', subcategoryId: 'sub-1'),
+    );
+
+    await expectLater(
+      harness.state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1'),
+      throwsA(isA<TimerFailure>()),
+    );
+
+    expect(
+      harness.state.interruptedTimer,
+      isNotNull,
+      reason: 'a start that never happened must keep the offer',
+    );
+  });
+
+  test('a preserved support start keeps the stash past its stop', () async {
+    final harness = buildState();
+    addTearDown(harness.state.dispose);
+    await harness.state.load();
+
+    harness.state.setInterruptedTimer(
+      const InterruptedTimer(categoryId: 'cat-1', subcategoryId: 'sub-1'),
+    );
+
+    await harness.state.startSupportTimer(
+      person: 'Priya',
+      preserveInterruptedTimer: true,
+    );
+    expect(
+      harness.state.interruptedTimer,
+      isNotNull,
+      reason: 'the interrupt target is needed when support ends',
+    );
+
+    await harness.state.stopTimer();
+    expect(harness.state.interruptedTimer, isNotNull);
+  });
+
   test('the default support category is the most recently used one', () async {
     final harness = buildState(
       categories: [
@@ -263,6 +327,11 @@ void main() {
       expect(timerApi.lastStartSubcategoryId, isEmpty);
       expect(timerApi.lastStartDescription, isEmpty);
       expect(timerApi.lastStartPerson, 'Priya');
+      expect(
+        state.interruptedTimer,
+        isNotNull,
+        reason: 'the interrupt target survives the support start',
+      );
       expect(find.byType(TodayScreen), findsOneWidget);
       expect(find.text('Start a support timer'), findsNothing);
     },
@@ -424,6 +493,66 @@ void main() {
       findsNothing,
       reason: 'the offer disappears once the stash is consumed',
     );
+  });
+
+  testWidgets('a manual start clears the Resume offer after an interrupt', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Interrupt the initiative and start support.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Stop the support timer; the interrupt target stays resumable.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(state.interruptedTimer, isNotNull);
+
+    // Let the stop snackbar retire so only the Today card carries the offer.
+    await tester.pump(const Duration(seconds: 5));
+    final label = 'Resume Initiatives · Billing migration';
+    expect(find.text(label), findsOneWidget);
+
+    await state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
+    await tester.pump();
+
+    expect(state.interruptedTimer, isNull);
+    expect(
+      find.text(label),
+      findsNothing,
+      reason: 'starting anything else retires the old Resume offer',
+    );
+  });
+
+  testWidgets('an unrelated stop snackbar has no Resume action', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
+    await tester.pump();
+    expect(state.interruptedTimer, isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final snackBars = find.byType(SnackBar);
+    expect(snackBars, findsOneWidget);
+    expect(tester.widget<SnackBar>(snackBars).action, isNull);
   });
 
   testWidgets('the interrupt entry is flagged No mode and re-files on a tap', (

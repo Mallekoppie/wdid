@@ -28,6 +28,10 @@ class _TimerPillState extends State<TimerPill> {
   /// closed; the menu children are only meaningful when this is set.
   Category? _pickingCategory;
 
+  /// True when the picker was opened after an interrupt actually stopped a
+  /// timer, so its support start must keep the Resume stash.
+  bool _preserveInterruptOnStart = false;
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
@@ -55,6 +59,7 @@ class _TimerPillState extends State<TimerPill> {
       }
       // A support start needs a person. Open the same one-tap picker here
       // instead of letting startTimer throw "Who are you supporting?".
+      _preserveInterruptOnStart = false;
       _openPicker(category);
       return;
     }
@@ -120,15 +125,23 @@ class _TimerPillState extends State<TimerPill> {
     if (!mounted) return;
     setState(() => _interrupting = false);
     if (!proceed) return;
+    // The stop happened, so the support start keeps the Resume stash.
+    _preserveInterruptOnStart = true;
     _openPicker(category);
   }
 
   Future<void> _startSupport(String name, Category category) async {
     final person = name.trim();
     if (person.isEmpty) return;
+    final preserveInterruptedTimer = _preserveInterruptOnStart;
+    _preserveInterruptOnStart = false;
     final state = AppStateScope.read(context);
     try {
-      await state.startSupportTimer(person: person, category: category);
+      await state.startSupportTimer(
+        person: person,
+        category: category,
+        preserveInterruptedTimer: preserveInterruptedTimer,
+      );
       if (!mounted) return;
       final timer = state.activeTimer;
       _showMessage(
