@@ -19,13 +19,10 @@ class PersonPicker extends StatefulWidget {
     this.controller,
     this.label = 'Person',
     this.hint,
-    this.helperText,
     this.errorText,
     this.enabled = true,
     this.autofocus = false,
     this.compact = false,
-    this.chipsOnly = false,
-    this.textInputAction = TextInputAction.done,
     this.validator,
     this.onChanged,
     this.onSelected,
@@ -38,7 +35,6 @@ class PersonPicker extends StatefulWidget {
 
   final String label;
   final String? hint;
-  final String? helperText;
   final String? errorText;
   final bool enabled;
   final bool autofocus;
@@ -46,10 +42,6 @@ class PersonPicker extends StatefulWidget {
   /// Tighter chip styling for dense surfaces.
   final bool compact;
 
-  /// Renders only the roster chips, with no text field. Used by the compact
-  /// header picker (#4).
-  final bool chipsOnly;
-  final TextInputAction textInputAction;
   final FormFieldValidator<String>? validator;
 
   /// Fires for every value change: typing, a chip tap, or a committed name.
@@ -134,11 +126,6 @@ class _PersonPickerState extends State<PersonPicker> {
               if (name.toLowerCase().contains(query)) name,
           ];
 
-    if (widget.chipsOnly) {
-      if (roster.isEmpty) return const SizedBox.shrink();
-      return _chipWrap(roster);
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -151,7 +138,6 @@ class _PersonPickerState extends State<PersonPicker> {
           controller: _controller,
           enabled: widget.enabled,
           autofocus: widget.autofocus,
-          textInputAction: widget.textInputAction,
           onFieldSubmitted: (value) {
             _commit(value);
             widget.onSubmitted?.call(value.trim());
@@ -164,7 +150,6 @@ class _PersonPickerState extends State<PersonPicker> {
           decoration: InputDecoration(
             labelText: widget.label,
             hintText: widget.hint,
-            helperText: widget.helperText,
             errorText: widget.errorText,
             prefixIcon: const Icon(Icons.person_outline, size: 18),
             suffixIcon: IconButton(

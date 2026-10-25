@@ -21,7 +21,6 @@ Future<PickerHarness> pumpPicker(
   ValueChanged<String>? onSelected,
   ValueChanged<String>? onSubmitted,
   bool compact = false,
-  bool chipsOnly = false,
   bool autofocus = false,
   String? errorText,
   List<String> roster = const ['Priya', 'Sam'],
@@ -44,7 +43,6 @@ Future<PickerHarness> pumpPicker(
             child: PersonPicker(
               controller: controller,
               compact: compact,
-              chipsOnly: chipsOnly,
               autofocus: autofocus,
               errorText: errorText,
               onChanged: onChanged,
@@ -143,26 +141,6 @@ void main() {
     expect(harness.state.supportPeople, ['Priya', 'Sam']);
     expect(harness.api.updateCalls, 0);
     expect(selected, ['priya']);
-  });
-
-  testWidgets('chips-only mode omits the text field and selects on tap', (
-    tester,
-  ) async {
-    final selected = <String>[];
-    final harness = await pumpPicker(
-      tester,
-      chipsOnly: true,
-      onSelected: selected.add,
-    );
-
-    expect(find.byType(TextField), findsNothing);
-    expect(find.widgetWithText(ChoiceChip, 'Priya'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Sam'));
-    await tester.pump();
-
-    expect(harness.controller.text, 'Sam');
-    expect(selected, ['Sam']);
   });
 
   testWidgets('shows an external error and supports compact chips', (
