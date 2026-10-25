@@ -244,6 +244,11 @@ class AppState extends ChangeNotifier {
   String? preferencesError;
   AboutInfo? about;
 
+  /// Roster edits made while the real preferences were unavailable, keyed
+  /// case-insensitively. A null value means remove. The last edit for a name
+  /// wins, so an add followed by a remove never survives a late load.
+  final Map<String, String?> _pendingRoster = {};
+
   /// The signed-in user's entries for today, newest first.
   List<WorkEntry> entries = const [];
   bool entriesLoading = false;
@@ -390,20 +395,50 @@ class AppState extends ChangeNotifier {
     preferencesLoading = true;
     preferencesError = null;
     _notify();
+    var replayPendingRoster = false;
     try {
       final snapshot = await api.getSettings();
       about = snapshot.about;
-      settings = snapshot.settings.copyWith(
+      final loaded = snapshot.settings.copyWith(
         version: snapshot.about.version,
         schemaVersion: snapshot.about.schemaVersion,
         license: snapshot.about.license,
       );
+      if (_pendingRoster.isEmpty) {
+        settings = loaded;
+      } else {
+        // Roster edits queued during the gate win over the server's copy, but
+        // every other preference still comes from the server unchanged.
+        settings = loaded.copyWith(
+          supportPeople: List<String>.unmodifiable(
+            _applyPendingRoster(loaded.supportPeople),
+          ),
+        );
+        replayPendingRoster = true;
+      }
     } catch (error) {
       preferencesError = error.toString();
     } finally {
       preferencesLoading = false;
       _notify();
     }
+    // Replay after the loading gate opens so the write carries the real
+    // preferences instead of the defaults.
+    if (replayPendingRoster) await _persistSupportPeople();
+  }
+
+  /// Applies queued roster edits on top of the server's roster.
+  List<String> _applyPendingRoster(List<String> base) {
+    final people = [...base];
+    _pendingRoster.forEach((key, name) {
+      final index = people.indexWhere((person) => person.toLowerCase() == key);
+      if (name == null) {
+        if (index != -1) people.removeAt(index);
+      } else if (index == -1) {
+        people.add(name);
+      }
+    });
+    return people;
   }
 
   /// Loads today's work entries from the service. Failures stay local to the
@@ -2253,6 +2288,7 @@ class AppState extends ChangeNotifier {
   Future<void> addSupportPerson(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty || _rosterContains(trimmed)) return;
+    _pendingRoster[trimmed.toLowerCase()] = trimmed;
     await _saveSupportPeople([...settings.supportPeople, trimmed]);
   }
 
@@ -2266,6 +2302,7 @@ class AppState extends ChangeNotifier {
         if (person.toLowerCase() != key) person,
     ];
     if (remaining.length == settings.supportPeople.length) return;
+    _pendingRoster[key] = null;
     await _saveSupportPeople(remaining);
   }
 
@@ -2279,11 +2316,19 @@ class AppState extends ChangeNotifier {
       supportPeople: List<String>.unmodifiable(people),
     );
     _notify();
+    await _persistSupportPeople();
+  }
 
+  /// Writes the current settings when the real preferences are available.
+  /// Queued roster edits survive a failed write and are replayed by the next
+  /// successful load or write.
+  Future<void> _persistSupportPeople() async {
     final api = settingsApi;
     // A write before the real preferences arrive would send defaults over
     // every stored preference, including the roster we are editing.
     if (api == null || preferencesLoading || preferencesError != null) return;
+
+    final submitted = Map<String, String?>.of(_pendingRoster);
     try {
       final saved = await api.updateSettings(settings);
       settings = saved.copyWith(
@@ -2291,10 +2336,17 @@ class AppState extends ChangeNotifier {
         schemaVersion: about?.schemaVersion,
         license: about?.license,
       );
+      // Replayed edits are now stored. An edit made while the write was in
+      // flight keeps its own entry and retries later.
+      for (final entry in submitted.entries) {
+        if (_pendingRoster[entry.key] == entry.value) {
+          _pendingRoster.remove(entry.key);
+        }
+      }
       _notify();
     } catch (_) {
-      // Keep the optimistic roster. A failed settings write must not surface as
-      // a capture error or poison the whole preferences screen.
+      // Keep the optimistic roster and pending edits. A failed settings write
+      // must not surface as a capture error or poison the preferences screen.
     }
   }
 
