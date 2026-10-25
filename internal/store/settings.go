@@ -38,12 +38,17 @@ func (s *Store) SaveSettings(settings domain.Settings) error {
 // seed runs exactly once even under concurrent loads. The internal seeded
 // marker means a deliberately emptied roster is never re-seeded.
 func (s *Store) EnsureSupportPeople(userID string) (domain.Settings, error) {
-	settings := domain.DefaultSettings(userID)
+	// Decode into a zero value, not the defaults: omitempty fields are absent
+	// from a record where the user deliberately cleared them, and decoding
+	// over the defaults would resurrect those values on the write-back.
+	var settings domain.Settings
 
 	err := platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
 		bucket := userBucket(userID, settingsBucket)
 		err := readTxObject(tx, bucket, settingsKey, &settings)
-		if err != nil && !errors.Is(err, ErrNotFound) {
+		if errors.Is(err, ErrNotFound) {
+			settings = domain.DefaultSettings(userID)
+		} else if err != nil {
 			return err
 		}
 		if settings.SupportPeopleSeeded {

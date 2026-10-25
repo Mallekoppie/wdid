@@ -80,6 +80,61 @@ func TestEnsureSupportPeopleSeedsOnceFromSupportEntries(t *testing.T) {
 	}
 }
 
+func TestEnsureSupportPeoplePreservesDeliberatelyClearedSettings(t *testing.T) {
+	database := newStore(t)
+	user := newUser("cleared-settings@example.com")
+	if err := database.CreateUser(user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Every omitempty field is absent once cleared, so decoding over the
+	// defaults would silently resurrect it before the record is written back.
+	settings := domain.DefaultSettings(user.ID)
+	settings.AIBaseURL = ""
+	settings.AIModel = ""
+	settings.BackupDirectory = ""
+	settings.JournalStartDate = ""
+	settings.Theme = domain.ThemeDark
+	settings.DailyTargetMinutes = 123
+	if err := database.SaveSettings(settings); err != nil {
+		t.Fatalf("save cleared settings: %v", err)
+	}
+
+	support := seededCategory(t, database, user.ID, domain.CategoryRoleSupport)
+	saveSupportSeedEntry(t, database, user.ID, support, "00000000-0000-7000-8000-000000000001", "Priya")
+
+	got, err := database.EnsureSupportPeople(user.ID)
+	if err != nil {
+		t.Fatalf("ensure support people: %v", err)
+	}
+	if got.AIBaseURL != "" || got.AIModel != "" || got.BackupDirectory != "" || got.JournalStartDate != "" {
+		t.Fatalf("cleared settings were resurrected: %+v", got)
+	}
+	if got.Theme != domain.ThemeDark || got.DailyTargetMinutes != 123 {
+		t.Fatalf("stored non-empty settings changed: %+v", got)
+	}
+	if !got.SupportPeopleSeeded {
+		t.Fatal("seeded marker = false, want true")
+	}
+	if len(got.SupportPeople) != 1 || got.SupportPeople[0] != "Priya" {
+		t.Fatalf("support people = %#v, want [Priya]", got.SupportPeople)
+	}
+
+	stored, err := database.Settings(user.ID)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if stored.AIBaseURL != "" || stored.AIModel != "" || stored.BackupDirectory != "" || stored.JournalStartDate != "" {
+		t.Fatalf("cleared settings were written back: %+v", stored)
+	}
+	if !stored.SupportPeopleSeeded {
+		t.Fatal("stored seeded marker = false, want true")
+	}
+	if len(stored.SupportPeople) != 1 || stored.SupportPeople[0] != "Priya" {
+		t.Fatalf("stored support people = %#v, want [Priya]", stored.SupportPeople)
+	}
+}
+
 func TestEnsureSupportPeopleDoesNotReseedADeliberatelyEmptyRoster(t *testing.T) {
 	database := newStore(t)
 	user := newUser("empty-roster@example.com")
