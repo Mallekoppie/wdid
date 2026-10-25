@@ -8,6 +8,7 @@ import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/time_utils.dart';
 import 'panel.dart';
+import 'person_picker.dart';
 import 'searchable_dropdown.dart';
 import 'timer_actions.dart';
 
@@ -59,6 +60,7 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
 
   Future<void> _start() async {
     final state = AppStateScope.read(context);
+    final person = _person.text.trim();
     setState(() {
       _busy = true;
       _error = null;
@@ -68,8 +70,9 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
         categoryId: _categoryId,
         subcategoryId: _subcategoryId,
         description: _description.text,
-        person: _person.text,
+        person: person,
       );
+      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
       if (!mounted) return;
       setState(() => _busy = false);
       _description.clear();
@@ -335,16 +338,11 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
             const SizedBox(height: AppSpacing.sm),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
-              child: TextField(
+              child: PersonPicker(
                 controller: _person,
                 enabled: !_busy,
-                textInputAction: TextInputAction.done,
+                hint: 'Who are you supporting?',
                 onSubmitted: (_) => unawaited(_start()),
-                decoration: const InputDecoration(
-                  labelText: 'Person',
-                  hintText: 'Who are you supporting?',
-                  prefixIcon: Icon(Icons.person_outline, size: 18),
-                ),
               ),
             ),
           ],
