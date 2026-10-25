@@ -78,6 +78,7 @@ class AppSettings {
     this.version = '0.1.0',
     this.schemaVersion = 1,
     this.license = 'MIT',
+    this.supportPeople = const [],
   });
 
   final String timezone;
@@ -109,6 +110,10 @@ class AppSettings {
   final int schemaVersion;
   final String license;
 
+  /// The account's roster of common support-person names. A person is a name,
+  /// not an entity: removing one never rewrites historical entries.
+  final List<String> supportPeople;
+
   AppSettings copyWith({
     String? timezone,
     int? weekStart,
@@ -132,6 +137,7 @@ class AppSettings {
     String? version,
     int? schemaVersion,
     String? license,
+    List<String>? supportPeople,
   }) {
     return AppSettings(
       timezone: timezone ?? this.timezone,
@@ -157,6 +163,7 @@ class AppSettings {
       version: version ?? this.version,
       schemaVersion: schemaVersion ?? this.schemaVersion,
       license: license ?? this.license,
+      supportPeople: supportPeople ?? this.supportPeople,
     );
   }
 
@@ -184,6 +191,11 @@ class AppSettings {
     version: json['version']?.toString() ?? '0.1.0',
     schemaVersion: (json['schemaVersion'] as num?)?.round() ?? 1,
     license: json['license']?.toString() ?? 'MIT',
+    supportPeople:
+        (json['supportPeople'] as List?)
+            ?.map((name) => name.toString())
+            .toList() ??
+        const [],
   );
 
   Map<String, dynamic> toJson() => {
@@ -208,5 +220,6 @@ class AppSettings {
     'version': version,
     'schemaVersion': schemaVersion,
     'license': license,
+    'supportPeople': supportPeople,
   };
 }
