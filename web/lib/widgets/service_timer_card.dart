@@ -116,9 +116,8 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
       if (!mounted) return;
       setState(() => _busy = false);
       if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          stoppedTimerSnackBar(context, state, result),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(stoppedTimerSnackBar(context, state, result));
       }
     } catch (error) {
       if (!mounted) return;

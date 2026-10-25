@@ -30,9 +30,8 @@ class _SupportNowStripState extends State<SupportNowStrip> {
   }
 
   void _show(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _startWith(String raw) async {

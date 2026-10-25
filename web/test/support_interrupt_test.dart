@@ -6,11 +6,9 @@ import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/taxonomy.dart';
-import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/screens/today_screen.dart';
 import 'package:wdid_web/state/app_state.dart';
 import 'package:wdid_web/state/app_state_scope.dart';
-import 'package:wdid_web/utils/time_utils.dart';
 import 'package:wdid_web/widgets/app_shell.dart';
 import 'package:wdid_web/widgets/support_now_strip.dart';
 
@@ -43,8 +41,7 @@ Subcategory subcategory(String id, String categoryId, String name) =>
     );
 
 /// A service-backed state with an initiative and support taxonomy.
-({AppState state, FakeTimerApi timerApi, FakeEntryApi entryApi})
-buildState({
+({AppState state, FakeTimerApi timerApi, FakeEntryApi entryApi}) buildState({
   FakeTimerApi? timerApi,
   FakeEntryApi? entryApi,
   List<Category>? categories,
@@ -129,9 +126,8 @@ Future<AppState> pumpApp(
               subcategory('mode-s', 'cat-support', 'Unblock'),
             ],
       ),
-      settingsApiBuilder: (_) => FakeSettingsApi(
-        settings: AppSettings(supportPeople: roster),
-      ),
+      settingsApiBuilder: (_) =>
+          FakeSettingsApi(settings: AppSettings(supportPeople: roster)),
       entryApiBuilder: (_) => entryApi ?? FakeEntryApi(),
       timerApiBuilder: (_) => timerApi,
     ),
@@ -216,10 +212,7 @@ void main() {
       reason: 'without history the first support category is the fallback',
     );
 
-    await harness.state.startTimer(
-      categoryId: 'cat-support-b',
-      person: 'Sam',
-    );
+    await harness.state.startTimer(categoryId: 'cat-support-b', person: 'Sam');
     await harness.state.stopTimer();
 
     expect(harness.state.defaultSupportCategory!.id, 'cat-support-b');
@@ -489,8 +482,10 @@ void main() {
     expect(find.textContaining('Mentoring · Pairing'), findsOneWidget);
     expect(find.text('No mode'), findsNothing);
     expect(find.text('Set mode'), findsNothing);
-    expect(state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
-        isTrue);
+    expect(
+      state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
+      isTrue,
+    );
   });
 
   testWidgets('header Start opens the person picker for a support default', (

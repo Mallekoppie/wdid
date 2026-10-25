@@ -84,7 +84,9 @@ class _AppShellState extends State<AppShell> {
           if (category == null) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Add a support category before starting support.'),
+                content: Text(
+                  'Add a support category before starting support.',
+                ),
               ),
             );
             return;
@@ -107,9 +109,8 @@ class _AppShellState extends State<AppShell> {
       } else {
         final result = await stopTimerWithDecision(context, state: state);
         if (!mounted || result == null) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          stoppedTimerSnackBar(context, state, result),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(stoppedTimerSnackBar(context, state, result));
       }
     } catch (error) {
       if (!mounted) return;

@@ -29,9 +29,8 @@ class _TimerPillState extends State<TimerPill> {
   Category? _pickingCategory;
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _openPicker(Category category) {
@@ -94,9 +93,8 @@ class _TimerPillState extends State<TimerPill> {
       if (!mounted) return;
       setState(() => _stopping = false);
       if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          stoppedTimerSnackBar(context, state, result),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(stoppedTimerSnackBar(context, state, result));
       }
     } catch (error) {
       if (!mounted) return;
@@ -252,11 +250,7 @@ class _TimerPillState extends State<TimerPill> {
     );
   }
 
-  Widget _runningPill(
-    BuildContext context,
-    AppState state,
-    ActiveTimer timer,
-  ) {
+  Widget _runningPill(BuildContext context, AppState state, ActiveTimer timer) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final elapsed = timer.elapsedAt(DateTime.now());

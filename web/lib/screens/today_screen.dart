@@ -36,14 +36,13 @@ class _TodayScreenState extends State<TodayScreen> {
         entry.copyWith(categoryId: mode.categoryId, subcategoryId: mode.id),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Mode set · ${mode.name}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Mode set · ${mode.name}')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not set the mode: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not set the mode: $error')));
     }
   }
 
