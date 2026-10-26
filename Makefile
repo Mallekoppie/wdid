@@ -137,6 +137,11 @@ serveweb: web-deps ## Serve the Flutter web app with hot reload on 127.0.0.1:517
 		--web-hostname 127.0.0.1 --web-port 5173 \
 		--dart-define=WDID_API_BASE_URL=$(API_BASE_URL)
 
+prototype-ui: web-deps ## Run the throwaway UI prototype on 127.0.0.1:5174 (dev-only)
+	cd $(WEB_DIR) && $(FLUTTER) run -d web-server \
+		--web-hostname 127.0.0.1 --web-port 5174 \
+		-t lib/prototype/prototype_ui_review.dart
+
 lint: ## Run go vet and flutter analyze
 	$(GO) vet ./...
 	cd $(WEB_DIR) && $(FLUTTER) analyze
