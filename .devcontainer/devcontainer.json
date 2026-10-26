@@ -82,9 +82,12 @@
 
     // The server serves native gRPC, gRPC-Web, and the Flutter web app on one
     // application origin. Keep this in step with the Makefile / config default.
-    "forwardPorts": [8080],
+    // 5173 is `make serveweb` (hot reload) and 9201 is `make run-demo`.
+    "forwardPorts": [8080, 5173, 9201],
     "portsAttributes": {
-        "8080": { "label": "wdid app origin (gRPC, gRPC-Web, web UI)" }
+        "8080": { "label": "wdid app origin (gRPC, gRPC-Web, web UI)" },
+        "5173": { "label": "Flutter web hot reload (make serveweb)" },
+        "9201": { "label": "Seeded demo (make run-demo)" }
     },
 
     "customizations": {

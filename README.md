@@ -70,6 +70,13 @@ Override any default from the environment, for example
 `make run WDID_HTTP_ADDR=0.0.0.0:8080 WDID_DB_PATH=/tmp/wdid.db`. The defaults in
 the Makefile are for local development only.
 
+`make run` serves the embedded web UI at **http://127.0.0.1:8080** (the
+devcontainer's forwarded app origin). The release build lives in
+`cmd/wdid/dist`, which is gitignored and removed by `make clean`; `make run`
+builds it on first use, and `make buildweb` rebuilds it explicitly. Without a
+built UI the server answers 404 at `/`, so open the URL above rather than a
+different port.
+
 ### Environment
 
 | Variable | Default | Purpose |
@@ -215,7 +222,8 @@ make check       # lint, proto-check, and both test suites
 ```
 
 `make buildweb` builds the Flutter app into `cmd/wdid/dist`; `make serveweb`
-runs it with hot reload on `127.0.0.1:5173`.
+runs it with hot reload on `127.0.0.1:5173` and points it at the API on
+`127.0.0.1:8080` (the same origin `make run` uses).
 
 ## goslow integration notes
 
