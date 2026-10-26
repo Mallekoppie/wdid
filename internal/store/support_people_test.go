@@ -91,8 +91,10 @@ func TestEnsureSupportPeoplePreservesDeliberatelyClearedSettings(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	// Every omitempty field is absent once cleared, so decoding over the
+	// Every non-AI omitempty field is absent once cleared, so decoding over the
 	// defaults would silently resurrect it before the record is written back.
+	// Empty AI endpoint values are deliberately different: they migrate to the
+	// Anthropic preset so older accounts generate without a manual reselection.
 	settings := domain.DefaultSettings(user.ID)
 	settings.AIBaseURL = ""
 	settings.AIModel = ""
@@ -111,7 +113,10 @@ func TestEnsureSupportPeoplePreservesDeliberatelyClearedSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure support people: %v", err)
 	}
-	if got.AIBaseURL != "" || got.AIModel != "" || got.BackupDirectory != "" || got.JournalStartDate != "" {
+	if got.AIBaseURL != domain.AIProviderAnthropicBaseURL || got.AIModel != domain.AIProviderAnthropicModel {
+		t.Fatalf("empty AI values were not normalised: %+v", got)
+	}
+	if got.BackupDirectory != "" || got.JournalStartDate != "" {
 		t.Fatalf("cleared settings were resurrected: %+v", got)
 	}
 	if got.Theme != domain.ThemeDark || got.DailyTargetMinutes != 123 {
@@ -128,7 +133,10 @@ func TestEnsureSupportPeoplePreservesDeliberatelyClearedSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read settings: %v", err)
 	}
-	if stored.AIBaseURL != "" || stored.AIModel != "" || stored.BackupDirectory != "" || stored.JournalStartDate != "" {
+	if stored.AIBaseURL != domain.AIProviderAnthropicBaseURL || stored.AIModel != domain.AIProviderAnthropicModel {
+		t.Fatalf("stored AI values were not normalised: %+v", stored)
+	}
+	if stored.BackupDirectory != "" || stored.JournalStartDate != "" {
 		t.Fatalf("cleared settings were written back: %+v", stored)
 	}
 	if !stored.SupportPeopleSeeded {

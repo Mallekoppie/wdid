@@ -27,11 +27,10 @@ const _weekdayNames = [
 ];
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, this.auth});
+  const SettingsScreen({super.key, required this.auth});
 
-  /// The sign-in state, used to describe the deployment in About. Optional so
-  /// screens can be embedded without an auth gate in tests.
-  final AuthState? auth;
+  /// The sign-in state, used to describe the deployment in About.
+  final AuthState auth;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -72,12 +71,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    widget.auth?.addListener(_refreshAuthDescription);
+    widget.auth.addListener(_refreshAuthDescription);
     // A session injected without going through the login screen still needs
     // the auth config so About can name the deployment mode.
-    if (widget.auth != null && widget.auth!.config == null) {
+    if (widget.auth.config == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(widget.auth!.loadConfig());
+        if (mounted) unawaited(widget.auth.loadConfig());
       });
     }
   }
@@ -87,7 +86,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String get _authDescription {
-    final config = widget.auth?.config;
+    final config = widget.auth.config;
     if (config == null) return 'Loading…';
     if (config.isLocal) return 'Local single-user · optional password';
     if (config.oidcEnabled) {
@@ -180,7 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    widget.auth?.removeListener(_refreshAuthDescription);
+    widget.auth.removeListener(_refreshAuthDescription);
     _timezone.dispose();
     _dailyTarget.dispose();
     _longTimer.dispose();
@@ -291,63 +290,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _saveKey() async {
+  Future<void> _saveKey() {
     final state = AppStateScope.read(context);
     final apiKey = _apiKey.text.trim();
     if (apiKey.isEmpty) {
       setState(() => _keyError = 'Enter an API key first.');
-      return;
+      return Future.value();
     }
-    setState(() {
-      _savingKey = true;
-      _keyError = null;
-    });
-    try {
-      await state.setAiApiKey(apiKey);
-      if (!mounted) return;
-      _apiKey.clear();
-      setState(() => _savingKey = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('API key saved for this account')),
-      );
-    } on SettingsFailure catch (failure) {
-      if (!mounted) return;
-      setState(() {
-        _savingKey = false;
-        _keyError = failure.message;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _savingKey = false;
-        _keyError = '$error';
-      });
-    }
+    return _runKeyAction(
+      clearing: false,
+      success: 'API key saved for this account',
+      action: () => state.setAiApiKey(apiKey),
+    );
   }
 
-  Future<void> _clearKey() async {
+  Future<void> _clearKey() {
     final state = AppStateScope.read(context);
+    return _runKeyAction(
+      clearing: true,
+      success: 'API key cleared',
+      action: state.clearAiApiKey,
+    );
+  }
+
+  /// Runs one write-only key mutation behind the right busy flag, clears the
+  /// editor on success and reports failures in the key card.
+  Future<void> _runKeyAction({
+    required Future<void> Function() action,
+    required String success,
+    required bool clearing,
+  }) async {
+    void busy(bool value) {
+      if (clearing) {
+        _clearingKey = value;
+      } else {
+        _savingKey = value;
+      }
+    }
+
     setState(() {
-      _clearingKey = true;
+      busy(true);
       _keyError = null;
     });
     try {
-      await state.clearAiApiKey();
+      await action();
       if (!mounted) return;
       _apiKey.clear();
-      setState(() => _clearingKey = false);
+      setState(() => busy(false));
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('API key cleared')));
+          .showSnackBar(SnackBar(content: Text(success)));
     } on SettingsFailure catch (failure) {
       if (!mounted) return;
       setState(() {
-        _clearingKey = false;
+        busy(false);
         _keyError = failure.message;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _clearingKey = false;
+        busy(false);
         _keyError = '$error';
       });
     }

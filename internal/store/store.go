@@ -177,6 +177,28 @@ func (s *Store) LocalUser() (domain.User, error) {
 	return domain.User{}, ErrNotFound
 }
 
+// LegacyServerAccountCount returns the number of stored accounts without a
+// username. Local mode always creates a username, so a non-zero count means the
+// database was written by a server-mode deployment.
+func (s *Store) LegacyServerAccountCount() (int, error) {
+	users, err := readAllRaw(sysUsersBucket)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, raw := range users {
+		var user domain.User
+		if err := json.Unmarshal([]byte(raw), &user); err != nil {
+			return 0, fmt.Errorf("decode user: %w", err)
+		}
+		if strings.TrimSpace(user.Username) == "" {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // CountUsers returns the number of registered accounts.
 func (s *Store) CountUsers() (int, error) {
 	users, err := readAllRaw(sysUsersBucket)
@@ -461,7 +483,17 @@ func readTxObject(tx *bbolt.Tx, bucket, id string, out interface{}) error {
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("decode %s/%s: %w", bucket, id, err)
 	}
+	normalizeDecoded(out)
 	return nil
+}
+
+// normalizeDecoded applies on-read compatibility rules to decoded records.
+// Stored settings may predate the Anthropic provider, so every load, whichever
+// read path fetched it, exposes the current AI defaults.
+func normalizeDecoded(out interface{}) {
+	if settings, ok := out.(*domain.Settings); ok {
+		settings.MigrateLegacyAIDefaults()
+	}
 }
 
 // scanTxBucket visits every value in a bucket and stops at the first match.
@@ -512,6 +544,7 @@ func readObject(bucket, id string, out interface{}) error {
 	if err := json.Unmarshal([]byte(raw), out); err != nil {
 		return fmt.Errorf("decode %s/%s: %w", bucket, id, err)
 	}
+	normalizeDecoded(out)
 	return nil
 }
 

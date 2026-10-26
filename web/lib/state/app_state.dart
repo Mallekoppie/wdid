@@ -2303,34 +2303,28 @@ class AppState extends ChangeNotifier {
 
   /// Stores or replaces the account's provider key. The key is write-only;
   /// only the resulting has-key state comes back from the service.
-  Future<AppSettings> setAiApiKey(String apiKey) async {
-    final api = settingsApi;
-    if (api == null) {
-      throw const ServicePendingException(
-        'SettingsService',
-        'Saving an AI key needs the service contract.',
-      );
-    }
-    final saved = await api.setAiApiKey(apiKey);
-    settings = saved.copyWith(
-      version: about?.version,
-      schemaVersion: about?.schemaVersion,
-      license: about?.license,
-    );
-    _notify();
-    return settings;
-  }
+  Future<AppSettings> setAiApiKey(String apiKey) => _saveAiKey(
+    (api) => api.setAiApiKey(apiKey),
+    'Saving an AI key needs the service contract.',
+  );
 
   /// Removes the account's provider key, which disables AI generation.
-  Future<AppSettings> clearAiApiKey() async {
+  Future<AppSettings> clearAiApiKey() => _saveAiKey(
+    (api) => api.clearAiApiKey(),
+    'Clearing an AI key needs the service contract.',
+  );
+
+  /// Runs one write-only key mutation and folds the service's authoritative
+  /// has-key state back into the client settings.
+  Future<AppSettings> _saveAiKey(
+    Future<AppSettings> Function(SettingsApi api) action,
+    String missingServiceMessage,
+  ) async {
     final api = settingsApi;
     if (api == null) {
-      throw const ServicePendingException(
-        'SettingsService',
-        'Clearing an AI key needs the service contract.',
-      );
+      throw ServicePendingException('SettingsService', missingServiceMessage);
     }
-    final saved = await api.clearAiApiKey();
+    final saved = await action(api);
     settings = saved.copyWith(
       version: about?.version,
       schemaVersion: about?.schemaVersion,

@@ -153,7 +153,7 @@ func LoadStorage() Config {
 
 // NormalizedAuthMode is the configured mode with an empty value treated as the
 // local default. Development mode does not change the configured value, only
-// the behavior EffectiveAuthMode enforces.
+// the behavior ResolvedAuthMode enforces.
 func (c Config) NormalizedAuthMode() string {
 	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
 	if mode == "" {
@@ -162,10 +162,12 @@ func (c Config) NormalizedAuthMode() string {
 	return mode
 }
 
-// EffectiveAuthMode is the account model the service enforces. Development mode
-// keeps the pre-existing multi-user bootstrap and invite paths for testing, so
-// it runs as a server.
-func (c Config) EffectiveAuthMode() string {
+// ResolvedAuthMode is the account model the service enforces. Precedence:
+// development mode wins and resolves to server, because it keeps the
+// pre-existing multi-user bootstrap and invite paths for testing, seeding and
+// make run. Otherwise the normalized configured mode applies, and an unset
+// mode is local.
+func (c Config) ResolvedAuthMode() string {
 	if c.DevMode {
 		return AuthModeServer
 	}
@@ -174,7 +176,7 @@ func (c Config) EffectiveAuthMode() string {
 
 // LocalMode reports whether this deployment is the single-user local install.
 func (c Config) LocalMode() bool {
-	return c.EffectiveAuthMode() == AuthModeLocal
+	return c.ResolvedAuthMode() == AuthModeLocal
 }
 
 // EffectiveBackupDir is the configured backup directory, or the default
@@ -228,7 +230,7 @@ func (c Config) Validate() error {
 	default:
 		problems = append(problems, "WDID_AUTH_MODE must be local or server")
 	}
-	effectiveMode := c.EffectiveAuthMode()
+	effectiveMode := c.ResolvedAuthMode()
 	if effectiveMode == AuthModeServer && len(c.BootstrapSecret) < minBootstrapSecretLen {
 		problems = append(problems,
 			fmt.Sprintf("WDID_BOOTSTRAP_SECRET must be at least %d characters", minBootstrapSecretLen))

@@ -174,6 +174,23 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	return connect.NewResponse(&wdidv1.UpdateSettingsResponse{Settings: toProtoSettings(settings)}), nil
 }
 
+// saveAIApiKey applies one write-only key change: load, replace the key, stamp
+// the update and save. It is shared by set and clear so the two paths cannot
+// drift.
+func (s *SettingsService) saveAIApiKey(userID, apiKey string) (domain.Settings, error) {
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	settings.AIAPIKey = apiKey
+	settings.UpdatedAt = time.Now().UTC()
+	settings.Normalize()
+	if err := s.store.SaveSettings(settings); err != nil {
+		return domain.Settings{}, err
+	}
+	return settings, nil
+}
+
 // SetAIApiKey stores or replaces the caller's own provider key. The key is
 // write-only: neither this response nor GetSettings ever carries it back.
 func (s *SettingsService) SetAIApiKey(ctx context.Context, request *connect.Request[wdidv1.SetAIApiKeyRequest]) (*connect.Response[wdidv1.SetAIApiKeyResponse], error) {
@@ -187,14 +204,8 @@ func (s *SettingsService) SetAIApiKey(ctx context.Context, request *connect.Requ
 		return nil, toConnectError(domain.ValidationError{Field: "apiKey", Message: "is required"})
 	}
 
-	settings, err := s.settingsForUser(userID)
+	settings, err := s.saveAIApiKey(userID, apiKey)
 	if err != nil {
-		return nil, toConnectError(err)
-	}
-	settings.AIAPIKey = apiKey
-	settings.UpdatedAt = time.Now().UTC()
-	settings.Normalize()
-	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
 
@@ -209,14 +220,8 @@ func (s *SettingsService) ClearAIApiKey(ctx context.Context, _ *connect.Request[
 		return nil, toConnectError(err)
 	}
 
-	settings, err := s.settingsForUser(userID)
+	settings, err := s.saveAIApiKey(userID, "")
 	if err != nil {
-		return nil, toConnectError(err)
-	}
-	settings.AIAPIKey = ""
-	settings.UpdatedAt = time.Now().UTC()
-	settings.Normalize()
-	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
 

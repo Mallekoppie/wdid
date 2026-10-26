@@ -58,3 +58,66 @@ func TestNormalizeTrimsTheAIKey(t *testing.T) {
 		t.Fatalf("ai key = %q, want the trimmed key", settings.AIAPIKey)
 	}
 }
+
+func TestMigrateLegacyAIDefaultsReplacesTheRetiredOpenAIPreset(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.AIBaseURL = "https://api.openai.com/v1"
+	settings.AIModel = "gpt-4.1-mini"
+
+	if !settings.MigrateLegacyAIDefaults() {
+		t.Fatal("expected the retired OpenAI defaults to migrate")
+	}
+	if settings.AIBaseURL != domain.AIProviderAnthropicBaseURL {
+		t.Fatalf("ai base url = %q, want the Anthropic preset", settings.AIBaseURL)
+	}
+	if settings.AIModel != domain.AIProviderAnthropicModel {
+		t.Fatalf("ai model = %q, want the Anthropic preset model", settings.AIModel)
+	}
+}
+
+func TestMigrateLegacyAIDefaultsFillsEmptyValues(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.AIBaseURL = ""
+	settings.AIModel = "  "
+
+	settings.MigrateLegacyAIDefaults()
+
+	if settings.AIBaseURL != domain.AIProviderAnthropicBaseURL {
+		t.Fatalf("ai base url = %q, want the Anthropic preset", settings.AIBaseURL)
+	}
+	if settings.AIModel != domain.AIProviderAnthropicModel {
+		t.Fatalf("ai model = %q, want the Anthropic preset model", settings.AIModel)
+	}
+}
+
+func TestMigrateLegacyAIDefaultsPreservesCustomValues(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.AIBaseURL = "https://proxy.example/anthropic"
+	settings.AIModel = "custom-model"
+
+	if settings.MigrateLegacyAIDefaults() {
+		t.Fatal("custom values must not be reported as migrated")
+	}
+	if settings.AIBaseURL != "https://proxy.example/anthropic" {
+		t.Fatalf("ai base url = %q, want the custom value", settings.AIBaseURL)
+	}
+	if settings.AIModel != "custom-model" {
+		t.Fatalf("ai model = %q, want the custom value", settings.AIModel)
+	}
+}
+
+func TestMigrateLegacyAIDefaultsLeavesTheAPIKeyAlone(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.AIBaseURL = "https://api.openai.com/v1"
+	settings.AIModel = "gpt-4.1-mini"
+	settings.AIAPIKey = "sk-ant-stored"
+
+	settings.MigrateLegacyAIDefaults()
+
+	if !settings.HasAIKey() {
+		t.Fatal("the stored API key must survive the migration")
+	}
+	if settings.AIAPIKey != "sk-ant-stored" {
+		t.Fatalf("ai key = %q, want the stored key", settings.AIAPIKey)
+	}
+}

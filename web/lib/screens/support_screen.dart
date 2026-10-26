@@ -122,14 +122,12 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
       context,
       initialRange: _periodRange(_period, state, _customRange),
       today: state.today,
-      presets: [
-        for (final period in _SupportPeriod.values)
-          if (period != _SupportPeriod.custom)
-            DateRangePreset(
-              label: period.label,
-              range: _periodRange(period, state, null),
-            ),
-      ],
+      presets: dateRangePresets<_SupportPeriod>(
+        periods: _SupportPeriod.values,
+        custom: _SupportPeriod.custom,
+        labelOf: (period) => period.label,
+        rangeOf: (period) => _periodRange(period, state, null),
+      ),
     );
     if (picked == null || !mounted) return;
     setState(() {

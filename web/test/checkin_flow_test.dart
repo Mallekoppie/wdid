@@ -621,6 +621,30 @@ void main() {
     expect(summaryApi.generateCalls, 0);
   });
 
+  testWidgets('an existing summary still explains a missing AI key', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: FakeSummaryApi(report: report),
+      route: '/checkins/checkin-manager',
+      hasAIKey: false,
+    );
+
+    // With no key the Regenerate action disappears, but the explanation must
+    // still be visible next to the existing summary.
+    expect(find.widgetWithText(FilledButton, 'Regenerate'), findsNothing);
+    expect(
+      find.textContaining('Add your AI provider key in Settings'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Existing'), findsWidgets);
+  });
+
   testWidgets('streams generation into the summary and shows the model', (
     tester,
   ) async {

@@ -35,6 +35,10 @@ var (
 	// ErrLocalAccountExists is returned when local mode already has its single
 	// account. Local mode can never create a second one.
 	ErrLocalAccountExists = errors.New("local mode has exactly one account")
+	// ErrLegacyServerDatabase is returned when a local-mode service opens a
+	// database that still holds server-mode accounts. The operator must choose
+	// server mode explicitly; the service never switches modes by itself.
+	ErrLegacyServerDatabase = errors.New("database contains accounts from a server-mode deployment")
 	// ErrUnauthenticated is returned when a token cannot be verified.
 	ErrUnauthenticated = errors.New("unauthenticated")
 )
@@ -305,6 +309,65 @@ func (s *Service) LoginLocal(username, password string) (domain.User, string, er
 	}
 
 	return user, token, nil
+}
+
+// LocalAccount describes the single local-mode account's login hints.
+type LocalAccount struct {
+	Username         string
+	PasswordRequired bool
+}
+
+// LocalAccount returns the local account's username and whether it has a
+// password. found is false for a fresh installation that still needs its
+// first-run setup. It is the only place the login screen's local hints are
+// resolved, so the RPC layer never reaches into the store itself.
+func (s *Service) LocalAccount() (LocalAccount, bool, error) {
+	user, err := s.store.LocalUser()
+	if errors.Is(err, store.ErrNotFound) {
+		return LocalAccount{}, false, nil
+	}
+	if err != nil {
+		return LocalAccount{}, false, err
+	}
+
+	account := LocalAccount{Username: user.Username}
+	_, err = s.store.PasswordHash(user.ID)
+	switch {
+	case err == nil:
+		account.PasswordRequired = true
+	case errors.Is(err, store.ErrNotFound):
+		// Passwordless local account.
+	default:
+		return LocalAccount{}, false, err
+	}
+
+	return account, true, nil
+}
+
+// EnsureLocalModeCompatible fails fast when a local-mode service would attach
+// to accounts created by a server-mode deployment. Local mode has exactly one
+// username account, so silently choosing an arbitrary legacy email account
+// would lose the operator's data. It never switches modes itself; the error
+// tells the operator how to opt into server mode. Development mode resolves to
+// server mode, so make run, seeding and tests are not blocked.
+func EnsureLocalModeCompatible(database *store.Store, cfg config.Config) error {
+	if !cfg.LocalMode() {
+		return nil
+	}
+
+	count, err := database.LegacyServerAccountCount()
+	if err != nil {
+		return fmt.Errorf("inspect existing accounts: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"%w: %d account(s) have no username identity; set WDID_AUTH_MODE=server to keep using this database",
+		ErrLegacyServerDatabase,
+		count,
+	)
 }
 
 func (s *Service) issueToken(user domain.User) (string, error) {
