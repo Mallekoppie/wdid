@@ -54,11 +54,12 @@ go run ./cmd/wdid
 The first account uses the bootstrap secret, later accounts need single-use
 invite codes, and Zitadel OIDC is optional.
 
-Or use the Makefile, which supplies local-only development defaults. `make run`
-sets `WDID_DEV_MODE=true`, which forces server auth behaviour:
+Or use the Makefile, which supplies local-only development defaults:
 
 ```bash
-make run        # go run ./cmd/wdid with development defaults (server behaviour)
+make run        # local mode: username + optional password, no bootstrap
+make run-dev    # server/development: bootstrap admin, invites, reflection
+make run-demo   # seeded demo database on 127.0.0.1:9201
 make build      # compile the service to bin/wdid
 make test       # go test ./... and flutter test
 make lint       # go vet ./... and flutter analyze
@@ -66,16 +67,24 @@ make buildweb   # Flutter release build into cmd/wdid/dist
 make help       # list every target
 ```
 
+`make run` is the local-first flow: the first visit asks for a **username** and
+an **optional** password (a display name is not a separate field; it defaults to
+the username). `make run-dev` sets `WDID_DEV_MODE=true`, which enables Connect
+reflection and forces the server auth behaviour used by `make smoke-web`, the
+bootstrap/invite paths, and multi-user development. The seeded demo keeps its
+own database and port.
+
 Override any default from the environment, for example
 `make run WDID_HTTP_ADDR=0.0.0.0:8080 WDID_DB_PATH=/tmp/wdid.db`. The defaults in
 the Makefile are for local development only.
 
-`make run` serves the embedded web UI at **http://127.0.0.1:8080** (the
-devcontainer's forwarded app origin). The release build lives in
+`make run` serves the embedded web UI at **http://127.0.0.1:9300** (the port the
+devcontainer forwards for it). The release build lives in
 `cmd/wdid/dist`, which is gitignored and removed by `make clean`; `make run`
 builds it on first use, and `make buildweb` rebuilds it explicitly. Without a
 built UI the server answers 404 at `/`, so open the URL above rather than a
-different port.
+different port. (`go run ./cmd/wdid` without the Makefile uses the config
+default, `127.0.0.1:8080`.)
 
 ### Environment
 
@@ -223,7 +232,7 @@ make check       # lint, proto-check, and both test suites
 
 `make buildweb` builds the Flutter app into `cmd/wdid/dist`; `make serveweb`
 runs it with hot reload on `127.0.0.1:5173` and points it at the API on
-`127.0.0.1:8080` (the same origin `make run` uses).
+`127.0.0.1:9300` (the same origin `make run` uses).
 
 ## goslow integration notes
 
