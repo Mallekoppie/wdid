@@ -74,6 +74,31 @@ type CheckInTotals struct {
 	SupportInteractions int `json:"supportInteractions"`
 }
 
+// EffectiveSupportMinutes returns the support minutes to display. Check-ins
+// written before the authoritative totals existed store only SupportByPerson,
+// so a zero stored total falls back to the row sum, which is exact for
+// single-person legacy data. New snapshots keep their authoritative value.
+func (t CheckInTotals) EffectiveSupportMinutes() int {
+	if t.SupportMinutes == 0 && len(t.SupportByPerson) > 0 {
+		total := 0
+		for _, minutes := range t.SupportByPerson {
+			total += minutes
+		}
+		return total
+	}
+	return t.SupportMinutes
+}
+
+// EffectiveSupportInteractions returns the support interaction count to
+// display. Legacy check-ins have no stored count, so a zero falls back to the
+// number of distinct people rows, which is what the pre-upgrade UI showed.
+func (t CheckInTotals) EffectiveSupportInteractions() int {
+	if t.SupportInteractions == 0 && len(t.SupportByPerson) > 0 {
+		return len(t.SupportByPerson)
+	}
+	return t.SupportInteractions
+}
+
 // CheckInTotalsFromReport snapshots the authoritative period report into the
 // totals a check-in stores at creation. Rows are keyed by category and
 // subcategory ID; support people keep their display spelling.

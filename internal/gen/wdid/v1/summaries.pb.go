@@ -555,12 +555,12 @@ type PeriodReport struct {
 	Weeks             []*WeekRhythm              `protobuf:"bytes,9,rep,name=weeks,proto3" json:"weeks,omitempty"`
 	Notes             []*PeriodNote              `protobuf:"bytes,10,rep,name=notes,proto3" json:"notes,omitempty"`
 	MilestoneProgress []*MilestoneProgress       `protobuf:"bytes,11,rep,name=milestone_progress,json=milestoneProgress,proto3" json:"milestone_progress,omitempty"`
-	// Authoritative support totals: the minutes of every support-role entry and
+	// Authoritative support totals: the duration of every support-role entry and
 	// the number of support entries. Each named person in support_people is
-	// credited the entry's full minutes, so those rows may add up to more than
-	// support_minutes; clients must show these totals, never a sum of the rows.
-	SupportMinutes      int32 `protobuf:"varint,12,opt,name=support_minutes,json=supportMinutes,proto3" json:"support_minutes,omitempty"`
-	SupportInteractions int32 `protobuf:"varint,13,opt,name=support_interactions,json=supportInteractions,proto3" json:"support_interactions,omitempty"`
+	// credited the entry's full duration, so those rows may add up to more than
+	// support_duration; clients must show these totals, never a sum of the rows.
+	SupportDuration     *durationpb.Duration `protobuf:"bytes,12,opt,name=support_duration,json=supportDuration,proto3" json:"support_duration,omitempty"`
+	SupportInteractions int32                `protobuf:"varint,13,opt,name=support_interactions,json=supportInteractions,proto3" json:"support_interactions,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -672,11 +672,11 @@ func (x *PeriodReport) GetMilestoneProgress() []*MilestoneProgress {
 	return nil
 }
 
-func (x *PeriodReport) GetSupportMinutes() int32 {
+func (x *PeriodReport) GetSupportDuration() *durationpb.Duration {
 	if x != nil {
-		return x.SupportMinutes
+		return x.SupportDuration
 	}
-	return 0
+	return nil
 }
 
 func (x *PeriodReport) GetSupportInteractions() int32 {
@@ -1386,7 +1386,7 @@ const file_summaries_proto_rawDesc = "" +
 	"\x11MilestoneProgress\x12%\n" +
 	"\x0esubcategory_id\x18\x01 \x01(\tR\rsubcategoryId\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
-	"\x04done\x18\x03 \x01(\x05R\x04done\"\xa4\x05\n" +
+	"\x04done\x18\x03 \x01(\x05R\x04done\"\xc1\x05\n" +
 	"\fPeriodReport\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
 	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12/\n" +
@@ -1402,8 +1402,8 @@ const file_summaries_proto_rawDesc = "" +
 	"\x05weeks\x18\t \x03(\v2\x13.wdid.v1.WeekRhythmR\x05weeks\x12)\n" +
 	"\x05notes\x18\n" +
 	" \x03(\v2\x13.wdid.v1.PeriodNoteR\x05notes\x12I\n" +
-	"\x12milestone_progress\x18\v \x03(\v2\x1a.wdid.v1.MilestoneProgressR\x11milestoneProgress\x12'\n" +
-	"\x0fsupport_minutes\x18\f \x01(\x05R\x0esupportMinutes\x121\n" +
+	"\x12milestone_progress\x18\v \x03(\v2\x1a.wdid.v1.MilestoneProgressR\x11milestoneProgress\x12D\n" +
+	"\x10support_duration\x18\f \x01(\v2\x19.google.protobuf.DurationR\x0fsupportDuration\x121\n" +
 	"\x14support_interactions\x18\r \x01(\x05R\x13supportInteractions\"q\n" +
 	"\x16GetPeriodReportRequest\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
@@ -1507,28 +1507,29 @@ var file_summaries_proto_depIdxs = []int32{
 	4,  // 12: wdid.v1.PeriodReport.weeks:type_name -> wdid.v1.WeekRhythm
 	5,  // 13: wdid.v1.PeriodReport.notes:type_name -> wdid.v1.PeriodNote
 	6,  // 14: wdid.v1.PeriodReport.milestone_progress:type_name -> wdid.v1.MilestoneProgress
-	7,  // 15: wdid.v1.GetPeriodReportResponse.report:type_name -> wdid.v1.PeriodReport
-	10, // 16: wdid.v1.BuildExportResponse.files:type_name -> wdid.v1.ExportFile
-	22, // 17: wdid.v1.BuildPromptRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 18: wdid.v1.BuildPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 19: wdid.v1.GetPromptTemplateRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 20: wdid.v1.GetPromptTemplateResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
-	23, // 21: wdid.v1.GenerateSummaryDelta.check_in:type_name -> wdid.v1.CheckIn
-	8,  // 22: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
-	11, // 23: wdid.v1.SummaryService.BuildExport:input_type -> wdid.v1.BuildExportRequest
-	13, // 24: wdid.v1.SummaryService.BuildPrompt:input_type -> wdid.v1.BuildPromptRequest
-	15, // 25: wdid.v1.SummaryService.GetPromptTemplate:input_type -> wdid.v1.GetPromptTemplateRequest
-	17, // 26: wdid.v1.SummaryService.GenerateSummary:input_type -> wdid.v1.GenerateSummaryRequest
-	9,  // 27: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
-	12, // 28: wdid.v1.SummaryService.BuildExport:output_type -> wdid.v1.BuildExportResponse
-	14, // 29: wdid.v1.SummaryService.BuildPrompt:output_type -> wdid.v1.BuildPromptResponse
-	16, // 30: wdid.v1.SummaryService.GetPromptTemplate:output_type -> wdid.v1.GetPromptTemplateResponse
-	18, // 31: wdid.v1.SummaryService.GenerateSummary:output_type -> wdid.v1.GenerateSummaryDelta
-	27, // [27:32] is the sub-list for method output_type
-	22, // [22:27] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	20, // 15: wdid.v1.PeriodReport.support_duration:type_name -> google.protobuf.Duration
+	7,  // 16: wdid.v1.GetPeriodReportResponse.report:type_name -> wdid.v1.PeriodReport
+	10, // 17: wdid.v1.BuildExportResponse.files:type_name -> wdid.v1.ExportFile
+	22, // 18: wdid.v1.BuildPromptRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 19: wdid.v1.BuildPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 20: wdid.v1.GetPromptTemplateRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	22, // 21: wdid.v1.GetPromptTemplateResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	23, // 22: wdid.v1.GenerateSummaryDelta.check_in:type_name -> wdid.v1.CheckIn
+	8,  // 23: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
+	11, // 24: wdid.v1.SummaryService.BuildExport:input_type -> wdid.v1.BuildExportRequest
+	13, // 25: wdid.v1.SummaryService.BuildPrompt:input_type -> wdid.v1.BuildPromptRequest
+	15, // 26: wdid.v1.SummaryService.GetPromptTemplate:input_type -> wdid.v1.GetPromptTemplateRequest
+	17, // 27: wdid.v1.SummaryService.GenerateSummary:input_type -> wdid.v1.GenerateSummaryRequest
+	9,  // 28: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
+	12, // 29: wdid.v1.SummaryService.BuildExport:output_type -> wdid.v1.BuildExportResponse
+	14, // 30: wdid.v1.SummaryService.BuildPrompt:output_type -> wdid.v1.BuildPromptResponse
+	16, // 31: wdid.v1.SummaryService.GetPromptTemplate:output_type -> wdid.v1.GetPromptTemplateResponse
+	18, // 32: wdid.v1.SummaryService.GenerateSummary:output_type -> wdid.v1.GenerateSummaryDelta
+	28, // [28:33] is the sub-list for method output_type
+	23, // [23:28] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_summaries_proto_init() }

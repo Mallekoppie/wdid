@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
 	"github.com/Mallekoppie/wdid/internal/gen/wdid/v1/wdidv1connect"
 	"github.com/Mallekoppie/wdid/internal/store"
@@ -179,9 +180,9 @@ func TestCheckInServiceSnapshotsTheAuthoritativeReport(t *testing.T) {
 	if people := totalMinutesByKey(totals.GetSupportByPerson()); people["Priya"] != 30 {
 		t.Fatalf("support by person = %v, want Priya 30m", people)
 	}
-	if totals.GetSupportMinutes() != 30 || totals.GetSupportInteractions() != 1 {
-		t.Fatalf("support totals = %dm/%d interactions, want the authoritative 30m support entry",
-			totals.GetSupportMinutes(), totals.GetSupportInteractions())
+	if totals.GetSupportDuration().AsDuration() != 30*time.Minute || totals.GetSupportInteractions() != 1 {
+		t.Fatalf("support totals = %v/%d interactions, want the authoritative 30m support entry",
+			totals.GetSupportDuration().AsDuration(), totals.GetSupportInteractions())
 	}
 
 	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkIn.GetId()}, token))
@@ -190,6 +191,76 @@ func TestCheckInServiceSnapshotsTheAuthoritativeReport(t *testing.T) {
 	}
 	if stored.Msg.GetCheckIn().GetFocusNotes() != "Ship the backfill and keep support small." {
 		t.Fatalf("stored focus notes = %q", stored.Msg.GetCheckIn().GetFocusNotes())
+	}
+}
+
+// TestCheckInServiceReadsLegacySupportTotals proves a check-in stored before
+// the authoritative totals existed still reports the pre-upgrade semantics,
+// while a fresh multi-person snapshot keeps its authoritative totals.
+func TestCheckInServiceReadsLegacySupportTotals(t *testing.T) {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	server, database := newDomainServer(t)
+	token := bootstrapToken(t, server)
+	userID := currentUserID(t, server, token)
+
+	storeCheckIn := func(checkIn domain.CheckIn) {
+		t.Helper()
+		checkIn.UserID = userID
+		checkIn.Kind = domain.CheckInKindManager
+		checkIn.State = domain.CheckInStateDraft
+		checkIn.Audience = domain.AudienceOneOnOne
+		checkIn.PeriodStart = "2026-10-01"
+		checkIn.PeriodEnd = "2026-10-20"
+		checkIn.CreatedAt = now
+		checkIn.UpdatedAt = now
+		if err := database.SaveCheckIn(checkIn); err != nil {
+			t.Fatalf("save check-in: %v", err)
+		}
+	}
+
+	// Pre-upgrade shape: only per-person rows, no authoritative totals.
+	storeCheckIn(domain.CheckIn{
+		ID: "legacy-checkin",
+		Totals: domain.CheckInTotals{
+			Minutes:         90,
+			SupportByPerson: map[string]int{"Priya": 30},
+		},
+	})
+	// Fresh multi-person shape: rows sum to 90 but the authoritative total is 45.
+	storeCheckIn(domain.CheckIn{
+		ID: "fresh-checkin",
+		Totals: domain.CheckInTotals{
+			Minutes:             90,
+			SupportByPerson:     map[string]int{"Priya": 45, "Sam": 45},
+			SupportMinutes:      45,
+			SupportInteractions: 2,
+		},
+	})
+
+	tests := []struct {
+		id           string
+		wantDuration time.Duration
+		wantInteract int32
+	}{
+		{id: "legacy-checkin", wantDuration: 30 * time.Minute, wantInteract: 1},
+		{id: "fresh-checkin", wantDuration: 45 * time.Minute, wantInteract: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			response, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(
+				&wdidv1.GetCheckInRequest{Id: test.id}, token,
+			))
+			if err != nil {
+				t.Fatalf("get check-in: %v", err)
+			}
+			totals := response.Msg.GetCheckIn().GetTotals()
+			if totals.GetSupportDuration().AsDuration() != test.wantDuration ||
+				totals.GetSupportInteractions() != test.wantInteract {
+				t.Fatalf("support totals = %v/%d, want %v/%d",
+					totals.GetSupportDuration().AsDuration(), totals.GetSupportInteractions(),
+					test.wantDuration, test.wantInteract)
+			}
+		})
 	}
 }
 

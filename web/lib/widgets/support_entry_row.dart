@@ -88,8 +88,6 @@ class _SupportEntryRowState extends State<SupportEntryRow> {
                           entry.team.isEmpty
                               ? attribution
                               : '$attribution · ${entry.team}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.tertiary,
                             fontWeight: FontWeight.w600,

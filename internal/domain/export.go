@@ -666,30 +666,18 @@ func projectOutcomes(entries []WorkEntry, subcategoryID string) []string {
 
 func supportTeam(entries []WorkEntry, person string) string {
 	for _, entry := range entries {
-		if entrySupportsPerson(entry, person) && strings.TrimSpace(entry.Team) != "" {
+		if HasPerson(entry.People, person) && strings.TrimSpace(entry.Team) != "" {
 			return strings.TrimSpace(entry.Team)
 		}
 	}
 	return ""
 }
 
-// entrySupportsPerson reports whether any name on the entry matches, using the
-// same case-insensitive comparison as the person filter.
-func entrySupportsPerson(entry WorkEntry, person string) bool {
-	target := strings.TrimSpace(person)
-	for _, name := range entry.People {
-		if strings.EqualFold(strings.TrimSpace(name), target) {
-			return true
-		}
-	}
-	return false
-}
-
 func supportDetails(input ExportInput, person string, subcategories map[string]Subcategory) []string {
 	sorted := sortedEntries(input.Entries)
 	result := make([]string, 0)
 	for _, entry := range sorted {
-		if !entrySupportsPerson(entry, person) {
+		if !HasPerson(entry.People, person) {
 			continue
 		}
 		mode := subcategories[entry.SubcategoryID].Name

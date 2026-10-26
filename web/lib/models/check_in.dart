@@ -25,15 +25,47 @@ class CheckInTotals {
   final int supportMinutes;
   final int supportInteractions;
 
-  factory CheckInTotals.fromJson(Map<String, dynamic> json) => CheckInTotals(
-    minutes: (json['minutes'] as num?)?.round() ?? 0,
-    byInitiative: _intMap(json['byInitiative']),
-    byCategory: _intMap(json['byCategory']),
-    bySubcategory: _intMap(json['bySubcategory']),
-    supportByPerson: _intMap(json['supportByPerson']),
-    supportMinutes: (json['supportMinutes'] as num?)?.round() ?? 0,
-    supportInteractions: (json['supportInteractions'] as num?)?.round() ?? 0,
-  );
+  factory CheckInTotals.fromJson(Map<String, dynamic> json) {
+    final supportByPerson = _intMap(json['supportByPerson']);
+    final supportMinutes = (json['supportMinutes'] as num?)?.round() ?? 0;
+    final supportInteractions =
+        (json['supportInteractions'] as num?)?.round() ?? 0;
+    return CheckInTotals(
+      minutes: (json['minutes'] as num?)?.round() ?? 0,
+      byInitiative: _intMap(json['byInitiative']),
+      byCategory: _intMap(json['byCategory']),
+      bySubcategory: _intMap(json['bySubcategory']),
+      supportByPerson: supportByPerson,
+      supportMinutes: effectiveSupportMinutes(
+        supportMinutes,
+        supportByPerson,
+      ),
+      supportInteractions: effectiveSupportInteractions(
+        supportInteractions,
+        supportByPerson,
+      ),
+    );
+  }
+
+  /// Legacy check-ins written before the authoritative support totals existed
+  /// store only [supportByPerson]. A zero stored total falls back to the row
+  /// sum, which is exact for single-person legacy data. A fresh snapshot keeps
+  /// its authoritative value.
+  static int effectiveSupportMinutes(
+    int supportMinutes,
+    Map<String, int> supportByPerson,
+  ) => supportMinutes == 0 && supportByPerson.isNotEmpty
+      ? supportByPerson.values.fold(0, (sum, minutes) => sum + minutes)
+      : supportMinutes;
+
+  /// Legacy check-ins have no stored interaction count, so a zero falls back to
+  /// the number of people rows, which is what the pre-upgrade UI showed.
+  static int effectiveSupportInteractions(
+    int supportInteractions,
+    Map<String, int> supportByPerson,
+  ) => supportInteractions == 0 && supportByPerson.isNotEmpty
+      ? supportByPerson.length
+      : supportInteractions;
 
   Map<String, dynamic> toJson() => {
     'minutes': minutes,
