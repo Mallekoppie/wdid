@@ -7,6 +7,7 @@ import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
@@ -711,6 +712,7 @@ class _ServiceEntryRowState extends State<_ServiceEntryRow> {
       if (subcategory != null) subcategory.name,
       if (entry.people.isNotEmpty) peopleLabel(entry.people),
     ].join(' · ');
+    final verticalPadding = AppTheme.isCompact(context) ? 6.0 : 10.0;
 
     return Container(
       decoration: BoxDecoration(
@@ -729,139 +731,149 @@ class _ServiceEntryRowState extends State<_ServiceEntryRow> {
             onTap: editing
                 ? null
                 : () => setState(() => _expanded = !_expanded),
-            child: Row(
-              children: [
-                const SizedBox(width: AppSpacing.sm),
-                SizedBox(
-                  width: 98,
-                  child: Text(
-                    formatTimeRange(entry.startedLocal, entry.endedLocal),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontFeatures: tabularFigures,
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: verticalPadding),
+              child: Row(
+                children: [
+                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(
+                    width: 98,
+                    child: Text(
+                      formatTimeRange(entry.startedLocal, entry.endedLocal),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontFeatures: tabularFigures,
+                      ),
                     ),
                   ),
-                ),
-                Icon(
-                  support
-                      ? Icons.volunteer_activism_outlined
-                      : category?.role == CategoryRole.initiative
-                      ? Icons.flag_outlined
-                      : Icons.category_outlined,
-                  size: 14,
-                  color: accent,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              attribution,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: accent,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          if (overlapping) ...[
-                            const SizedBox(width: 6),
-                            Tooltip(
-                              message: 'Overlaps another entry',
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: scheme.error),
-                                  borderRadius: BorderRadius.circular(
-                                    AppRadius.pill,
-                                  ),
-                                ),
-                                child: Text(
-                                  'Overlap',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: scheme.error,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (entry.description.isNotEmpty)
-                        Text(
-                          entry.description,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                      if (entry.outcome.isNotEmpty)
+                  Icon(
+                    support
+                        ? Icons.volunteer_activism_outlined
+                        : category?.role == CategoryRole.initiative
+                        ? Icons.flag_outlined
+                        : Icons.category_outlined,
+                    size: 14,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Row(
                           children: [
-                            Icon(
-                              Icons.verified_outlined,
-                              size: 12,
-                              color: scheme.tertiary,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
+                            Flexible(
                               child: Text(
-                                entry.outcome,
+                                attribution,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: accent,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
+                            if (overlapping) ...[
+                              const SizedBox(width: 6),
+                              Tooltip(
+                                message: 'Overlaps another entry',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: scheme.error),
+                                    borderRadius: BorderRadius.circular(
+                                      AppRadius.pill,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Overlap',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: scheme.error,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                SizedBox(
-                  width: 52,
-                  child: Text(
-                    formatDuration(entry.minutes),
-                    textAlign: TextAlign.right,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontFeatures: tabularFigures,
+                        if (entry.description.isNotEmpty)
+                          Text(
+                            entry.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        if (entry.outcome.isNotEmpty)
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.verified_outlined,
+                                size: 12,
+                                color: scheme.tertiary,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  entry.outcome,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                     ),
                   ),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: 'Row actions',
-                  icon: Icon(
-                    Icons.more_vert,
-                    size: 16,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  onSelected: (value) => switch (value) {
-                    'edit' => onEdit(),
-                    'split' => onSplit(),
-                    'delete' => onDelete(),
-                    _ => null,
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    PopupMenuItem(
-                      value: 'split',
-                      enabled: entry.minutes > 1,
-                      child: const Text('Split'),
+                  const SizedBox(width: AppSpacing.sm),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      formatDuration(entry.minutes),
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: tabularFigures,
+                      ),
                     ),
-                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                  ],
-                ),
-              ],
+                  ),
+                  SizedBox(
+                    width: AppSizes.rowComfortable,
+                    height: AppSizes.rowComfortable,
+                    child: PopupMenuButton<String>(
+                      tooltip: 'Row actions',
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      onSelected: (value) => switch (value) {
+                        'edit' => onEdit(),
+                        'split' => onSplit(),
+                        'delete' => onDelete(),
+                        _ => null,
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(
+                          value: 'split',
+                          enabled: entry.minutes > 1,
+                          child: const Text('Split'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           if (editing)

@@ -12,6 +12,7 @@ import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/widgets/app_shell.dart';
 import 'package:wdid_web/widgets/interrupt_resume_card.dart';
 import 'package:wdid_web/widgets/support_now_strip.dart';
+import 'package:wdid_web/widgets/timer_pill.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -102,8 +103,9 @@ Future<AppState> pumpApp(
   List<Category>? categories,
   List<Subcategory>? subcategories,
   List<String> roster = const ['Priya', 'Sam'],
+  Size viewport = const Size(1600, 2400),
 }) async {
-  tester.view.physicalSize = const Size(1600, 2400);
+  tester.view.physicalSize = viewport;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -340,6 +342,40 @@ void main() {
       expect(find.text('Start a support timer'), findsNothing);
     },
   );
+
+  testWidgets('narrow headers keep every timer action at 48px', (tester) async {
+    final timerApi = FakeTimerApi();
+    seedRunningTimer(timerApi);
+    await pumpApp(tester, timerApi: timerApi, viewport: const Size(600, 1200));
+
+    // Below 900px the segments are icon-only, so their tooltips carry the
+    // label and each one stays a full 48px target. The Today timer card keeps
+    // its own labelled buttons, so scope this to the header pill.
+    final pill = find.byType(TimerPill);
+    expect(
+      find.descendant(of: pill, matching: find.text('Interrupt')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: pill, matching: find.text('Pause')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: pill, matching: find.text('Stop')),
+      findsNothing,
+    );
+    for (final tooltip in [
+      'Interrupt the running timer and start support',
+      'Pause',
+      'Stop & save',
+    ]) {
+      final size = tester.getSize(
+        find.descendant(of: pill, matching: find.byTooltip(tooltip)),
+      );
+      expect(size.width, greaterThanOrEqualTo(48), reason: tooltip);
+      expect(size.height, greaterThanOrEqualTo(48), reason: tooltip);
+    }
+  });
 
   testWidgets('an interrupt shows a pinned, auto-width resume card', (
     tester,

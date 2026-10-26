@@ -353,7 +353,12 @@ class _TimerPillState extends State<TimerPill> {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(10),
+      ),
+      // Paint the outline in the foreground: a decoration border would
+      // deflate the segments to 46px and shrink their tap targets.
+      foregroundDecoration: BoxDecoration(
         border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(10),
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
