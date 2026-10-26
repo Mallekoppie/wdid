@@ -86,6 +86,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, request Request, onDelta
 		Messages: []message{
 			{Role: "user", Content: request.Prompt},
 		},
+		// DeepSeek's reasoning models stream a private thinking block first and
+		// count it against max_tokens. At the summary budget they can spend every
+		// token thinking and emit no answer, so ask the compatible endpoint for
+		// the answer directly. Anthropic and custom models are left untouched.
+		Thinking: thinkingForModel(request.Model),
 	})
 	if err != nil {
 		return Response{}, fmt.Errorf("encode AI request: %w", err)
@@ -213,10 +218,29 @@ func providerStatusError(response *http.Response) error {
 }
 
 type messagesRequest struct {
-	Model     string    `json:"model"`
-	MaxTokens int       `json:"max_tokens"`
-	Stream    bool      `json:"stream"`
-	Messages  []message `json:"messages"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	Stream    bool            `json:"stream"`
+	Messages  []message       `json:"messages"`
+	Thinking  *thinkingConfig `json:"thinking,omitempty"`
+}
+
+// thinkingConfig disables or enables the provider's hidden reasoning block. The
+// Anthropic Messages protocol accepts it; DeepSeek honors "disabled" for its
+// reasoning models.
+type thinkingConfig struct {
+	Type string `json:"type"`
+}
+
+// thinkingForModel asks DeepSeek reasoning models to answer without a hidden
+// thinking block. DeepSeek counts thinking tokens against max_tokens, so a
+// summary-sized budget can be exhausted before any answer text arrives. Other
+// providers get no thinking field, preserving their default behaviour.
+func thinkingForModel(model string) *thinkingConfig {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "deepseek-") {
+		return &thinkingConfig{Type: "disabled"}
+	}
+	return nil
 }
 
 type message struct {

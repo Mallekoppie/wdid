@@ -192,6 +192,58 @@ func TestAnthropicProviderSurfacesStreamErrors(t *testing.T) {
 	}
 }
 
+func TestAnthropicProviderDisablesDeepSeekThinking(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		model       string
+		wantDisable bool
+	}{
+		{"deepseek reasoning model", "deepseek-flash", true},
+		{"deepseek chat model", "deepseek-chat", true},
+		{"anthropic model", "claude-sonnet-5-5", false},
+		{"custom model", "custom-model", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var got struct {
+				Thinking *struct {
+					Type string `json:"type"`
+				} `json:"thinking"`
+			}
+			var decodeErr error
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+					decodeErr = err
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte(`data: {"type":"message_stop"}` + "\n\n"))
+			}))
+			defer server.Close()
+
+			_, err := ai.NewAnthropicProvider(server.Client()).Stream(
+				context.Background(),
+				ai.Request{BaseURL: server.URL, APIKey: "k", Model: test.model, Prompt: "p"},
+				func(string) error { return nil },
+			)
+			if decodeErr != nil {
+				t.Fatalf("decode request: %v", decodeErr)
+			}
+			if err != nil {
+				t.Fatalf("stream: %v", err)
+			}
+			if test.wantDisable {
+				if got.Thinking == nil || got.Thinking.Type != "disabled" {
+					t.Fatalf("thinking = %+v, want type disabled", got.Thinking)
+				}
+				return
+			}
+			if got.Thinking != nil {
+				t.Fatalf("thinking = %+v, want the field omitted", got.Thinking)
+			}
+		})
+	}
+}
+
 func TestAnthropicProviderStopsWhenTheConsumerFails(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
