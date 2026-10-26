@@ -16,7 +16,7 @@ class WorkItemDraft {
     this.notes = '',
     this.links = const [],
     this.tags = const [],
-    this.person,
+    this.people = const [],
     this.team,
     this.source = 'manual',
   });
@@ -32,7 +32,7 @@ class WorkItemDraft {
   final String notes;
   final List<LinkRef> links;
   final List<String> tags;
-  final String? person;
+  final List<String> people;
   final String? team;
   final String source;
 }
@@ -47,7 +47,7 @@ class EntryDraft {
     this.outcome = '',
     required this.startedAt,
     this.minutes = 0,
-    this.person = '',
+    this.people = const [],
     this.team = '',
     this.tags = const [],
     this.links = const [],
@@ -60,7 +60,7 @@ class EntryDraft {
   final String outcome;
   final DateTime startedAt;
   final int minutes;
-  final String person;
+  final List<String> people;
   final String team;
   final List<String> tags;
   final List<LinkRef> links;

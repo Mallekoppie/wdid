@@ -69,7 +69,7 @@ WorkEntry workEntry({
   String subcategoryId = 'sub-invoice',
   String description = '',
   String outcome = '',
-  String person = '',
+  List<String> people = const [],
   required DateTime startedAt,
   int minutes = 30,
 }) {
@@ -79,7 +79,7 @@ WorkEntry workEntry({
     subcategoryId: subcategoryId,
     description: description,
     outcome: outcome,
-    person: person,
+    people: people,
     startedAt: startedAt,
     endedAt: startedAt.add(Duration(minutes: minutes)),
     minutes: minutes,
@@ -207,7 +207,7 @@ Future<void> pumpDetail(
                 id: 'entry-new',
                 description: 'Backfill review',
                 outcome: 'Script runs against staging',
-                person: 'Priya',
+                people: const ['Priya'],
                 startedAt: DateTime.utc(2026, 10, 22, 9),
                 minutes: 60,
               ),
@@ -275,6 +275,35 @@ void main() {
     expect(entryApi.drafts.single.outcome, 'Script runs against staging');
     expect(entryApi.drafts.single.minutes, 30);
     expect(find.text('Backfill script skeleton'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('logs project time for several optional people', (tester) async {
+    final entryApi = FakeEntryApi();
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      entryApi: entryApi,
+    );
+
+    await tester.tap(find.text('Log time'));
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), 'Backfill script skeleton');
+    await tester.enterText(fields.at(2), '45');
+    await tester.enterText(fields.at(3), 'Priya');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.enterText(fields.at(3), 'Sam');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Save entry'));
+    await tester.pumpAndSettle();
+
+    expect(entryApi.drafts, hasLength(1));
+    expect(entryApi.drafts.single.people, ['Priya', 'Sam']);
     expect(tester.takeException(), isNull);
   });
 
@@ -503,13 +532,13 @@ void main() {
         workEntry(
           id: 'entry-in',
           description: 'In period review',
-          person: 'Priya',
+          people: const ['Priya'],
           startedAt: DateTime.utc(2026, 10, 22, 9),
         ),
         workEntry(
           id: 'entry-out',
           description: 'Old review',
-          person: 'Sam',
+          people: const ['Sam'],
           startedAt: DateTime.utc(2026, 8, 1, 9),
         ),
       ],

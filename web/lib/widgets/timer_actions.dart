@@ -69,7 +69,7 @@ Future<bool> stopForInterrupt(
     categoryId: timer.categoryId,
     subcategoryId: timer.subcategoryId,
     description: timer.description,
-    person: timer.person,
+    people: timer.people,
   );
   final result = await stopTimerWithDecision(context, state: state);
   if (result == null) return false;

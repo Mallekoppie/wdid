@@ -4,6 +4,7 @@ import '../models/enums.dart';
 import '../models/work_entry.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 
 /// One support entry in the Support feed.
@@ -39,7 +40,7 @@ class _SupportEntryRowState extends State<SupportEntryRow> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final entry = widget.entry;
-    final person = entry.person.isEmpty ? 'Someone' : entry.person;
+    final person = entry.people.isEmpty ? 'Someone' : peopleLabel(entry.people);
     final attribution = ['Support', person, widget.modeLabel].join(' · ');
     final verticalPadding = AppTheme.isCompact(context) ? 5.0 : 9.0;
 

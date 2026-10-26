@@ -24,7 +24,7 @@ class FakeTimerApi implements TimerApi {
   String? lastStartCategoryId;
   String? lastStartSubcategoryId;
   String? lastStartDescription;
-  String? lastStartPerson;
+  List<String>? lastStartPeople;
 
   /// Every entry this fake's stop produced, in order. Tests can pass this list
   /// to a fake entry service so a stopped timer is visible to reloads.
@@ -41,13 +41,13 @@ class FakeTimerApi implements TimerApi {
     required String categoryId,
     String subcategoryId = '',
     String description = '',
-    String person = '',
+    List<String> people = const [],
   }) async {
     startCalls++;
     lastStartCategoryId = categoryId;
     lastStartSubcategoryId = subcategoryId;
     lastStartDescription = description;
-    lastStartPerson = person;
+    lastStartPeople = people;
     if (timer != null) {
       throw const TimerFailure('A timer is already running.');
     }
@@ -58,7 +58,7 @@ class FakeTimerApi implements TimerApi {
       description: description.trim().isEmpty
           ? 'Focus block'
           : description.trim(),
-      person: person,
+      people: people,
       startedAt: now,
       segmentStartedAt: now,
     );
@@ -80,7 +80,7 @@ class FakeTimerApi implements TimerApi {
       categoryId: current.categoryId,
       subcategoryId: current.subcategoryId,
       description: current.description,
-      person: current.person,
+      people: current.people,
       startedAt: current.startedAt,
       segmentStartedAt: current.segmentStartedAt,
       pausedAt: pausedAt,
@@ -102,7 +102,7 @@ class FakeTimerApi implements TimerApi {
       categoryId: current.categoryId,
       subcategoryId: current.subcategoryId,
       description: current.description,
-      person: current.person,
+      people: current.people,
       startedAt: current.startedAt,
       segmentStartedAt: DateTime.now().toUtc(),
       accumulatedPaused: current.accumulatedPaused,
@@ -147,7 +147,7 @@ class FakeTimerApi implements TimerApi {
       endedAt: current.startedAt.add(Duration(minutes: minutes)),
       minutes: minutes,
       localDate: isoDate(current.startedAt.toLocal()),
-      person: current.person,
+      people: current.people,
       source: EntrySource.timer,
       createdAt: DateTime.now().toUtc(),
       updatedAt: DateTime.now().toUtc(),

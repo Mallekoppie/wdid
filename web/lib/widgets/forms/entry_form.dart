@@ -8,6 +8,7 @@ import '../../models/taxonomy.dart';
 import '../../models/work_entry.dart';
 import '../../state/app_state_scope.dart';
 import '../../theme/app_tokens.dart';
+import '../../utils/people.dart';
 import '../../utils/time_utils.dart';
 import '../app_dropdown.dart';
 import '../person_picker.dart';
@@ -39,7 +40,8 @@ class _EntryFormState extends State<EntryForm> {
   late final TextEditingController _description;
   late final TextEditingController _outcome;
   late final TextEditingController _minutes;
-  late final TextEditingController _person;
+  late List<String> _people;
+  late final TextEditingController _personText;
   late String _categoryId;
   late String _subcategoryId;
   late DateTime _date;
@@ -56,7 +58,8 @@ class _EntryFormState extends State<EntryForm> {
     _description = TextEditingController(text: entry?.description ?? '');
     _outcome = TextEditingController(text: entry?.outcome ?? '');
     _minutes = TextEditingController(text: (entry?.minutes ?? 30).toString());
-    _person = TextEditingController(text: entry?.person ?? '');
+    _people = normalizePeople(entry?.people ?? const []);
+    _personText = TextEditingController();
     _categoryId = entry?.categoryId ?? '';
     _subcategoryId = entry?.subcategoryId ?? '';
     _date = start;
@@ -98,7 +101,7 @@ class _EntryFormState extends State<EntryForm> {
     _description.dispose();
     _outcome.dispose();
     _minutes.dispose();
-    _person.dispose();
+    _personText.dispose();
     super.dispose();
   }
 
@@ -130,9 +133,9 @@ class _EntryFormState extends State<EntryForm> {
     final minutes = int.parse(_minutes.text.trim());
     final description = _description.text.trim();
     final outcome = _outcome.text.trim();
-    final person = _person.text.trim();
+    final people = peopleIncludingPending(_people, _personText);
     if (state.categoryById(_categoryId)?.role == CategoryRole.support &&
-        person.isEmpty) {
+        people.isEmpty) {
       setState(() => _error = 'Who are you supporting? Add a person.');
       return;
     }
@@ -153,7 +156,7 @@ class _EntryFormState extends State<EntryForm> {
             outcome: outcome,
             startedAt: startedAt,
             minutes: minutes,
-            person: person,
+            people: people,
             source: EntrySource.manual,
           ),
         );
@@ -168,11 +171,13 @@ class _EntryFormState extends State<EntryForm> {
             endedAt: startedAt.add(Duration(minutes: minutes)),
             minutes: minutes,
             localDate: isoDate(startedAt),
-            person: person,
+            people: people,
           ),
         );
       }
-      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
+      if (people.isNotEmpty) {
+        unawaited(state.addSupportPeople(people));
+      }
       await state.refreshLog();
       if (!mounted) return;
       widget.onSaved(saved);
@@ -350,8 +355,14 @@ class _EntryFormState extends State<EntryForm> {
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            if (support || _person.text.isNotEmpty) ...[
-              PersonPicker(controller: _person, label: 'Person', hint: 'Priya'),
+            if (support || _people.isNotEmpty) ...[
+              PersonPicker(
+                selected: _people,
+                textController: _personText,
+                label: 'Person',
+                hint: 'Priya',
+                onChanged: (people) => setState(() => _people = people),
+              ),
               const SizedBox(height: AppSpacing.sm),
             ],
             TextFormField(

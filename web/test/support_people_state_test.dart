@@ -32,6 +32,18 @@ void main() {
     expect(api.updateCalls, 1);
   });
 
+  test('a batch of names writes the roster once', () async {
+    final (state, api) = await buildState(
+      settings: const AppSettings(supportPeople: ['Priya']),
+    );
+
+    await state.addSupportPeople(['Sam', '  Alex ', 'sam', 'Team']);
+
+    expect(state.supportPeople, ['Priya', 'Sam', 'Alex', 'Team']);
+    expect(api.settings.supportPeople, ['Priya', 'Sam', 'Alex', 'Team']);
+    expect(api.updateCalls, 1);
+  });
+
   test('adding a person is case-insensitive and trims the name', () async {
     final (state, api) = await buildState(
       settings: const AppSettings(supportPeople: ['Priya']),
@@ -145,7 +157,7 @@ void main() {
         endedAt: DateTime.utc(2026, 10, 23, 9, 30),
         minutes: 30,
         localDate: '2026-10-23',
-        person: 'Priya',
+        people: const ['Priya'],
         createdAt: DateTime.utc(2026, 10, 23, 9),
         updatedAt: DateTime.utc(2026, 10, 23, 9),
       ),
@@ -160,7 +172,7 @@ void main() {
     expect(state.supportPeople, ['Sam']);
     expect(api.settings.supportPeople, ['Sam']);
     expect(state.entries, same(entries));
-    expect(state.entries.single.person, 'Priya');
+    expect(state.entries.single.people, ['Priya']);
   });
 
   test('an unrelated settings save keeps the roster', () async {

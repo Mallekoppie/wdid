@@ -4,6 +4,7 @@ import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 
 /// A work entry row backed by `EntryService`. The attribution comes from the
@@ -44,7 +45,7 @@ class WorkEntryRow extends StatelessWidget {
     final attribution = [
       category?.name ?? 'Unknown category',
       if (subcategory != null) subcategory!.name,
-      if (entry.person.isNotEmpty) entry.person,
+      if (entry.people.isNotEmpty) peopleLabel(entry.people),
     ].join(' · ');
 
     return Container(

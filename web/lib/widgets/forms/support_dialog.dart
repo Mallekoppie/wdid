@@ -10,6 +10,7 @@ import '../../models/taxonomy.dart';
 import '../../models/work_entry.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_tokens.dart';
+import '../../utils/people.dart';
 import '../../utils/time_utils.dart';
 import '../app_dropdown.dart';
 import '../duration_chips.dart';
@@ -55,7 +56,8 @@ class _ServiceSupportDialog extends StatefulWidget {
 
 class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _person;
+  late List<String> _people;
+  late final TextEditingController _personText;
   late final TextEditingController _team;
   late final TextEditingController _description;
   late final TextEditingController _outcome;
@@ -66,6 +68,7 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
   late TimeOfDay _time;
   bool _saving = false;
   String? _error;
+  String? _personError;
   String? _serverField;
   String? _serverMessage;
 
@@ -73,9 +76,12 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _person = TextEditingController(
-      text: existing?.person ?? widget.initialPerson ?? '',
+    final initialPerson = widget.initialPerson;
+    _people = normalizePeople(
+      existing?.people ??
+          (initialPerson == null ? const <String>[] : [initialPerson]),
     );
+    _personText = TextEditingController();
     _team = TextEditingController(text: existing?.team ?? '');
     _description = TextEditingController(text: existing?.description ?? '');
     _outcome = TextEditingController(text: existing?.outcome ?? '');
@@ -103,7 +109,7 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
 
   @override
   void dispose() {
-    _person.dispose();
+    _personText.dispose();
     _team.dispose();
     _description.dispose();
     _outcome.dispose();
@@ -152,6 +158,12 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final people = peopleIncludingPending(_people, _personText);
+    if (people.isEmpty) {
+      setState(() => _personError = 'Who did you support?');
+      return;
+    }
+
     final mode = widget.state.subcategoryById(_modeId);
     final category = mode == null
         ? null
@@ -172,7 +184,6 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
       _time.minute,
     );
     final minutes = int.parse(_duration.text.trim());
-    final person = _person.text.trim();
     final team = _team.text.trim();
     final description = _description.text.trim();
     final outcome = _outcome.text.trim();
@@ -181,6 +192,7 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
     setState(() {
       _saving = true;
       _error = null;
+      _personError = null;
       _serverField = null;
       _serverMessage = null;
     });
@@ -196,7 +208,7 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
             outcome: outcome,
             startedAt: startedAt,
             minutes: minutes,
-            person: person,
+            people: people,
             team: team,
             links: links,
             source: EntrySource.manual,
@@ -213,14 +225,14 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
             endedAt: startedAt.add(Duration(minutes: minutes)),
             minutes: minutes,
             localDate: isoDate(startedAt),
-            person: person,
+            people: people,
             team: team,
             links: links,
           ),
         );
       }
       if (!mounted) return;
-      if (person.isNotEmpty) unawaited(widget.state.addSupportPerson(person));
+      unawaited(widget.state.addSupportPeople(people));
       Navigator.of(context).pop(saved);
     } on EntryFailure catch (error) {
       if (!mounted) return;
@@ -294,14 +306,15 @@ class _ServiceSupportDialogState extends State<_ServiceSupportDialog> {
               children: [
                 Expanded(
                   child: PersonPicker(
-                    controller: _person,
+                    selected: _people,
+                    textController: _personText,
                     autofocus: widget.existing == null,
                     hint: 'Priya',
-                    errorText: _fieldError('person'),
-                    validator: (value) =>
-                        (value == null || value.trim().isEmpty)
-                        ? 'Who did you support?'
-                        : null,
+                    errorText: _fieldError('person') ?? _personError,
+                    onChanged: (people) => setState(() {
+                      _people = people;
+                      _personError = null;
+                    }),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),

@@ -42,7 +42,7 @@ Subcategory subcategory(String id, String categoryId, String name) =>
 
 WorkEntry supportEntry({
   required String id,
-  String person = 'Priya',
+  List<String> people = const ['Priya'],
   String team = '',
   String subcategoryId = 'mode-unblock',
   String description = 'Unblocked the migration',
@@ -63,7 +63,7 @@ WorkEntry supportEntry({
     endedAt: started.add(Duration(minutes: minutes)),
     minutes: minutes,
     localDate: isoDate(started),
-    person: person,
+    people: people,
     team: team,
     links: links,
     createdAt: started,
@@ -150,7 +150,7 @@ void main() {
           id: 'newer',
           hour: 14,
           subcategoryId: 'mode-review',
-          person: 'Sam',
+          people: const ['Sam'],
           description: 'Paired on the billing migration',
         ),
         WorkEntry(
@@ -237,7 +237,7 @@ void main() {
     expect(draft.subcategoryId, 'mode-unblock');
     expect(draft.description, 'Reviewed the event bus design');
     expect(draft.outcome, 'Risks identified');
-    expect(draft.person, 'Priya');
+    expect(draft.people, ['Priya']);
     expect(draft.team, 'Payments');
     expect(draft.minutes, 45);
     expect(draft.links, hasLength(1));
@@ -415,7 +415,9 @@ void main() {
     );
     await pumpSupport(
       tester,
-      entries: [supportEntry(id: 'existing', person: 'Priya')],
+      entries: [
+        supportEntry(id: 'existing', people: const ['Priya']),
+      ],
       settingsApi: settingsApi,
     );
 
@@ -445,5 +447,51 @@ void main() {
 
     expect(find.widgetWithText(InputChip, 'Alex'), findsOneWidget);
     expect(settingsApi.settings.supportPeople, ['Priya', 'Alex']);
+  });
+
+  testWidgets('logs support for several people from the manual dialog', (
+    tester,
+  ) async {
+    final settingsApi = FakeSettingsApi();
+    final entryApi = await pumpSupport(tester, settingsApi: settingsApi);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Log support').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      field('What did you do?'),
+      'Reviewed the event bus design',
+    );
+
+    await tester.enterText(field('Person'), 'Priya');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.enterText(field('Person'), 'Sam');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Save support'));
+    await tester.pumpAndSettle();
+
+    expect(entryApi.drafts, hasLength(1));
+    expect(entryApi.drafts.single.people, ['Priya', 'Sam']);
+    expect(settingsApi.settings.supportPeople, ['Priya', 'Sam']);
+  });
+
+  testWidgets('a support feed row shows every name', (tester) async {
+    await pumpSupport(
+      tester,
+      entries: [
+        supportEntry(
+          id: 'multi',
+          people: const ['Priya', 'Sam'],
+          description: 'Paired on the migration',
+        ),
+      ],
+    );
+
+    expect(
+      find.textContaining('Support · Priya, Sam · Unblock'),
+      findsOneWidget,
+    );
   });
 }

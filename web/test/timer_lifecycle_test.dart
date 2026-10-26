@@ -48,6 +48,8 @@ void main() {
     WidgetTester tester, {
     required FakeTimerApi timerApi,
     FakeEntryApi? entryApi,
+    FakeCategoryApi? categoryApi,
+    FakeSettingsApi? settingsApi,
   }) async {
     tester.view.physicalSize = const Size(1400, 2000);
     tester.view.devicePixelRatio = 1.0;
@@ -59,12 +61,16 @@ void main() {
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/today',
-        categoryApiBuilder: (_) => FakeCategoryApi(
-          categories: [category('cat-1', 'Initiatives')],
-          subcategories: [subcategory('sub-1', 'cat-1', 'Billing migration')],
-        ),
+        categoryApiBuilder: (_) =>
+            categoryApi ??
+            FakeCategoryApi(
+              categories: [category('cat-1', 'Initiatives')],
+              subcategories: [
+                subcategory('sub-1', 'cat-1', 'Billing migration'),
+              ],
+            ),
         settingsApiBuilder: (_) =>
-            FakeSettingsApi(settings: const AppSettings()),
+            settingsApi ?? FakeSettingsApi(settings: const AppSettings()),
         entryApiBuilder: (_) => entryApi ?? FakeEntryApi(),
         timerApiBuilder: (_) => timerApi,
       ),
@@ -258,7 +264,7 @@ void main() {
     await state.startTimer(
       categoryId: 'cat-support',
       subcategoryId: 'mode-s',
-      person: 'Priya',
+      people: const ['Priya'],
       description: 'Helped Priya',
     );
     await state.stopTimer();
@@ -313,5 +319,54 @@ void main() {
     await timerApi.stopTimer();
     await state.syncTimer();
     expect(state.activeTimer, isNull);
+  });
+
+  testWidgets('the timer card starts support for several people', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final settingsApi = FakeSettingsApi(
+      settings: const AppSettings(supportPeople: ['Priya', 'Sam']),
+    );
+    await pumpToday(
+      tester,
+      timerApi: timerApi,
+      settingsApi: settingsApi,
+      categoryApi: FakeCategoryApi(
+        categories: [
+          category('cat-support', 'Support', role: CategoryRole.support),
+        ],
+        subcategories: [subcategory('mode-s', 'cat-support', 'Unblock')],
+      ),
+    );
+
+    final card = find.byType(ServiceTimerCard);
+    await tester.tap(
+      find.descendant(
+        of: card,
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: card,
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.enterText(timerDescription(), 'Paired on the migration');
+    await tester.tap(
+      find.descendant(
+        of: card,
+        matching: find.widgetWithText(FilledButton, 'Start'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartPeople, ['Priya', 'Sam']);
+    expect(find.text('Priya, Sam'), findsOneWidget);
   });
 }

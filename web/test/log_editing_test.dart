@@ -48,6 +48,7 @@ WorkEntry testWorkEntry({
   int minute = 0,
   int minutes = 60,
   List<String> tags = const [],
+  List<String> people = const [],
   List<LinkRef> links = const [],
 }) {
   final now = DateTime.now();
@@ -58,6 +59,7 @@ WorkEntry testWorkEntry({
     subcategoryId: subcategoryId,
     description: description,
     outcome: outcome,
+    people: people,
     tags: tags,
     links: links,
     startedAt: started.toUtc(),
@@ -483,7 +485,27 @@ void main() {
 
     expect(entryApi.updateCalls, 1);
     expect(entryApi.entries.single.categoryId, 'cat-s');
-    expect(entryApi.entries.single.person, 'Priya');
+    expect(entryApi.entries.single.people, ['Priya']);
+  });
+
+  testWidgets('a support row shows every name in the Log', (tester) async {
+    await pumpLog(
+      tester,
+      entries: [
+        testWorkEntry(
+          id: 'entry-multi',
+          categoryId: 'cat-s',
+          subcategoryId: 'sub-s',
+          description: 'Paired on the migration',
+          people: const ['Priya', 'Sam'],
+        ),
+      ],
+    );
+
+    expect(
+      find.textContaining('Support · Unblock · Priya, Sam'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('expands a row to show outcome, links and tags', (tester) async {
