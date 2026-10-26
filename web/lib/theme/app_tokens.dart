@@ -21,6 +21,10 @@ abstract final class AppSizes {
   static const double contentMaxWidth = 1180;
   static const double rowComfortable = 48;
   static const double rowCompact = 36;
+
+  /// One height for every control in a filter row, so a search box and its
+  /// dropdowns line up along a shared baseline.
+  static const double controlHeight = 48;
 }
 
 /// Times and durations must always align vertically.

@@ -9,9 +9,12 @@ import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
+import 'package:wdid_web/screens/log_screen.dart';
+import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/utils/time_utils.dart';
 import 'package:wdid_web/widgets/forms/date_range_dialog.dart';
 import 'package:wdid_web/widgets/forms/dialog_frame.dart';
+import 'package:wdid_web/widgets/forms/entry_form.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -157,6 +160,47 @@ Future<void> openRowMenu(WidgetTester tester, {int index = 0}) async {
   await tester.tap(find.byTooltip('Row actions').at(index));
   await tester.pumpAndSettle();
 }
+
+Finder formDropdown(int index) => find
+    .descendant(
+      of: find.byType(EntryForm),
+      matching: find.byType(DropdownButton<String>),
+    )
+    .at(index);
+
+String? formCategoryValue(WidgetTester tester) =>
+    tester.widget<DropdownButton<String>>(formDropdown(0)).value;
+
+String? formSubcategoryValue(WidgetTester tester) =>
+    tester.widget<DropdownButton<String>>(formDropdown(1)).value;
+
+Finder personField() => find.byWidgetPredicate(
+  (widget) => widget is TextField && widget.decoration?.labelText == 'Person',
+);
+
+Future<void> openAddEntry(WidgetTester tester) async {
+  await tester.tap(find.text('Add entry').first);
+  await tester.pumpAndSettle();
+}
+
+/// Picks an option in one of the Log's own filter dropdowns. The filter
+/// dropdowns always come before any entry form in the tree.
+Future<void> pickFilter(
+  WidgetTester tester, {
+  required int dropdown,
+  required String option,
+}) async {
+  await tester.tap(find.byType(DropdownButton<String>).at(dropdown));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(option).last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> pickCategoryFilter(WidgetTester tester, String name) =>
+    pickFilter(tester, dropdown: 0, option: name);
+
+Future<void> pickSubcategoryFilter(WidgetTester tester, String label) =>
+    pickFilter(tester, dropdown: 1, option: label);
 
 void main() {
   testWidgets('loads the period and marks overlapping entries', (tester) async {
@@ -665,5 +709,168 @@ void main() {
 
     await pumpLog(tester, entries: []);
     expect(find.text('Nothing logged in this period'), findsOneWidget);
+  });
+
+  group('adding an entry from a filtered log', () {
+    // The sample entries are today's, so the remembered pair is the newest
+    // one: Meetings / Sprint planning.
+    const rememberedCategory = 'cat-2';
+    const rememberedSubcategory = 'sub-2';
+
+    testWidgets('a category filter seeds the new entry form', (tester) async {
+      await pumpLog(tester);
+      await pickCategoryFilter(tester, 'Initiatives');
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), 'cat-1');
+      // The remembered subcategory belongs to another category, so it is not
+      // carried across.
+      expect(formSubcategoryValue(tester), '');
+    });
+
+    testWidgets('a category filter keeps a matching last-used subcategory', (
+      tester,
+    ) async {
+      await pumpLog(tester);
+      final state = AppStateScope.read(tester.element(find.byType(LogScreen)));
+      state.lastCategoryId = 'cat-1';
+      state.lastSubcategoryId = 'sub-1';
+
+      await pickCategoryFilter(tester, 'Initiatives');
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), 'cat-1');
+      expect(formSubcategoryValue(tester), 'sub-1');
+    });
+
+    testWidgets('a subcategory-only filter seeds its parent category', (
+      tester,
+    ) async {
+      await pumpLog(tester);
+      // With no category filter the option spells out its parent.
+      await pickSubcategoryFilter(tester, 'Billing migration · Initiatives');
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), 'cat-1');
+      expect(formSubcategoryValue(tester), 'sub-1');
+    });
+
+    testWidgets('category and subcategory filters seed both halves', (
+      tester,
+    ) async {
+      await pumpLog(tester);
+      await pickCategoryFilter(tester, 'Initiatives');
+      await pickSubcategoryFilter(tester, 'Billing migration');
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), 'cat-1');
+      expect(formSubcategoryValue(tester), 'sub-1');
+    });
+
+    testWidgets('an archived filtered category seeds nothing', (tester) async {
+      final taxonomy = FakeCategoryApi(
+        categories: [
+          category('cat-retired', 'Retired', archived: true),
+          category('cat-1', 'Initiatives'),
+          category('cat-2', 'Meetings', role: CategoryRole.other),
+        ],
+        subcategories: [
+          subcategory('sub-retired', 'cat-retired', 'Old project'),
+          subcategory('sub-1', 'cat-1', 'Billing migration'),
+          subcategory('sub-2', 'cat-2', 'Sprint planning'),
+        ],
+      );
+      await pumpLog(
+        tester,
+        categoryApi: taxonomy,
+        entries: [
+          testWorkEntry(
+            id: 'entry-a',
+            categoryId: 'cat-1',
+            subcategoryId: 'sub-1',
+            description: 'Backfill script skeleton',
+          ),
+        ],
+      );
+
+      await pickCategoryFilter(tester, 'Retired');
+      await openAddEntry(tester);
+
+      // The form could never produce an archived category, so the remembered
+      // pair is used exactly as before the change.
+      expect(formCategoryValue(tester), 'cat-1');
+      expect(formSubcategoryValue(tester), 'sub-1');
+    });
+
+    testWidgets('no taxonomy filter leaves the form unchanged', (tester) async {
+      await pumpLog(tester);
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), rememberedCategory);
+      expect(formSubcategoryValue(tester), rememberedSubcategory);
+    });
+
+    testWidgets('a seeded support category shows the person picker', (
+      tester,
+    ) async {
+      await pumpLog(tester);
+      await pickCategoryFilter(tester, 'Support');
+      await openAddEntry(tester);
+
+      expect(formCategoryValue(tester), 'cat-s');
+      expect(personField(), findsOneWidget);
+    });
+
+    testWidgets('saving a seeded entry keeps the filters and remembers '
+        'the saved pair', (tester) async {
+      final entryApi = await pumpLog(tester);
+      await pickCategoryFilter(tester, 'Initiatives');
+      await openAddEntry(tester);
+
+      await tester.enterText(descriptionField(), 'Billing follow-up');
+      await tester.tap(find.text('Save entry'));
+      await tester.pumpAndSettle();
+
+      expect(entryApi.drafts.single.categoryId, 'cat-1');
+      expect(find.text('Entry saved'), findsOneWidget);
+      expect(find.text('Billing follow-up'), findsOneWidget);
+      expect(
+        tester
+            .widget<DropdownButton<String>>(
+              find.byType(DropdownButton<String>).first,
+            )
+            .value,
+        'cat-1',
+      );
+
+      // The saved taxonomy becomes the remembered pair for the next entry.
+      await pickCategoryFilter(tester, 'All categories');
+      await openAddEntry(tester);
+      expect(formCategoryValue(tester), 'cat-1');
+      expect(formSubcategoryValue(tester), '');
+    });
+
+    testWidgets('cancelling and reopening seeds again without changing '
+        'the remembered pair', (tester) async {
+      await pumpLog(tester);
+      await pickCategoryFilter(tester, 'Initiatives');
+
+      await openAddEntry(tester);
+      expect(formCategoryValue(tester), 'cat-1');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await openAddEntry(tester);
+      expect(formCategoryValue(tester), 'cat-1');
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await pickCategoryFilter(tester, 'All categories');
+      await openAddEntry(tester);
+
+      // Opening the form did not overwrite the user's last-used pair.
+      expect(formCategoryValue(tester), rememberedCategory);
+      expect(formSubcategoryValue(tester), rememberedSubcategory);
+    });
   });
 }

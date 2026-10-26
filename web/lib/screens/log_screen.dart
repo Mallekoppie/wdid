@@ -318,6 +318,9 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
         _categoryId.isNotEmpty ||
         _subcategoryId.isNotEmpty ||
         _search.text.trim().isNotEmpty;
+    // Reviewing a filtered view is when the next entry most often belongs to
+    // the same slice, so the inline form starts from the active taxonomy.
+    final entrySeed = _taxonomySeed(state);
     // Keep the rows mounted while a draft is open; the loading panel would
     // destroy the inline editor's state.
     final showLoading = state.logLoading && editing == null;
@@ -348,6 +351,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                       value: _preset,
                       label: 'Period',
                       icon: Icons.date_range_outlined,
+                      height: AppSizes.controlHeight,
                       items: [
                         for (final preset in _LogPreset.values)
                           DropdownMenuItem(
@@ -369,6 +373,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                       value: _categoryId,
                       label: 'Category',
                       icon: Icons.category_outlined,
+                      height: AppSizes.controlHeight,
                       items: [
                         const DropdownMenuItem(
                           value: '',
@@ -399,6 +404,7 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                       value: _subcategoryId,
                       label: 'Subcategory',
                       icon: Icons.subdirectory_arrow_right,
+                      height: AppSizes.controlHeight,
                       items: [
                         const DropdownMenuItem(
                           value: '',
@@ -416,24 +422,30 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                         _load();
                       },
                     ),
-                    TextField(
-                      controller: _search,
-                      focusNode: _searchFocus,
-                      onChanged: _onSearchChanged,
-                      decoration: InputDecoration(
-                        hintText: 'Search entries…  /',
-                        prefixIcon: const Icon(Icons.search, size: 17),
-                        suffixIcon: _search.text.isEmpty
-                            ? null
-                            : IconButton(
-                                tooltip: 'Clear search',
-                                onPressed: () {
-                                  _search.clear();
-                                  _load();
-                                  setState(() {});
-                                },
-                                icon: const Icon(Icons.close, size: 15),
-                              ),
+                    // The row shares one control height, so the search box is
+                    // pinned to it rather than growing with its icon targets.
+                    SizedBox(
+                      height: AppSizes.controlHeight,
+                      child: TextField(
+                        controller: _search,
+                        focusNode: _searchFocus,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Search entries…  /',
+                          visualDensity: VisualDensity.standard,
+                          prefixIcon: const Icon(Icons.search, size: 17),
+                          suffixIcon: _search.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  onPressed: () {
+                                    _search.clear();
+                                    _load();
+                                    setState(() {});
+                                  },
+                                  icon: const Icon(Icons.close, size: 15),
+                                ),
+                        ),
                       ),
                     ),
                   ];
@@ -523,6 +535,8 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                       EntryForm(
                         entry: null,
                         initialStart: DateTime.now(),
+                        initialCategoryId: entrySeed.categoryId,
+                        initialSubcategoryId: entrySeed.subcategoryId,
                         onCancel: () => setState(() => _adding = false),
                         onSaved: (_) => _added(),
                       ),
@@ -643,6 +657,23 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
           ],
         ),
       ),
+    );
+  }
+
+  /// The active taxonomy filters as a form seed. A subcategory filter also
+  /// names its parent, so the pair stays consistent. The form itself rejects
+  /// values it cannot offer, such as an archived category.
+  ({String? categoryId, String? subcategoryId}) _taxonomySeed(AppState state) {
+    final subcategory = state.subcategoryById(_subcategoryId);
+    if (subcategory != null) {
+      return (
+        categoryId: subcategory.categoryId,
+        subcategoryId: subcategory.id,
+      );
+    }
+    return (
+      categoryId: _categoryId.isEmpty ? null : _categoryId,
+      subcategoryId: null,
     );
   }
 

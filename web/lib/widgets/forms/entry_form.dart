@@ -6,6 +6,7 @@ import '../../models/drafts.dart';
 import '../../models/enums.dart';
 import '../../models/taxonomy.dart';
 import '../../models/work_entry.dart';
+import '../../state/app_state.dart';
 import '../../state/app_state_scope.dart';
 import '../../theme/app_tokens.dart';
 import '../../utils/people.dart';
@@ -21,6 +22,8 @@ class EntryForm extends StatefulWidget {
     super.key,
     required this.entry,
     this.initialStart,
+    this.initialCategoryId,
+    this.initialSubcategoryId,
     required this.onCancel,
     required this.onSaved,
   });
@@ -28,6 +31,14 @@ class EntryForm extends StatefulWidget {
   /// Null creates a new entry; otherwise the entry is edited in place.
   final WorkEntry? entry;
   final DateTime? initialStart;
+
+  /// Seeds a new entry's taxonomy, for example from the Log's active filters.
+  /// Only values the form could itself offer are used; an archived or unknown
+  /// category seeds nothing and the remembered pair applies. Ignored when
+  /// [entry] is not null.
+  final String? initialCategoryId;
+  final String? initialSubcategoryId;
+
   final VoidCallback onCancel;
   final ValueChanged<WorkEntry> onSaved;
 
@@ -73,27 +84,74 @@ class _EntryFormState extends State<EntryForm> {
     _initialized = true;
     if (widget.entry != null) return;
 
-    // A new entry starts from the user's defaults and last capture pair. A
-    // remembered pair that has since been archived is not offered again.
+    // A new entry starts from the caller's hint, else the user's defaults and
+    // last capture pair. A remembered pair that has since been archived is not
+    // offered again.
     final state = AppStateScope.of(context);
     _minutes.text = state.settings.defaultDurationMinutes.toString();
+    final seeded = _seededTaxonomy(state);
     final preferred = state.lastCategoryId;
     _categoryId =
-        preferred != null &&
-            state.selectableCategories.any(
-              (category) => category.id == preferred,
-            )
-        ? preferred
-        : state.selectableCategories.isEmpty
-        ? ''
-        : state.selectableCategories.first.id;
+        seeded.categoryId ??
+        (preferred != null &&
+                state.selectableCategories.any(
+                  (category) => category.id == preferred,
+                )
+            ? preferred
+            : state.selectableCategories.isEmpty
+            ? ''
+            : state.selectableCategories.first.id);
     final lastSubcategory = state.lastSubcategoryId ?? '';
     _subcategoryId =
-        state
-            .selectableSubcategoriesFor(_categoryId)
-            .any((subcategory) => subcategory.id == lastSubcategory)
-        ? lastSubcategory
-        : '';
+        seeded.subcategoryId ??
+        (state
+                .selectableSubcategoriesFor(_categoryId)
+                .any((subcategory) => subcategory.id == lastSubcategory)
+            ? lastSubcategory
+            : '');
+  }
+
+  /// The caller's taxonomy hint, reduced to a pair the form can actually
+  /// offer. A supplied category that is archived or unknown suppresses the
+  /// hint entirely so the remembered pair applies exactly as before. A
+  /// subcategory hint implies its parent, keeping the pair consistent.
+  ({String? categoryId, String? subcategoryId}) _seededTaxonomy(
+    AppState state,
+  ) {
+    final requestedCategory = widget.initialCategoryId;
+    final requestedSubcategory = widget.initialSubcategoryId;
+
+    String? categoryId;
+    if (requestedCategory != null) {
+      final selectable = state.selectableCategories.any(
+        (category) => category.id == requestedCategory,
+      );
+      if (!selectable) return (categoryId: null, subcategoryId: null);
+      categoryId = requestedCategory;
+    }
+
+    String? subcategoryId;
+    if (requestedSubcategory != null) {
+      final subcategory = state.subcategoryById(requestedSubcategory);
+      if (subcategory != null &&
+          state
+              .selectableSubcategoriesFor(subcategory.categoryId)
+              .any((candidate) => candidate.id == subcategory.id)) {
+        if (categoryId == null) {
+          final parent = state.selectableCategories.any(
+            (category) => category.id == subcategory.categoryId,
+          );
+          if (!parent) return (categoryId: null, subcategoryId: null);
+          categoryId = subcategory.categoryId;
+        }
+        if (categoryId == subcategory.categoryId) {
+          subcategoryId = subcategory.id;
+        }
+      }
+    }
+
+    if (categoryId == null) return (categoryId: null, subcategoryId: null);
+    return (categoryId: categoryId, subcategoryId: subcategoryId);
   }
 
   @override
@@ -413,6 +471,8 @@ class _EntryFormState extends State<EntryForm> {
 Future<WorkEntry?> showServiceEntryDialog(
   BuildContext context, {
   WorkEntry? entry,
+  String? initialCategoryId,
+  String? initialSubcategoryId,
 }) {
   return showDialog<WorkEntry>(
     context: context,
@@ -457,6 +517,8 @@ Future<WorkEntry?> showServiceEntryDialog(
                 const SizedBox(height: AppSpacing.md),
                 EntryForm(
                   entry: entry,
+                  initialCategoryId: initialCategoryId,
+                  initialSubcategoryId: initialSubcategoryId,
                   onCancel: () => Navigator.of(dialogContext).pop(),
                   onSaved: (saved) => Navigator.of(dialogContext).pop(saved),
                 ),

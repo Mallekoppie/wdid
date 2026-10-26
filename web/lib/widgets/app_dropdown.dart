@@ -16,6 +16,7 @@ class AppDropdown<T> extends StatelessWidget {
     this.isDense = true,
     this.expanded = true,
     this.errorText,
+    this.height,
   });
 
   final T? value;
@@ -29,10 +30,15 @@ class AppDropdown<T> extends StatelessWidget {
   final bool expanded;
   final String? errorText;
 
+  /// When set, the decorator paints at exactly this height instead of sizing
+  /// to its content. Mixed rows of controls use it to share one height.
+  final double? height;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InputDecorator(
+    final decorator = InputDecorator(
+      expands: height != null,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -60,5 +66,9 @@ class AppDropdown<T> extends StatelessWidget {
         ),
       ),
     );
+    final targetHeight = height;
+    return targetHeight == null
+        ? decorator
+        : SizedBox(height: targetHeight, child: decorator);
   }
 }
