@@ -70,9 +70,9 @@ message CheckInTotals {
   repeated CheckInTotal by_subcategory = 3;
   repeated CheckInTotal support_by_person = 4;
   // Authoritative support totals captured from the report at creation time.
-  // support_by_person rows credit each name the entry's full minutes, so their
-  // sum may exceed support_minutes.
-  int32 support_minutes = 5;
+  // support_by_person rows credit each name the entry's full duration, so their
+  // sum may exceed support_duration.
+  google.protobuf.Duration support_duration = 5;
   int32 support_interactions = 6;
 }
 

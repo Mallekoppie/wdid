@@ -94,7 +94,7 @@ generated.PeriodReport protoReport() {
     toDate: '2026-10-19',
     total: minutes(90),
     entryCount: 2,
-    supportMinutes: 30,
+    supportDuration: minutes(30),
     supportInteractions: 1,
     categories: [
       generated.CategoryAllocation(

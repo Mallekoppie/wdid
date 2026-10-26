@@ -409,7 +409,7 @@ func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 		ToDate:              report.ToDate,
 		Total:               minutesDuration(report.TotalMinutes),
 		EntryCount:          int32(report.EntryCount),
-		SupportMinutes:      int32(report.SupportMinutes),
+		SupportDuration:     minutesDuration(report.SupportMinutes),
 		SupportInteractions: int32(report.SupportInteractions),
 		Categories:          make([]*wdidv1.CategoryAllocation, 0, len(report.Categories)),
 		Subcategories:       make([]*wdidv1.SubcategoryAllocation, 0, len(report.Subcategories)),

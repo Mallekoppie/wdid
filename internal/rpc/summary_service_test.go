@@ -190,9 +190,9 @@ func TestSummaryServiceGetPeriodReportAggregates(t *testing.T) {
 	if len(modes) != 1 || modes[0].GetName() != "Unblock" || modes[0].GetDuration().AsDuration() != 30*time.Minute {
 		t.Fatalf("support modes = %+v, want Unblock with 30m", modes)
 	}
-	if report.GetSupportMinutes() != 30 || report.GetSupportInteractions() != 1 {
-		t.Fatalf("support totals = %dm/%d interactions, want the authoritative 30m support entry",
-			report.GetSupportMinutes(), report.GetSupportInteractions())
+	if report.GetSupportDuration().AsDuration() != 30*time.Minute || report.GetSupportInteractions() != 1 {
+		t.Fatalf("support totals = %v/%d interactions, want the authoritative 30m support entry",
+			report.GetSupportDuration().AsDuration(), report.GetSupportInteractions())
 	}
 
 	weeks := report.GetWeeks()
@@ -267,9 +267,9 @@ func TestSummaryServiceSupportRollupsRespectPeriodBoundaries(t *testing.T) {
 	if report.GetTotal().AsDuration() != 150*time.Minute || report.GetEntryCount() != 4 {
 		t.Fatalf("totals = %v/%d, want the four entries inside the period", report.GetTotal().AsDuration(), report.GetEntryCount())
 	}
-	if report.GetSupportMinutes() != 150 || report.GetSupportInteractions() != 4 {
-		t.Fatalf("support totals = %dm/%d interactions, want the four support entries",
-			report.GetSupportMinutes(), report.GetSupportInteractions())
+	if report.GetSupportDuration().AsDuration() != 150*time.Minute || report.GetSupportInteractions() != 4 {
+		t.Fatalf("support totals = %v/%d interactions, want the four support entries",
+			report.GetSupportDuration().AsDuration(), report.GetSupportInteractions())
 	}
 
 	// A period ending before the last entry drops both Sam's time and his row.

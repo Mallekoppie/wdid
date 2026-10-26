@@ -323,15 +323,23 @@ CheckIn checkInFromProto(generated.CheckIn checkIn) => CheckIn(
   updatedAt: checkIn.hasUpdatedAt() ? checkIn.updatedAt.toDateTime() : null,
 );
 
-CheckInTotals checkInTotalsFromProto(generated.CheckInTotals totals) =>
-    CheckInTotals(
-      minutes: _minutes(totals.total),
-      byCategory: _totalsMap(totals.byCategory),
-      bySubcategory: _totalsMap(totals.bySubcategory),
-      supportByPerson: _totalsMap(totals.supportByPerson),
-      supportMinutes: totals.supportMinutes,
-      supportInteractions: totals.supportInteractions,
-    );
+CheckInTotals checkInTotalsFromProto(generated.CheckInTotals totals) {
+  final supportByPerson = _totalsMap(totals.supportByPerson);
+  return CheckInTotals(
+    minutes: _minutes(totals.total),
+    byCategory: _totalsMap(totals.byCategory),
+    bySubcategory: _totalsMap(totals.bySubcategory),
+    supportByPerson: supportByPerson,
+    supportMinutes: CheckInTotals.effectiveSupportMinutes(
+      _minutes(totals.supportDuration),
+      supportByPerson,
+    ),
+    supportInteractions: CheckInTotals.effectiveSupportInteractions(
+      totals.supportInteractions,
+      supportByPerson,
+    ),
+  );
+}
 
 Map<String, int> _totalsMap(Iterable<generated.CheckInTotal> totals) => {
   for (final total in totals) total.key: _minutes(total.duration),

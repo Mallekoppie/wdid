@@ -332,7 +332,7 @@ PeriodReport periodReportFromProto(generated.PeriodReport report) {
     toDate: report.toDate,
     totalMinutes: _minutes(report.total),
     entryCount: report.entryCount,
-    supportMinutes: report.supportMinutes,
+    supportMinutes: _minutes(report.supportDuration),
     supportInteractions: report.supportInteractions,
     categories: [
       for (final category in report.categories)

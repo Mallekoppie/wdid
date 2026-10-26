@@ -494,4 +494,29 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('a long support attribution wraps instead of truncating', (
+    tester,
+  ) async {
+    await pumpSupport(
+      tester,
+      entries: [
+        supportEntry(
+          id: 'many',
+          people: const ['Priya', 'Sam', 'Alex', 'Noor'],
+          description: 'Paired on the migration',
+        ),
+      ],
+    );
+
+    final label = tester.widget<Text>(
+      find.text('Support · Priya, Sam, Alex, Noor · Unblock'),
+    );
+    expect(label.maxLines, isNull, reason: 'the attribution must be able to wrap');
+    expect(
+      label.overflow,
+      isNot(TextOverflow.ellipsis),
+      reason: 'every name must stay readable',
+    );
+  });
 }

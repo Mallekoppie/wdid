@@ -208,7 +208,7 @@ func ValidateWorkEntry(entry WorkEntry, category Category, subcategory *Subcateg
 		}
 	}
 
-	if category.Role == CategoryRoleSupport && !hasName(entry.People) {
+	if category.Role == CategoryRoleSupport && len(NormalizeList(entry.People)) == 0 {
 		return invalid("person", "is required for support entries")
 	}
 
@@ -364,18 +364,6 @@ func validateLocalDate(field, value string) error {
 		return invalid(field, "must be a date in YYYY-MM-DD form")
 	}
 	return nil
-}
-
-// hasName reports whether at least one list entry carries a non-blank name.
-// Blank names are dropped by Normalize, but validation must also reject input
-// that has not been normalized yet.
-func hasName(people []string) bool {
-	for _, person := range people {
-		if strings.TrimSpace(person) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func validateLinkList(links []Link) error {

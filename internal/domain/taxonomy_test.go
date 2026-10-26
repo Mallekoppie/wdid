@@ -511,3 +511,31 @@ func TestValidateSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestHasPersonMatchesTrimmedNamesCaseInsensitively(t *testing.T) {
+	people := []string{"Priya", " Sam "}
+
+	tests := []struct {
+		name   string
+		person string
+		want   bool
+	}{
+		{name: "exact", person: "Priya", want: true},
+		{name: "case-insensitive", person: "PRIYA", want: true},
+		{name: "trimmed target", person: "  Priya  ", want: true},
+		{name: "trimmed stored name", person: "sam", want: true},
+		{name: "absent", person: "Noor", want: false},
+		{name: "blank", person: "   ", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := domain.HasPerson(people, test.person); got != test.want {
+				t.Fatalf("HasPerson(%#v, %q) = %v, want %v", people, test.person, got, test.want)
+			}
+		})
+	}
+
+	if domain.HasPerson(nil, "Priya") {
+		t.Fatal("an empty people list must not match")
+	}
+}

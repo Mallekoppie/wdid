@@ -65,11 +65,13 @@ class PersonPicker extends StatefulWidget {
   final bool oneTap;
 
   /// Fires with the resulting list when a name is committed: a one-tap chip,
-  /// Enter in the new-name field, or the add action.
+  /// Enter in the new-name field, or the add action. It never starts or saves
+  /// anything on its own.
   final ValueChanged<List<String>>? onCommitted;
 
-  /// Fires after Enter in the new-name field, allowing callers to start or
-  /// save in the same gesture.
+  /// Fires only after Enter (the keyboard submit action) in the new-name
+  /// field, once the name is committed, allowing callers to start or save in
+  /// the same gesture. The add action deliberately does not fire it.
   final ValueChanged<List<String>>? onSubmitted;
 
   @override
@@ -220,10 +222,9 @@ class _PersonPickerState extends State<PersonPicker> {
               tooltip: 'Add person',
               onPressed: widget.enabled
                   ? () {
-                      final committed = _commit(_controller.text);
-                      if (committed != null) {
-                        widget.onSubmitted?.call(committed);
-                      }
+                      // Add only commits the name; saving and starting stay on
+                      // Enter so a quick add never submits the surrounding form.
+                      _commit(_controller.text);
                     }
                   : null,
               icon: const Icon(Icons.add, size: 18),

@@ -228,6 +228,68 @@ void main() {
     expect(harness.state.supportPeople, ['Priya', 'Sam', 'Alex']);
   });
 
+  testWidgets('the add action commits without submitting', (tester) async {
+    final committed = <List<String>>[];
+    final submitted = <List<String>>[];
+    await pumpPicker(
+      tester,
+      onCommitted: committed.add,
+      onSubmitted: submitted.add,
+    );
+
+    await tester.enterText(find.byType(TextFormField), 'Alex');
+    await tester.tap(find.byTooltip('Add person'));
+    await tester.pump();
+
+    expect(committed.single, ['Alex']);
+    expect(
+      submitted,
+      isEmpty,
+      reason: 'the add action must not save or start a timer',
+    );
+  });
+
+  testWidgets('the add action commits without submitting in one-tap mode', (
+    tester,
+  ) async {
+    final committed = <List<String>>[];
+    final submitted = <List<String>>[];
+    await pumpPicker(
+      tester,
+      oneTap: true,
+      onCommitted: committed.add,
+      onSubmitted: submitted.add,
+    );
+
+    await tester.enterText(find.byType(TextFormField), 'Alex');
+    await tester.tap(find.byTooltip('Add person'));
+    await tester.pump();
+
+    expect(committed.single, ['Alex']);
+    expect(
+      submitted,
+      isEmpty,
+      reason: 'the add action must not start support in one-tap mode',
+    );
+  });
+
+  testWidgets('Enter commits and submits a typed name', (tester) async {
+    final committed = <List<String>>[];
+    final submitted = <List<String>>[];
+    await pumpPicker(
+      tester,
+      onCommitted: committed.add,
+      onSubmitted: submitted.add,
+    );
+
+    await tester.enterText(find.byType(TextFormField), 'Alex');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(committed.single, ['Alex']);
+    expect(submitted.single, ['Alex']);
+  });
+
   testWidgets('autofocus focuses the new-name field', (tester) async {
     await pumpPicker(tester, autofocus: true);
 

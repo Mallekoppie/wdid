@@ -168,15 +168,17 @@ func (e *WorkEntry) Normalize() {
 	e.UpdatedAt = utc(e.UpdatedAt)
 }
 
-// PrimaryPerson returns the first name. Reporting credits every name in full;
-// this helper is for surfaces that need a single leading name.
-func (e WorkEntry) PrimaryPerson() string {
-	for _, person := range e.People {
-		if trimmed := strings.TrimSpace(person); trimmed != "" {
-			return trimmed
+// HasPerson reports whether the trimmed, case-insensitive name appears in the
+// list. It is the single matching rule shared by work-entry filtering, export
+// attribution and validation.
+func HasPerson(people []string, name string) bool {
+	target := strings.TrimSpace(name)
+	for _, candidate := range people {
+		if strings.EqualFold(strings.TrimSpace(candidate), target) {
+			return true
 		}
 	}
-	return ""
+	return false
 }
 
 // UnmarshalJSON accepts the legacy single "person" field so records written

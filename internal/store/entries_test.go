@@ -461,12 +461,9 @@ func TestMultiPersonSupportEntryRoundTripsAndFiltersByAnyName(t *testing.T) {
 		t.Fatalf("people = %#v, want %#v", stored.People, want)
 	}
 
-	for _, person := range []string{"Priya", "priya", " PAM ", "Sam"} {
+	for _, person := range []string{"Priya", "priya", "  Priya  ", "Sam"} {
 		name := person
 		t.Run("filters "+name, func(t *testing.T) {
-			if name == " PAM " {
-				return
-			}
 			got, err := database.WorkEntries(userID, store.WorkEntryFilter{Person: name})
 			if err != nil {
 				t.Fatalf("filter by %q: %v", name, err)
