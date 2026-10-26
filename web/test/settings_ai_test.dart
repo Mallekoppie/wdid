@@ -84,6 +84,52 @@ void main() {
     expect(settings.settings.redactUrls, isTrue);
   });
 
+  testWidgets('saving the key also persists a pending provider change', (
+    tester,
+  ) async {
+    final settings = await pumpSettings(tester);
+
+    await tester.tap(find.byType(DropdownButton<AIProviderPreset>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DeepSeek').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API key'),
+      'sk-deepseek-user-key',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save key'));
+    await tester.pumpAndSettle();
+
+    // A key saved against the old endpoint authenticates against the wrong
+    // provider, so the pending preset must land in the same action.
+    expect(settings.updateCalls, 1);
+    expect(settings.settings.aiBaseUrl, AIProviderPreset.deepSeek.baseUrl);
+    expect(settings.settings.aiModel, AIProviderPreset.deepSeek.model);
+    expect(settings.setKeyCalls, 1);
+    expect(settings.lastApiKey, 'sk-deepseek-user-key');
+  });
+
+  testWidgets('saving AI settings also stores a typed key', (tester) async {
+    final settings = await pumpSettings(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'API key'),
+      'sk-ant-user-key',
+    );
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save AI settings'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save AI settings'));
+    await tester.pumpAndSettle();
+
+    expect(settings.setKeyCalls, 1);
+    expect(settings.lastApiKey, 'sk-ant-user-key');
+    expect(settings.settings.hasAiApiKey, isTrue);
+    expect(fieldText(tester, 'API key'), isEmpty);
+  });
+
   testWidgets(
     'the API key is write-only and can be set, replaced and cleared',
     (tester) async {

@@ -264,23 +264,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     setState(() => _savingAi = true);
     try {
-      // The key has its own write-only actions; the settings message has no
-      // field for it.
-      final saved = await state.saveSettings(
+      // The key has its own write-only actions. When one is typed here, save it
+      // with the rest of the form so the provider and key cannot drift apart.
+      var saved = await state.saveSettings(
         state.settings.copyWith(
           aiBaseUrl: _baseUrl.text.trim(),
           aiModel: _model.text.trim(),
           redactUrls: _redactUrls,
         ),
       );
+      final apiKey = _apiKey.text.trim();
+      var savedKey = false;
+      if (apiKey.isNotEmpty) {
+        try {
+          saved = await state.setAiApiKey(apiKey);
+          savedKey = true;
+          _apiKey.clear();
+          if (mounted) setState(() => _keyError = null);
+        } on SettingsFailure catch (failure) {
+          if (mounted) setState(() => _keyError = failure.message);
+        } catch (error) {
+          if (mounted) setState(() => _keyError = '$error');
+        }
+      }
       if (!mounted) return;
       setState(() {
         _savingAi = false;
         _aiDirty = false;
       });
       _applySettings(saved);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('AI settings saved')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            savedKey ? 'AI settings and API key saved' : 'AI settings saved',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _savingAi = false);
@@ -290,16 +309,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _saveKey() {
+  Future<void> _saveKey() async {
     final state = AppStateScope.read(context);
     final apiKey = _apiKey.text.trim();
     if (apiKey.isEmpty) {
       setState(() => _keyError = 'Enter an API key first.');
-      return Future.value();
+      return;
     }
+    if (state.preferencesError != null || state.preferencesLoading) {
+      setState(
+        () => _keyError =
+            'Preferences could not be loaded. Retry before saving the key.',
+      );
+      return;
+    }
+
+    // Persist a pending provider change before the key. Saving only the key
+    // leaves the previous endpoint/model in place, which sends a DeepSeek key
+    // to Anthropic (or vice versa) and fails authentication.
+    var savedSettings = false;
+    if (_aiDirty) {
+      setState(() {
+        _savingKey = true;
+        _keyError = null;
+      });
+      try {
+        final saved = await state.saveSettings(
+          state.settings.copyWith(
+            aiBaseUrl: _baseUrl.text.trim(),
+            aiModel: _model.text.trim(),
+            redactUrls: _redactUrls,
+          ),
+        );
+        if (!mounted) return;
+        _applySettings(saved);
+        setState(() {
+          _aiDirty = false;
+          savedSettings = true;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          _savingKey = false;
+          _keyError = 'Could not save AI settings: $error';
+        });
+        return;
+      }
+    }
+
     return _runKeyAction(
       clearing: false,
-      success: 'API key saved for this account',
+      success: savedSettings
+          ? 'AI settings and API key saved'
+          : 'API key saved for this account',
       action: () => state.setAiApiKey(apiKey),
     );
   }
@@ -718,6 +780,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Text(
                           'Stored for this account. The key is write-only: it is '
                           'never returned by the service or included in an export.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'The key must match the Provider above. Saving a key '
+                          'also saves a pending provider change.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),
