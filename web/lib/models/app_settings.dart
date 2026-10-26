@@ -54,11 +54,18 @@ enum ReviewCadence {
   };
 }
 
+/// Provider endpoint presets. The model is a starting point and always stays
+/// editable. These are the single source of truth for the AI defaults too.
+const _anthropicBaseUrl = 'https://api.anthropic.com';
+const _anthropicModel = 'claude-sonnet-5-5';
+const _deepSeekBaseUrl = 'https://api.deepseek.com/anthropic';
+const _deepSeekModel = 'deepseek-flash';
+
 /// Selects the provider endpoint and a starting model. The model always stays
 /// editable, so a new model never requires a new preset.
 enum AIProviderPreset {
-  anthropic('Anthropic', 'https://api.anthropic.com', 'claude-sonnet-5-5'),
-  deepSeek('DeepSeek', 'https://api.deepseek.com/anthropic', 'deepseek-flash'),
+  anthropic('Anthropic', _anthropicBaseUrl, _anthropicModel),
+  deepSeek('DeepSeek', _deepSeekBaseUrl, _deepSeekModel),
   custom('Custom URL', '', '');
 
   const AIProviderPreset(this.label, this.baseUrl, this.model);
@@ -93,8 +100,8 @@ class AppSettings {
     this.backupDir = '/var/lib/wdid/backups',
     this.backupIntervalHours = 6,
     this.retentionCount = 30,
-    this.aiBaseUrl = 'https://api.anthropic.com',
-    this.aiModel = 'claude-sonnet-5-5',
+    this.aiBaseUrl = _anthropicBaseUrl,
+    this.aiModel = _anthropicModel,
     this.redactUrls = false,
     this.hasAiApiKey = false,
     this.lastBackupAt,
@@ -213,8 +220,8 @@ class AppSettings {
     backupDir: json['backupDir']?.toString() ?? '/var/lib/wdid/backups',
     backupIntervalHours: (json['backupIntervalHours'] as num?)?.round() ?? 6,
     retentionCount: (json['retentionCount'] as num?)?.round() ?? 30,
-    aiBaseUrl: json['aiBaseUrl']?.toString() ?? 'https://api.anthropic.com',
-    aiModel: json['aiModel']?.toString() ?? 'claude-sonnet-5-5',
+    aiBaseUrl: json['aiBaseUrl']?.toString() ?? _anthropicBaseUrl,
+    aiModel: json['aiModel']?.toString() ?? _anthropicModel,
     redactUrls: json['redactUrls'] == true,
     hasAiApiKey: json['hasAiApiKey'] == true,
     lastBackupAt: DateTime.tryParse(json['lastBackupAt']?.toString() ?? ''),

@@ -62,6 +62,25 @@ The deployment-provided secret used once to create the first account, which
 becomes admin. It is not accepted after that account exists.
 _Avoid_: registration secret, signup secret, setup key, admin password
 
+**Local mode**:
+The default deployment: one account identified by a username, with an optional
+password, created on first run. There is no email, bootstrap secret, invite or
+OIDC, and no second account can be created.
+_Avoid_: single-user mode, standalone mode, personal install
+
+**Server mode**:
+The opt-in multi-user deployment (`WDID_AUTH_MODE=server`, and always the
+effective mode when development mode is on): a bootstrap admin, email/password
+accounts, single-use invites, and optional Zitadel OIDC.
+_Avoid_: hosted mode, cloud mode, multi-user mode (the domain model is always
+multi-user)
+
+**Username**:
+The identity a local account signs in with. It is compared case-insensitively,
+stored with its original spelling for display, and is empty for server accounts,
+which are addressed by email.
+_Avoid_: handle, login name, user id
+
 **Check-in**:
 A saved artifact covering a period, with focus notes, aggregates, and an optional
 summary. Every check-in has a kind.
@@ -88,3 +107,10 @@ _Avoid_: task, ticket
 **Note**:
 Free text attached to a day or to a subcategory.
 _Avoid_: comment, memo, annotation
+
+**AI provider key**:
+The per-account Anthropic-compatible API key stored write-only in that account's
+settings. The account sets, replaces or clears its own key; AI generation is
+disabled until one is stored, and the key never appears in an RPC response or an
+export.
+_Avoid_: OpenAI key, deployment key, global API key, API token

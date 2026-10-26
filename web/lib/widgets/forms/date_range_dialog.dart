@@ -13,6 +13,22 @@ class DateRangePreset {
   final DateTimeRange range;
 }
 
+/// Builds the preset chips a screen offers from its own period enum. The
+/// [custom] period is omitted because the dialog itself supplies the custom
+/// dates. Each screen still owns how its periods map to ranges.
+List<DateRangePreset> dateRangePresets<T>({
+  required Iterable<T> periods,
+  required T custom,
+  required String Function(T period) labelOf,
+  required DateTimeRange Function(T period) rangeOf,
+}) {
+  return [
+    for (final period in periods)
+      if (period != custom)
+        DateRangePreset(label: labelOf(period), range: rangeOf(period)),
+  ];
+}
+
 /// Shows the shared compact range dialog. Returns the chosen inclusive local
 /// range, or null when the user cancels.
 Future<DateTimeRange?> showDateRangeDialog(

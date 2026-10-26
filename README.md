@@ -28,20 +28,37 @@ gRPC-Web and must not reimplement these rules.
 
 ## Run
 
+### Local single-user (default)
+
 ```bash
-export WDID_BOOTSTRAP_SECRET='change-me-at-least-16-chars'
 export WDID_JWT_SECRET='change-me-at-least-32-characters-long'
 go run ./cmd/wdid
 ```
 
 The server listens on `127.0.0.1:8080` and stores data in `./data/wdid.db` by
-default.
+default. The first visit creates the single account from a **username** and an
+optional password. No email address, bootstrap secret, invite or OIDC is
+involved.
 
-Or use the Makefile, which supplies local-only development defaults for the
-required secrets:
+### Server / development (opt-in)
+
+Hosted multi-user deployments opt in explicitly:
 
 ```bash
-make run        # go run ./cmd/wdid with development defaults
+export WDID_AUTH_MODE=server
+export WDID_BOOTSTRAP_SECRET='change-me-at-least-16-chars'
+export WDID_JWT_SECRET='change-me-at-least-32-characters-long'
+go run ./cmd/wdid
+```
+
+The first account uses the bootstrap secret, later accounts need single-use
+invite codes, and Zitadel OIDC is optional.
+
+Or use the Makefile, which supplies local-only development defaults. `make run`
+sets `WDID_DEV_MODE=true`, which forces server auth behaviour:
+
+```bash
+make run        # go run ./cmd/wdid with development defaults (server behaviour)
 make build      # compile the service to bin/wdid
 make test       # go test ./... and flutter test
 make lint       # go vet ./... and flutter analyze
@@ -59,17 +76,23 @@ the Makefile are for local development only.
 | --- | --- | --- |
 | `WDID_HTTP_ADDR` | `127.0.0.1:8080` | Listen address |
 | `WDID_DB_PATH` | `./data/wdid.db` | BoltDB file |
-| `WDID_BOOTSTRAP_SECRET` | required | Deployment secret for the first (admin) account |
+| `WDID_AUTH_MODE` | `local` | `local` (one username account, optional password) or `server` (bootstrap admin, email/password, invites, optional OIDC) |
+| `WDID_BOOTSTRAP_SECRET` | required in server/dev mode | Deployment secret for the first (admin) account; only in server mode (or development mode, which forces server behaviour), and not accepted in local mode |
 | `WDID_JWT_SECRET` | required | HS256 signing key for local tokens |
 | `WDID_JWT_SIGNING_METHOD` | `HS256` | `HS256`, `HS384` or `HS512` |
 | `WDID_JWT_EXPIRATION_MINUTES` | `720` | Local token lifetime |
 | `WDID_MAX_BLOCK_MINUTES` | `240` | Timer block limit before keep/trim/discard |
 | `WDID_ALLOWED_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Exact CORS origins for the Flutter dev server |
-| `WDID_DEV_MODE` | `false` | Enables Connect reflection (development only) |
-| `WDID_ZITADEL_ENABLED` | `false` | Accept Zitadel ID tokens |
+| `WDID_DEV_MODE` | `false` | Enables Connect reflection (development only) and forces server auth behaviour |
+| `WDID_ZITADEL_ENABLED` | `false` | Accept Zitadel ID tokens; rejected in local mode |
 | `WDID_ZITADEL_ISSUER_URL` | empty | Issuer base URL, e.g. `http://zitadel.local:8080` |
 | `WDID_ZITADEL_CLIENT_ID` | empty | OIDC client identifier |
 | `WDID_ZITADEL_ALLOWED_ALGORITHMS` | `RS256` | Comma-separated signing algorithms |
+
+> **Upgrading an existing deployment:** local mode is now the default. Existing
+> server deployments must set `WDID_AUTH_MODE=server`. A local-mode service
+> refuses to start against a database that contains accounts without a username
+> and reports that fix instead of switching modes or ignoring those accounts.
 
 When Zitadel is enabled, configure it to emit wdid's role vocabulary in a
 `roles` claim: an admin token carries `"admin"`, every other token is a plain
@@ -78,7 +101,27 @@ tokens share one mapping.
 
 ## Authentication model
 
-Initial local deployment baseline:
+wdid has two deployment modes. **Local** is the default; **server** is opt-in
+with `WDID_AUTH_MODE=server` (and is always effective when
+`WDID_DEV_MODE=true`).
+
+### Local mode (default)
+
+1. The first run registers the single account through
+   `wdid.v1.AuthService/RegisterAccount` with a **username** and an optional
+   password. It becomes `admin` so instance-wide backups remain usable.
+2. Login accepts the username and, when the account has one, its password. A
+   passwordless account signs in with the username alone.
+3. Login returns a local HS256 JWT. Protected RPCs accept
+   `Authorization: Bearer <token>`.
+4. There is no email, bootstrap secret, invite or OIDC in local mode, and local
+   mode can never create a second account.
+5. A local-mode service refuses to start on a database that already contains
+   server accounts (accounts without usernames). It never switches modes
+   silently or picks an account; the error tells the operator to set
+   `WDID_AUTH_MODE=server`.
+
+### Server mode (`WDID_AUTH_MODE=server`)
 
 1. The **first** account registers through
    `wdid.v1.AuthService/RegisterAccount` with the deployment bootstrap secret and
@@ -100,9 +143,14 @@ Initial local deployment baseline:
    `"admin"`.
 
 Passwords are stored as bcrypt hashes in `sys:user_credentials`, separate from
-the user profile, so hashes are never serialized into API responses.
+the user profile, so hashes are never serialized into API responses. Local
+accounts keep their username in `sys:user_usernames`; server accounts are
+indexed by email instead.
 
 ## Invite CLI
+
+Invites exist only in server mode. In local mode the single account is created
+on first run and no invite is needed.
 
 ```bash
 wdid invite create --email person@example.com   # prints the code once
@@ -136,7 +184,7 @@ the liveness probe.
 ## Storage layout
 
 - `sys:meta` — `schema_version`, `instance_id`, `index_version`
-- `sys:users`, `sys:user_emails`, `sys:user_credentials`
+- `sys:users`, `sys:user_emails`, `sys:user_usernames`, `sys:user_credentials`
 - `sys:invites` (keyed by the invite-code hash)
 - `user_<id>:categories`, `user_<id>:subcategories`
 - `user_<id>:entries`, `user_<id>:milestones`, `user_<id>:notes`
@@ -145,10 +193,16 @@ the liveness probe.
   `idx_entries_subcategory`, `idx_entries_person`
 
 User-owned records live in user-prefixed buckets, so cross-account reads return
-not found by construction. Entry indexes are written in the same transaction as
-the entry and rebuilt on startup when `index_version` changes. Every new account
-is seeded with `Initiatives`, `Support` (+ modes) and `Other` (+ modes), plus
-default settings.
+not found by construction. The identity indexes (`sys:user_emails`,
+`sys:user_usernames`) are unique and case-insensitive; they are written in the
+same transaction as the account and preserve the original spelling in the
+profile for display. Local mode requires its account to have a username
+identity. A local-mode service refuses to start on a database holding accounts
+without one, so legacy server databases must set `WDID_AUTH_MODE=server`.
+
+Entry indexes are written in the same transaction as the entry and rebuilt on
+startup when `index_version` changes. Every new account is seeded with
+`Initiatives`, `Support` (+ modes) and `Other` (+ modes), plus default settings.
 
 ## Verification
 

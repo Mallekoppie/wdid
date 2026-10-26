@@ -174,14 +174,12 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
       context,
       initialRange: initial,
       today: state.today,
-      presets: [
-        for (final preset in _LogPreset.values)
-          if (preset != _LogPreset.custom)
-            DateRangePreset(
-              label: preset.label,
-              range: _logRange(preset, state, null),
-            ),
-      ],
+      presets: dateRangePresets<_LogPreset>(
+        periods: _LogPreset.values,
+        custom: _LogPreset.custom,
+        labelOf: (preset) => preset.label,
+        rangeOf: (preset) => _logRange(preset, state, null),
+      ),
     );
     if (picked != null) {
       setState(() {

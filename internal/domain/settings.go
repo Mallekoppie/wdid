@@ -69,6 +69,12 @@ const (
 	AIProviderAnthropicModel   = "claude-sonnet-5-5"
 	AIProviderDeepSeekBaseURL  = "https://api.deepseek.com/anthropic"
 	AIProviderDeepSeekModel    = "deepseek-flash"
+
+	// retiredOpenAIBaseURL and retiredOpenAIModel were the deployment-wide
+	// defaults before the Anthropic Messages provider and per-user keys. Stored
+	// settings records may still carry them.
+	retiredOpenAIBaseURL = "https://api.openai.com/v1"
+	retiredOpenAIModel   = "gpt-4.1-mini"
 )
 
 // Settings is the single per-user behaviour and appearance record. The AI key
@@ -110,6 +116,33 @@ type Settings struct {
 // itself is never exposed to clients.
 func (s Settings) HasAIKey() bool {
 	return strings.TrimSpace(s.AIAPIKey) != ""
+}
+
+// MigrateLegacyAIDefaults rewrites the retired OpenAI base URL and model, and
+// empty AI endpoint values, to the Anthropic preset. Accounts created before
+// the Anthropic provider therefore generate without a manual reselection.
+// Custom base URLs and models are preserved. It returns whether the record
+// changed. The API key is never touched.
+func (s *Settings) MigrateLegacyAIDefaults() bool {
+	changed := false
+
+	switch strings.TrimSpace(s.AIBaseURL) {
+	case "", retiredOpenAIBaseURL:
+		if s.AIBaseURL != AIProviderAnthropicBaseURL {
+			s.AIBaseURL = AIProviderAnthropicBaseURL
+			changed = true
+		}
+	}
+
+	switch strings.TrimSpace(s.AIModel) {
+	case "", retiredOpenAIModel:
+		if s.AIModel != AIProviderAnthropicModel {
+			s.AIModel = AIProviderAnthropicModel
+			changed = true
+		}
+	}
+
+	return changed
 }
 
 // DefaultSettings returns the settings every new account starts with.

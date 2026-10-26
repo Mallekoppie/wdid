@@ -77,6 +77,13 @@ func run() error {
 	}
 	defer database.Close()
 
+	// Local mode is the default. Refuse to attach it to a database that still
+	// holds server-mode accounts instead of silently ignoring them or picking
+	// one; the operator must opt into server mode explicitly.
+	if err := auth.EnsureLocalModeCompatible(database, cfg); err != nil {
+		return err
+	}
+
 	authService := auth.NewService(database, cfg)
 
 	assets, err := fs.Sub(webAssets, "dist")

@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -80,34 +79,30 @@ func (s *AuthService) Login(_ context.Context, request *connect.Request[wdidv1.L
 
 // GetAuthConfig reports the enabled login modes without requiring a token.
 func (s *AuthService) GetAuthConfig(_ context.Context, _ *connect.Request[wdidv1.GetAuthConfigRequest]) (*connect.Response[wdidv1.GetAuthConfigResponse], error) {
-	count, err := s.store.CountUsers()
-	if err != nil {
-		return nil, toConnectError(err)
-	}
-
 	response := &wdidv1.GetAuthConfigResponse{
 		LocalLogin: true,
-		Mode:       toProtoAuthMode(s.cfg.EffectiveAuthMode()),
+		Mode:       toProtoAuthMode(s.cfg.ResolvedAuthMode()),
 		Oidc:       &wdidv1.OIDCConfig{},
 	}
 	if s.cfg.LocalMode() {
-		response.SetupRequired = count == 0
-		if count > 0 {
-			user, err := s.store.LocalUser()
-			if err != nil {
-				return nil, toConnectError(err)
-			}
-			response.Username = user.Username
-
-			if _, err := s.store.PasswordHash(user.ID); err == nil {
-				response.PasswordRequired = true
-			} else if !errors.Is(err, store.ErrNotFound) {
-				return nil, toConnectError(err)
-			}
+		// The auth service owns the local-account lookup: the RPC layer does not
+		// reach into the store to decide setup state or password requirements.
+		account, found, err := s.auth.LocalAccount()
+		if err != nil {
+			return nil, toConnectError(err)
+		}
+		response.SetupRequired = !found
+		if found {
+			response.Username = account.Username
+			response.PasswordRequired = account.PasswordRequired
 		}
 		return connect.NewResponse(response), nil
 	}
 
+	count, err := s.store.CountUsers()
+	if err != nil {
+		return nil, toConnectError(err)
+	}
 	response.RegistrationEnabled = count > 0
 	response.BootstrapRequired = count == 0
 	response.Oidc = &wdidv1.OIDCConfig{

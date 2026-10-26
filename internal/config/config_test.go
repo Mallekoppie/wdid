@@ -66,8 +66,8 @@ func TestLoadDefaultsToLocalAuthModeWithoutABootstrapSecret(t *testing.T) {
 	if !cfg.LocalMode() {
 		t.Fatal("local mode should be enabled")
 	}
-	if cfg.EffectiveAuthMode() != config.AuthModeLocal {
-		t.Fatalf("effective mode = %q, want local", cfg.EffectiveAuthMode())
+	if cfg.ResolvedAuthMode() != config.AuthModeLocal {
+		t.Fatalf("effective mode = %q, want local", cfg.ResolvedAuthMode())
 	}
 }
 
@@ -137,8 +137,8 @@ func TestDevModeKeepsTheMultiUserAuthPaths(t *testing.T) {
 	if cfg.LocalMode() {
 		t.Fatal("dev mode must keep the multi-user paths even with a local base mode")
 	}
-	if cfg.EffectiveAuthMode() != config.AuthModeServer {
-		t.Fatalf("effective mode = %q, want server", cfg.EffectiveAuthMode())
+	if cfg.ResolvedAuthMode() != config.AuthModeServer {
+		t.Fatalf("effective mode = %q, want server", cfg.ResolvedAuthMode())
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("dev mode validation: %v", err)
