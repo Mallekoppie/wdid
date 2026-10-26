@@ -31,8 +31,9 @@ enum DensityPreference {
   DENSITY_PREFERENCE_COMPACT = 2;
 }
 
-// Settings is the single per-user behaviour and appearance record. The AI key
-// is never stored here; it comes from the environment.
+// Settings is the single per-user behaviour and appearance record. The AI
+// provider key is stored in the same per-user record but never appears in this
+// message; only has_ai_api_key reports whether one is stored.
 message Settings {
   string timezone = 1;
   // 1 is Monday and 7 is Sunday, matching the ISO week number.
@@ -55,6 +56,9 @@ message Settings {
   // person is a name on a work entry, not an entity: this list never rewrites
   // historical entries.
   repeated string support_people = 17;
+  // Whether the account has an AI provider key stored. The key itself is
+  // write-only: it is never returned by any RPC or export.
+  bool has_ai_api_key = 18;
 }
 
 // About describes the running build and database schema.
@@ -78,6 +82,24 @@ message UpdateSettingsRequest {
 }
 
 message UpdateSettingsResponse {
+  Settings settings = 1;
+}
+
+// SetAIApiKey stores or replaces the caller's own AI provider key. The key is
+// write-only: it is never returned in the response or by GetSettings.
+message SetAIApiKeyRequest {
+  string api_key = 1;
+}
+
+message SetAIApiKeyResponse {
+  Settings settings = 1;
+}
+
+// ClearAIApiKey removes the stored key, which disables AI generation until a
+// new key is set.
+message ClearAIApiKeyRequest {}
+
+message ClearAIApiKeyResponse {
   Settings settings = 1;
 }
 
@@ -148,6 +170,10 @@ message RestoreBackupResponse {
 service SettingsService {
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
   rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  // The AI key is write-only: these RPCs set/replace or clear it. Every other
+  // response only reports has_ai_api_key.
+  rpc SetAIApiKey(SetAIApiKeyRequest) returns (SetAIApiKeyResponse);
+  rpc ClearAIApiKey(ClearAIApiKeyRequest) returns (ClearAIApiKeyResponse);
   rpc BackupNow(BackupNowRequest) returns (BackupNowResponse);
   rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);

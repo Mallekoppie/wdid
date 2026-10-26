@@ -699,6 +699,10 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                       message: state.canGenerateSummary
                           ? 'Generate one from the captured entries, or copy the '
                                 'prompt into your own model.'
+                          : state.hasSummaryService
+                          ? 'Add your AI provider key in Settings → AI to '
+                                'generate a summary, or copy the prompt into your '
+                                'own model.'
                           : 'Add a summary for this period, or copy the focus notes into your own review.',
                       action: readOnly || !state.canGenerateSummary
                           ? null

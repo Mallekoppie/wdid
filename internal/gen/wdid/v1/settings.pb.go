@@ -182,8 +182,9 @@ func (DensityPreference) EnumDescriptor() ([]byte, []int) {
 	return file_settings_proto_rawDescGZIP(), []int{2}
 }
 
-// Settings is the single per-user behaviour and appearance record. The AI key
-// is never stored here; it comes from the environment.
+// Settings is the single per-user behaviour and appearance record. The AI
+// provider key is stored in the same per-user record but never appears in this
+// message; only has_ai_api_key reports whether one is stored.
 type Settings struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Timezone string                 `protobuf:"bytes,1,opt,name=timezone,proto3" json:"timezone,omitempty"`
@@ -207,6 +208,9 @@ type Settings struct {
 	// person is a name on a work entry, not an entity: this list never rewrites
 	// historical entries.
 	SupportPeople []string `protobuf:"bytes,17,rep,name=support_people,json=supportPeople,proto3" json:"support_people,omitempty"`
+	// Whether the account has an AI provider key stored. The key itself is
+	// write-only: it is never returned by any RPC or export.
+	HasAiApiKey   bool `protobuf:"varint,18,opt,name=has_ai_api_key,json=hasAiApiKey,proto3" json:"has_ai_api_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -358,6 +362,13 @@ func (x *Settings) GetSupportPeople() []string {
 		return x.SupportPeople
 	}
 	return nil
+}
+
+func (x *Settings) GetHasAiApiKey() bool {
+	if x != nil {
+		return x.HasAiApiKey
+	}
+	return false
 }
 
 // About describes the running build and database schema.
@@ -599,6 +610,178 @@ func (x *UpdateSettingsResponse) GetSettings() *Settings {
 	return nil
 }
 
+// SetAIApiKey stores or replaces the caller's own AI provider key. The key is
+// write-only: it is never returned in the response or by GetSettings.
+type SetAIApiKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApiKey        string                 `protobuf:"bytes,1,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAIApiKeyRequest) Reset() {
+	*x = SetAIApiKeyRequest{}
+	mi := &file_settings_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAIApiKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAIApiKeyRequest) ProtoMessage() {}
+
+func (x *SetAIApiKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAIApiKeyRequest.ProtoReflect.Descriptor instead.
+func (*SetAIApiKeyRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SetAIApiKeyRequest) GetApiKey() string {
+	if x != nil {
+		return x.ApiKey
+	}
+	return ""
+}
+
+type SetAIApiKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAIApiKeyResponse) Reset() {
+	*x = SetAIApiKeyResponse{}
+	mi := &file_settings_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAIApiKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAIApiKeyResponse) ProtoMessage() {}
+
+func (x *SetAIApiKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAIApiKeyResponse.ProtoReflect.Descriptor instead.
+func (*SetAIApiKeyResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SetAIApiKeyResponse) GetSettings() *Settings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+// ClearAIApiKey removes the stored key, which disables AI generation until a
+// new key is set.
+type ClearAIApiKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClearAIApiKeyRequest) Reset() {
+	*x = ClearAIApiKeyRequest{}
+	mi := &file_settings_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClearAIApiKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClearAIApiKeyRequest) ProtoMessage() {}
+
+func (x *ClearAIApiKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClearAIApiKeyRequest.ProtoReflect.Descriptor instead.
+func (*ClearAIApiKeyRequest) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{8}
+}
+
+type ClearAIApiKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClearAIApiKeyResponse) Reset() {
+	*x = ClearAIApiKeyResponse{}
+	mi := &file_settings_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClearAIApiKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClearAIApiKeyResponse) ProtoMessage() {}
+
+func (x *ClearAIApiKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_settings_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClearAIApiKeyResponse.ProtoReflect.Descriptor instead.
+func (*ClearAIApiKeyResponse) Descriptor() ([]byte, []int) {
+	return file_settings_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ClearAIApiKeyResponse) GetSettings() *Settings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 // Backup describes one database snapshot on disk.
 type Backup struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
@@ -613,7 +796,7 @@ type Backup struct {
 
 func (x *Backup) Reset() {
 	*x = Backup{}
-	mi := &file_settings_proto_msgTypes[6]
+	mi := &file_settings_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -625,7 +808,7 @@ func (x *Backup) String() string {
 func (*Backup) ProtoMessage() {}
 
 func (x *Backup) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[6]
+	mi := &file_settings_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -638,7 +821,7 @@ func (x *Backup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Backup.ProtoReflect.Descriptor instead.
 func (*Backup) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{6}
+	return file_settings_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Backup) GetName() string {
@@ -689,7 +872,7 @@ type BackupStatus struct {
 
 func (x *BackupStatus) Reset() {
 	*x = BackupStatus{}
-	mi := &file_settings_proto_msgTypes[7]
+	mi := &file_settings_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -701,7 +884,7 @@ func (x *BackupStatus) String() string {
 func (*BackupStatus) ProtoMessage() {}
 
 func (x *BackupStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[7]
+	mi := &file_settings_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -714,7 +897,7 @@ func (x *BackupStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupStatus.ProtoReflect.Descriptor instead.
 func (*BackupStatus) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{7}
+	return file_settings_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BackupStatus) GetLastBackupAt() *timestamppb.Timestamp {
@@ -795,7 +978,7 @@ type BackupNowRequest struct {
 
 func (x *BackupNowRequest) Reset() {
 	*x = BackupNowRequest{}
-	mi := &file_settings_proto_msgTypes[8]
+	mi := &file_settings_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -807,7 +990,7 @@ func (x *BackupNowRequest) String() string {
 func (*BackupNowRequest) ProtoMessage() {}
 
 func (x *BackupNowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[8]
+	mi := &file_settings_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -820,7 +1003,7 @@ func (x *BackupNowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupNowRequest.ProtoReflect.Descriptor instead.
 func (*BackupNowRequest) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{8}
+	return file_settings_proto_rawDescGZIP(), []int{12}
 }
 
 type BackupNowResponse struct {
@@ -833,7 +1016,7 @@ type BackupNowResponse struct {
 
 func (x *BackupNowResponse) Reset() {
 	*x = BackupNowResponse{}
-	mi := &file_settings_proto_msgTypes[9]
+	mi := &file_settings_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +1028,7 @@ func (x *BackupNowResponse) String() string {
 func (*BackupNowResponse) ProtoMessage() {}
 
 func (x *BackupNowResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[9]
+	mi := &file_settings_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +1041,7 @@ func (x *BackupNowResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupNowResponse.ProtoReflect.Descriptor instead.
 func (*BackupNowResponse) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{9}
+	return file_settings_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *BackupNowResponse) GetBackup() *Backup {
@@ -883,7 +1066,7 @@ type GetBackupStatusRequest struct {
 
 func (x *GetBackupStatusRequest) Reset() {
 	*x = GetBackupStatusRequest{}
-	mi := &file_settings_proto_msgTypes[10]
+	mi := &file_settings_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -895,7 +1078,7 @@ func (x *GetBackupStatusRequest) String() string {
 func (*GetBackupStatusRequest) ProtoMessage() {}
 
 func (x *GetBackupStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[10]
+	mi := &file_settings_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -908,7 +1091,7 @@ func (x *GetBackupStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetBackupStatusRequest) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{10}
+	return file_settings_proto_rawDescGZIP(), []int{14}
 }
 
 type GetBackupStatusResponse struct {
@@ -920,7 +1103,7 @@ type GetBackupStatusResponse struct {
 
 func (x *GetBackupStatusResponse) Reset() {
 	*x = GetBackupStatusResponse{}
-	mi := &file_settings_proto_msgTypes[11]
+	mi := &file_settings_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -932,7 +1115,7 @@ func (x *GetBackupStatusResponse) String() string {
 func (*GetBackupStatusResponse) ProtoMessage() {}
 
 func (x *GetBackupStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[11]
+	mi := &file_settings_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -945,7 +1128,7 @@ func (x *GetBackupStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBackupStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetBackupStatusResponse) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{11}
+	return file_settings_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetBackupStatusResponse) GetStatus() *BackupStatus {
@@ -963,7 +1146,7 @@ type ListBackupsRequest struct {
 
 func (x *ListBackupsRequest) Reset() {
 	*x = ListBackupsRequest{}
-	mi := &file_settings_proto_msgTypes[12]
+	mi := &file_settings_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -975,7 +1158,7 @@ func (x *ListBackupsRequest) String() string {
 func (*ListBackupsRequest) ProtoMessage() {}
 
 func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[12]
+	mi := &file_settings_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -988,7 +1171,7 @@ func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupsRequest.ProtoReflect.Descriptor instead.
 func (*ListBackupsRequest) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{12}
+	return file_settings_proto_rawDescGZIP(), []int{16}
 }
 
 type ListBackupsResponse struct {
@@ -1000,7 +1183,7 @@ type ListBackupsResponse struct {
 
 func (x *ListBackupsResponse) Reset() {
 	*x = ListBackupsResponse{}
-	mi := &file_settings_proto_msgTypes[13]
+	mi := &file_settings_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1012,7 +1195,7 @@ func (x *ListBackupsResponse) String() string {
 func (*ListBackupsResponse) ProtoMessage() {}
 
 func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[13]
+	mi := &file_settings_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1025,7 +1208,7 @@ func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBackupsResponse.ProtoReflect.Descriptor instead.
 func (*ListBackupsResponse) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{13}
+	return file_settings_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListBackupsResponse) GetBackups() []*Backup {
@@ -1048,7 +1231,7 @@ type RestoreBackupRequest struct {
 
 func (x *RestoreBackupRequest) Reset() {
 	*x = RestoreBackupRequest{}
-	mi := &file_settings_proto_msgTypes[14]
+	mi := &file_settings_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1243,7 @@ func (x *RestoreBackupRequest) String() string {
 func (*RestoreBackupRequest) ProtoMessage() {}
 
 func (x *RestoreBackupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[14]
+	mi := &file_settings_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1256,7 @@ func (x *RestoreBackupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreBackupRequest.ProtoReflect.Descriptor instead.
 func (*RestoreBackupRequest) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{14}
+	return file_settings_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RestoreBackupRequest) GetName() string {
@@ -1095,7 +1278,7 @@ type RestoreBackupResponse struct {
 
 func (x *RestoreBackupResponse) Reset() {
 	*x = RestoreBackupResponse{}
-	mi := &file_settings_proto_msgTypes[15]
+	mi := &file_settings_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1107,7 +1290,7 @@ func (x *RestoreBackupResponse) String() string {
 func (*RestoreBackupResponse) ProtoMessage() {}
 
 func (x *RestoreBackupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_settings_proto_msgTypes[15]
+	mi := &file_settings_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1120,7 +1303,7 @@ func (x *RestoreBackupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreBackupResponse.ProtoReflect.Descriptor instead.
 func (*RestoreBackupResponse) Descriptor() ([]byte, []int) {
-	return file_settings_proto_rawDescGZIP(), []int{15}
+	return file_settings_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RestoreBackupResponse) GetBackup() *Backup {
@@ -1148,7 +1331,7 @@ var File_settings_proto protoreflect.FileDescriptor
 
 const file_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x0esettings.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc8\x06\n" +
+	"\x0esettings.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xed\x06\n" +
 	"\bSettings\x12\x1a\n" +
 	"\btimezone\x18\x01 \x01(\tR\btimezone\x12\x1d\n" +
 	"\n" +
@@ -1169,7 +1352,8 @@ const file_settings_proto_rawDesc = "" +
 	"\x12journal_start_date\x18\x0f \x01(\tR\x10journalStartDate\x129\n" +
 	"\n" +
 	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
-	"\x0esupport_people\x18\x11 \x03(\tR\rsupportPeople\"b\n" +
+	"\x0esupport_people\x18\x11 \x03(\tR\rsupportPeople\x12#\n" +
+	"\x0ehas_ai_api_key\x18\x12 \x01(\bR\vhasAiApiKey\"b\n" +
 	"\x05About\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12%\n" +
 	"\x0eschema_version\x18\x02 \x01(\x05R\rschemaVersion\x12\x18\n" +
@@ -1181,6 +1365,13 @@ const file_settings_proto_rawDesc = "" +
 	"\x15UpdateSettingsRequest\x12-\n" +
 	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"G\n" +
 	"\x16UpdateSettingsResponse\x12-\n" +
+	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"-\n" +
+	"\x12SetAIApiKeyRequest\x12\x17\n" +
+	"\aapi_key\x18\x01 \x01(\tR\x06apiKey\"D\n" +
+	"\x13SetAIApiKeyResponse\x12-\n" +
+	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"\x16\n" +
+	"\x14ClearAIApiKeyRequest\"F\n" +
+	"\x15ClearAIApiKeyResponse\x12-\n" +
 	"\bsettings\x18\x01 \x01(\v2\x11.wdid.v1.SettingsR\bsettings\"\x8e\x01\n" +
 	"\x06Backup\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
@@ -1231,10 +1422,12 @@ const file_settings_proto_rawDesc = "" +
 	"\x11DensityPreference\x12\"\n" +
 	"\x1eDENSITY_PREFERENCE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDENSITY_PREFERENCE_COMFORTABLE\x10\x01\x12\x1e\n" +
-	"\x1aDENSITY_PREFERENCE_COMPACT\x10\x022\xe2\x03\n" +
+	"\x1aDENSITY_PREFERENCE_COMPACT\x10\x022\xfc\x04\n" +
 	"\x0fSettingsService\x12H\n" +
 	"\vGetSettings\x12\x1b.wdid.v1.GetSettingsRequest\x1a\x1c.wdid.v1.GetSettingsResponse\x12Q\n" +
-	"\x0eUpdateSettings\x12\x1e.wdid.v1.UpdateSettingsRequest\x1a\x1f.wdid.v1.UpdateSettingsResponse\x12B\n" +
+	"\x0eUpdateSettings\x12\x1e.wdid.v1.UpdateSettingsRequest\x1a\x1f.wdid.v1.UpdateSettingsResponse\x12H\n" +
+	"\vSetAIApiKey\x12\x1b.wdid.v1.SetAIApiKeyRequest\x1a\x1c.wdid.v1.SetAIApiKeyResponse\x12N\n" +
+	"\rClearAIApiKey\x12\x1d.wdid.v1.ClearAIApiKeyRequest\x1a\x1e.wdid.v1.ClearAIApiKeyResponse\x12B\n" +
 	"\tBackupNow\x12\x19.wdid.v1.BackupNowRequest\x1a\x1a.wdid.v1.BackupNowResponse\x12T\n" +
 	"\x0fGetBackupStatus\x12\x1f.wdid.v1.GetBackupStatusRequest\x1a .wdid.v1.GetBackupStatusResponse\x12H\n" +
 	"\vListBackups\x12\x1b.wdid.v1.ListBackupsRequest\x1a\x1c.wdid.v1.ListBackupsResponse\x12N\n" +
@@ -1253,7 +1446,7 @@ func file_settings_proto_rawDescGZIP() []byte {
 }
 
 var file_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_settings_proto_goTypes = []any{
 	(ReviewCadence)(0),              // 0: wdid.v1.ReviewCadence
 	(ThemePreference)(0),            // 1: wdid.v1.ThemePreference
@@ -1264,59 +1457,69 @@ var file_settings_proto_goTypes = []any{
 	(*GetSettingsResponse)(nil),     // 6: wdid.v1.GetSettingsResponse
 	(*UpdateSettingsRequest)(nil),   // 7: wdid.v1.UpdateSettingsRequest
 	(*UpdateSettingsResponse)(nil),  // 8: wdid.v1.UpdateSettingsResponse
-	(*Backup)(nil),                  // 9: wdid.v1.Backup
-	(*BackupStatus)(nil),            // 10: wdid.v1.BackupStatus
-	(*BackupNowRequest)(nil),        // 11: wdid.v1.BackupNowRequest
-	(*BackupNowResponse)(nil),       // 12: wdid.v1.BackupNowResponse
-	(*GetBackupStatusRequest)(nil),  // 13: wdid.v1.GetBackupStatusRequest
-	(*GetBackupStatusResponse)(nil), // 14: wdid.v1.GetBackupStatusResponse
-	(*ListBackupsRequest)(nil),      // 15: wdid.v1.ListBackupsRequest
-	(*ListBackupsResponse)(nil),     // 16: wdid.v1.ListBackupsResponse
-	(*RestoreBackupRequest)(nil),    // 17: wdid.v1.RestoreBackupRequest
-	(*RestoreBackupResponse)(nil),   // 18: wdid.v1.RestoreBackupResponse
-	(*durationpb.Duration)(nil),     // 19: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),   // 20: google.protobuf.Timestamp
+	(*SetAIApiKeyRequest)(nil),      // 9: wdid.v1.SetAIApiKeyRequest
+	(*SetAIApiKeyResponse)(nil),     // 10: wdid.v1.SetAIApiKeyResponse
+	(*ClearAIApiKeyRequest)(nil),    // 11: wdid.v1.ClearAIApiKeyRequest
+	(*ClearAIApiKeyResponse)(nil),   // 12: wdid.v1.ClearAIApiKeyResponse
+	(*Backup)(nil),                  // 13: wdid.v1.Backup
+	(*BackupStatus)(nil),            // 14: wdid.v1.BackupStatus
+	(*BackupNowRequest)(nil),        // 15: wdid.v1.BackupNowRequest
+	(*BackupNowResponse)(nil),       // 16: wdid.v1.BackupNowResponse
+	(*GetBackupStatusRequest)(nil),  // 17: wdid.v1.GetBackupStatusRequest
+	(*GetBackupStatusResponse)(nil), // 18: wdid.v1.GetBackupStatusResponse
+	(*ListBackupsRequest)(nil),      // 19: wdid.v1.ListBackupsRequest
+	(*ListBackupsResponse)(nil),     // 20: wdid.v1.ListBackupsResponse
+	(*RestoreBackupRequest)(nil),    // 21: wdid.v1.RestoreBackupRequest
+	(*RestoreBackupResponse)(nil),   // 22: wdid.v1.RestoreBackupResponse
+	(*durationpb.Duration)(nil),     // 23: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),   // 24: google.protobuf.Timestamp
 }
 var file_settings_proto_depIdxs = []int32{
-	19, // 0: wdid.v1.Settings.daily_target:type_name -> google.protobuf.Duration
+	23, // 0: wdid.v1.Settings.daily_target:type_name -> google.protobuf.Duration
 	0,  // 1: wdid.v1.Settings.review_cadence:type_name -> wdid.v1.ReviewCadence
-	19, // 2: wdid.v1.Settings.long_timer_threshold:type_name -> google.protobuf.Duration
-	19, // 3: wdid.v1.Settings.default_entry_duration:type_name -> google.protobuf.Duration
-	19, // 4: wdid.v1.Settings.backup_interval:type_name -> google.protobuf.Duration
+	23, // 2: wdid.v1.Settings.long_timer_threshold:type_name -> google.protobuf.Duration
+	23, // 3: wdid.v1.Settings.default_entry_duration:type_name -> google.protobuf.Duration
+	23, // 4: wdid.v1.Settings.backup_interval:type_name -> google.protobuf.Duration
 	1,  // 5: wdid.v1.Settings.theme:type_name -> wdid.v1.ThemePreference
 	2,  // 6: wdid.v1.Settings.density:type_name -> wdid.v1.DensityPreference
-	20, // 7: wdid.v1.Settings.updated_at:type_name -> google.protobuf.Timestamp
+	24, // 7: wdid.v1.Settings.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 8: wdid.v1.GetSettingsResponse.settings:type_name -> wdid.v1.Settings
 	4,  // 9: wdid.v1.GetSettingsResponse.about:type_name -> wdid.v1.About
 	3,  // 10: wdid.v1.UpdateSettingsRequest.settings:type_name -> wdid.v1.Settings
 	3,  // 11: wdid.v1.UpdateSettingsResponse.settings:type_name -> wdid.v1.Settings
-	20, // 12: wdid.v1.Backup.created_at:type_name -> google.protobuf.Timestamp
-	20, // 13: wdid.v1.BackupStatus.last_backup_at:type_name -> google.protobuf.Timestamp
-	19, // 14: wdid.v1.BackupStatus.backup_interval:type_name -> google.protobuf.Duration
-	20, // 15: wdid.v1.BackupStatus.next_backup_at:type_name -> google.protobuf.Timestamp
-	9,  // 16: wdid.v1.BackupNowResponse.backup:type_name -> wdid.v1.Backup
-	10, // 17: wdid.v1.BackupNowResponse.status:type_name -> wdid.v1.BackupStatus
-	10, // 18: wdid.v1.GetBackupStatusResponse.status:type_name -> wdid.v1.BackupStatus
-	9,  // 19: wdid.v1.ListBackupsResponse.backups:type_name -> wdid.v1.Backup
-	9,  // 20: wdid.v1.RestoreBackupResponse.backup:type_name -> wdid.v1.Backup
-	10, // 21: wdid.v1.RestoreBackupResponse.status:type_name -> wdid.v1.BackupStatus
-	5,  // 22: wdid.v1.SettingsService.GetSettings:input_type -> wdid.v1.GetSettingsRequest
-	7,  // 23: wdid.v1.SettingsService.UpdateSettings:input_type -> wdid.v1.UpdateSettingsRequest
-	11, // 24: wdid.v1.SettingsService.BackupNow:input_type -> wdid.v1.BackupNowRequest
-	13, // 25: wdid.v1.SettingsService.GetBackupStatus:input_type -> wdid.v1.GetBackupStatusRequest
-	15, // 26: wdid.v1.SettingsService.ListBackups:input_type -> wdid.v1.ListBackupsRequest
-	17, // 27: wdid.v1.SettingsService.RestoreBackup:input_type -> wdid.v1.RestoreBackupRequest
-	6,  // 28: wdid.v1.SettingsService.GetSettings:output_type -> wdid.v1.GetSettingsResponse
-	8,  // 29: wdid.v1.SettingsService.UpdateSettings:output_type -> wdid.v1.UpdateSettingsResponse
-	12, // 30: wdid.v1.SettingsService.BackupNow:output_type -> wdid.v1.BackupNowResponse
-	14, // 31: wdid.v1.SettingsService.GetBackupStatus:output_type -> wdid.v1.GetBackupStatusResponse
-	16, // 32: wdid.v1.SettingsService.ListBackups:output_type -> wdid.v1.ListBackupsResponse
-	18, // 33: wdid.v1.SettingsService.RestoreBackup:output_type -> wdid.v1.RestoreBackupResponse
-	28, // [28:34] is the sub-list for method output_type
-	22, // [22:28] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	3,  // 12: wdid.v1.SetAIApiKeyResponse.settings:type_name -> wdid.v1.Settings
+	3,  // 13: wdid.v1.ClearAIApiKeyResponse.settings:type_name -> wdid.v1.Settings
+	24, // 14: wdid.v1.Backup.created_at:type_name -> google.protobuf.Timestamp
+	24, // 15: wdid.v1.BackupStatus.last_backup_at:type_name -> google.protobuf.Timestamp
+	23, // 16: wdid.v1.BackupStatus.backup_interval:type_name -> google.protobuf.Duration
+	24, // 17: wdid.v1.BackupStatus.next_backup_at:type_name -> google.protobuf.Timestamp
+	13, // 18: wdid.v1.BackupNowResponse.backup:type_name -> wdid.v1.Backup
+	14, // 19: wdid.v1.BackupNowResponse.status:type_name -> wdid.v1.BackupStatus
+	14, // 20: wdid.v1.GetBackupStatusResponse.status:type_name -> wdid.v1.BackupStatus
+	13, // 21: wdid.v1.ListBackupsResponse.backups:type_name -> wdid.v1.Backup
+	13, // 22: wdid.v1.RestoreBackupResponse.backup:type_name -> wdid.v1.Backup
+	14, // 23: wdid.v1.RestoreBackupResponse.status:type_name -> wdid.v1.BackupStatus
+	5,  // 24: wdid.v1.SettingsService.GetSettings:input_type -> wdid.v1.GetSettingsRequest
+	7,  // 25: wdid.v1.SettingsService.UpdateSettings:input_type -> wdid.v1.UpdateSettingsRequest
+	9,  // 26: wdid.v1.SettingsService.SetAIApiKey:input_type -> wdid.v1.SetAIApiKeyRequest
+	11, // 27: wdid.v1.SettingsService.ClearAIApiKey:input_type -> wdid.v1.ClearAIApiKeyRequest
+	15, // 28: wdid.v1.SettingsService.BackupNow:input_type -> wdid.v1.BackupNowRequest
+	17, // 29: wdid.v1.SettingsService.GetBackupStatus:input_type -> wdid.v1.GetBackupStatusRequest
+	19, // 30: wdid.v1.SettingsService.ListBackups:input_type -> wdid.v1.ListBackupsRequest
+	21, // 31: wdid.v1.SettingsService.RestoreBackup:input_type -> wdid.v1.RestoreBackupRequest
+	6,  // 32: wdid.v1.SettingsService.GetSettings:output_type -> wdid.v1.GetSettingsResponse
+	8,  // 33: wdid.v1.SettingsService.UpdateSettings:output_type -> wdid.v1.UpdateSettingsResponse
+	10, // 34: wdid.v1.SettingsService.SetAIApiKey:output_type -> wdid.v1.SetAIApiKeyResponse
+	12, // 35: wdid.v1.SettingsService.ClearAIApiKey:output_type -> wdid.v1.ClearAIApiKeyResponse
+	16, // 36: wdid.v1.SettingsService.BackupNow:output_type -> wdid.v1.BackupNowResponse
+	18, // 37: wdid.v1.SettingsService.GetBackupStatus:output_type -> wdid.v1.GetBackupStatusResponse
+	20, // 38: wdid.v1.SettingsService.ListBackups:output_type -> wdid.v1.ListBackupsResponse
+	22, // 39: wdid.v1.SettingsService.RestoreBackup:output_type -> wdid.v1.RestoreBackupResponse
+	32, // [32:40] is the sub-list for method output_type
+	24, // [24:32] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_settings_proto_init() }
@@ -1330,7 +1533,7 @@ func file_settings_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_settings_proto_rawDesc), len(file_settings_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/checkin_api.dart';
 import 'package:wdid_web/data/summary_api.dart';
+import 'package:wdid_web/models/app_settings.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
 import 'package:wdid_web/models/period_report.dart';
@@ -126,6 +127,7 @@ void main() {
     required FakeCheckInApi checkInApi,
     required String route,
     FakeSummaryApi? summaryApi,
+    bool hasAIKey = true,
     bool settle = true,
   }) async {
     tester.view.physicalSize = const Size(1500, 1400);
@@ -148,7 +150,8 @@ void main() {
             subcategory('mode-1', 'cat-support', 'Unblock'),
           ],
         ),
-        settingsApiBuilder: (_) => FakeSettingsApi(),
+        settingsApiBuilder: (_) =>
+            FakeSettingsApi(settings: AppSettings(hasAiApiKey: hasAIKey)),
         summaryApiBuilder: (_) => summaryApi ?? FakeSummaryApi(report: report),
         checkInApiBuilder: (_) => checkInApi,
       ),
@@ -444,6 +447,8 @@ void main() {
         authApi: FakeAuthApi(),
         initialSession: signedInSession(),
         initialRoute: '/checkins',
+        settingsApiBuilder: (_) =>
+            FakeSettingsApi(settings: const AppSettings(hasAiApiKey: true)),
         summaryApiBuilder: (_) => FakeSummaryApi(report: report),
         checkInApiBuilder: (_) => FakeCheckInApi(),
       ),
@@ -595,6 +600,27 @@ void main() {
     expect(find.text('Could not load the check-in'), findsNothing);
     expect(find.text('Time by category'), findsOneWidget);
   });
+  testWidgets('AI generation is disabled until the account adds a key', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(checkIns: [checkIn()]);
+    final summaryApi = FakeSummaryApi(report: report);
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: summaryApi,
+      route: '/checkins/checkin-manager',
+      hasAIKey: false,
+    );
+
+    expect(find.widgetWithText(FilledButton, 'Generate with AI'), findsNothing);
+    expect(
+      find.textContaining('Add your AI provider key in Settings'),
+      findsOneWidget,
+    );
+    expect(summaryApi.generateCalls, 0);
+  });
+
   testWidgets('streams generation into the summary and shows the model', (
     tester,
   ) async {

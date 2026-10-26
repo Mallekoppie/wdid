@@ -423,9 +423,9 @@ Grouped cards, no tabs:
 - **Time** — timezone, week start, daily target hours, long-running timer prompt
   threshold, default entry duration, personal-review cadence
   (`Weekly` / `Monthly` / `Off`). There is no rounding setting.
-- **AI** — provider (`OpenAI-compatible`), base URL, model name, key source
-  (environment variable only), redaction of URLs and notes, prompt template
-  preview and reset.
+- **AI** — provider preset (`Anthropic`, `DeepSeek`, `Custom URL`), base URL,
+  model (always editable), the account's own write-only API key
+  (set/replace/clear), redaction of URLs and notes, prompt template preview.
 - **Appearance** — theme (`System`, `Light`, `Dark`, `High Contrast`), density
   (`Comfortable` / `Compact`), preview swatches.
 - **About** — version, schema version, license.
@@ -628,8 +628,9 @@ A note has a `date`, a `subcategoryId`, or both.
 
 One object per user: timezone, week start, daily target minutes, review cadence,
 long-timer threshold, default duration, backup directory/interval/retention, AI
-base URL/model/redaction flag, theme, density, and journal start date. The AI key
-is never stored.
+base URL/model/redaction flag, the account's AI key, theme, density, and journal
+start date. The key is stored in cleartext for now (encryption is backlog), is
+write-only over the RPC surface, and never appears in an export.
 
 ### 8.2 Buckets
 
@@ -780,10 +781,14 @@ one versioned place in the service and is surfaced in Settings for preview.
 
 ### 9.4 Built-in AI generation
 
-- One provider abstraction: OpenAI-compatible `POST {baseURL}/chat/completions`,
-  streaming.
-- The API key is read from the environment only. It is never stored in the
-  database, exported, or logged.
+- One provider abstraction: Anthropic Messages `POST {baseURL}/v1/messages` with
+  `x-api-key` and `anthropic-version`, streaming SSE. Presets seed Anthropic
+  (`https://api.anthropic.com`, `claude-sonnet-5-5`) and DeepSeek
+  (`https://api.deepseek.com/anthropic`, `deepseek-flash`); the base URL and
+  model stay editable.
+- Each account stores its own API key in its settings record (cleartext for now;
+  encryption is backlog). The key is write-only: no RPC returns it, exports omit
+  it, and generation is disabled until one is set.
 - Only the selected period is sent. A settings toggle can strip URLs and notes.
 - The response streams into the editable summary box, then persists with the model
   name and prompt version.
@@ -960,7 +965,8 @@ moving.
   UI-builder export.
 - Minutes are authoritative; no rounding. Overlapping manual entries are allowed
   and flagged.
-- The AI key is environment-only.
+- The AI key is per user, stored write-only in that account's settings; a missing
+  key disables generation and points the user at Settings → AI.
 - Backups are local and unencrypted in v1.
 - Multi-user authentication and per-user isolation are in v1; admin UI, offsite
   push, WebAuthn, webhooks, and the review-readiness score are deferred.
