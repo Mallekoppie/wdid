@@ -27,22 +27,33 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  /// Re-files a mode-less support entry under the chosen mode's category and
-  /// subcategory. The entry stays in Today; only its attribution moves.
-  Future<void> _setMode(WorkEntry entry, Subcategory mode) async {
+  /// Re-files a support entry under the chosen mode's category and
+  /// subcategory, or clears the subcategory when [mode] is null. The entry
+  /// stays in Today; only its attribution moves.
+  Future<void> _setMode(WorkEntry entry, Subcategory? mode) async {
     final state = AppStateScope.read(context);
     try {
       await state.updateWorkEntry(
-        entry.copyWith(categoryId: mode.categoryId, subcategoryId: mode.id),
+        mode == null
+            ? entry.copyWith(subcategoryId: '')
+            : entry.copyWith(
+                categoryId: mode.categoryId,
+                subcategoryId: mode.id,
+              ),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Mode set · ${mode.name}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            mode == null ? 'Mode cleared' : 'Mode set · ${mode.name}',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not set the mode: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not change the mode: $error')),
+      );
     }
   }
 
