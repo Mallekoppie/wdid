@@ -12,6 +12,7 @@ import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import '../widgets/app_dropdown.dart';
+import '../widgets/forms/date_range_dialog.dart';
 import '../widgets/forms/entry_form.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
@@ -169,11 +170,18 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
     final initial =
         _customRange ??
         DateTimeRange(start: addDays(state.today, -6), end: state.today);
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: initial,
+    final picked = await showDateRangeDialog(
+      context,
+      initialRange: initial,
+      today: state.today,
+      presets: [
+        for (final preset in _LogPreset.values)
+          if (preset != _LogPreset.custom)
+            DateRangePreset(
+              label: preset.label,
+              range: _logRange(preset, state, null),
+            ),
+      ],
     );
     if (picked != null) {
       setState(() {

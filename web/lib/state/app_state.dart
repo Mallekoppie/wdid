@@ -96,16 +96,17 @@ class StoppedTimer {
 }
 
 /// The attribution of a timer stopped by an interrupt, kept in memory so the
-/// Today timer card and the stop snackbar can offer a fresh Resume timer.
+/// Resume card can offer a fresh timer.
 ///
 /// This is UI state only: it never changes what the stopped entry stored, and
-/// losing it on a reload is acceptable. Resuming consumes it.
+/// losing it on a reload is acceptable. Resuming or dismissing consumes it.
 class InterruptedTimer {
   const InterruptedTimer({
     required this.categoryId,
     this.subcategoryId = '',
     this.description = '',
     this.people = const [],
+    this.minutes = 0,
   });
 
   final String categoryId;
@@ -115,6 +116,10 @@ class InterruptedTimer {
   /// Carried so resuming an interrupted support timer still satisfies the
   /// support-person requirement.
   final List<String> people;
+
+  /// The minutes the stopped block saved, shown on the Resume card. It is not
+  /// reused when resuming: Resume starts a fresh timer.
+  final int minutes;
 }
 
 /// One Log listing request. The Log screen rebuilds it whenever a filter
