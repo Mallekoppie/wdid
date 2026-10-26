@@ -117,8 +117,10 @@ class FakeEntryApi implements EntryApi {
                   (subcategoryId.isEmpty ||
                       entry.subcategoryId == subcategoryId) &&
                   (person.isEmpty ||
-                      entry.person.toLowerCase() ==
-                          person.trim().toLowerCase()) &&
+                      entry.people.any(
+                        (name) =>
+                            name.toLowerCase() == person.trim().toLowerCase(),
+                      )) &&
                   (fromDate.isEmpty ||
                       entry.localDate.compareTo(fromDate) >= 0) &&
                   (toDate.isEmpty || entry.localDate.compareTo(toDate) <= 0) &&
@@ -160,7 +162,7 @@ class FakeEntryApi implements EntryApi {
       endedAt: endedAt,
       minutes: draft.minutes,
       localDate: isoDate(startedAt.toLocal()),
-      person: draft.person,
+      people: draft.people,
       team: draft.team,
       tags: draft.tags,
       links: draft.links,
@@ -227,7 +229,7 @@ class FakeEntryApi implements EntryApi {
       endedAt: first.endedAt.add(Duration(minutes: entry.minutes - atMinutes)),
       minutes: entry.minutes - atMinutes,
       localDate: entry.localDate,
-      person: entry.person,
+      people: entry.people,
       team: entry.team,
       tags: entry.tags,
       links: entry.links,

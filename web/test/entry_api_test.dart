@@ -136,7 +136,7 @@ void main() {
     expect(listing.entries.first.outcome, 'Script runs against staging');
     expect(listing.entries.first.minutes, 42);
     expect(listing.entries.first.localDate, '2026-10-17');
-    expect(listing.entries.first.person, 'Priya, Sam');
+    expect(listing.entries.first.people, ['Priya', 'Sam']);
     expect(listing.entries.first.source, EntrySource.manual);
   });
 

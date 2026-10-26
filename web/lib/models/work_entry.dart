@@ -14,7 +14,7 @@ class WorkEntry {
     required this.endedAt,
     required this.minutes,
     required this.localDate,
-    this.person = '',
+    this.people = const [],
     this.team = '',
     this.tags = const [],
     this.links = const [],
@@ -36,7 +36,9 @@ class WorkEntry {
 
   /// Grouping day in the configured timezone, `YYYY-MM-DD`.
   final String localDate;
-  final String person;
+
+  /// The ordered names on a support entry. A person is a name, not an entity.
+  final List<String> people;
   final String team;
   final List<String> tags;
   final List<LinkRef> links;
@@ -57,7 +59,7 @@ class WorkEntry {
     DateTime? endedAt,
     int? minutes,
     String? localDate,
-    String? person,
+    List<String>? people,
     String? team,
     List<String>? tags,
     List<LinkRef>? links,
@@ -74,7 +76,7 @@ class WorkEntry {
       endedAt: endedAt ?? this.endedAt,
       minutes: minutes ?? this.minutes,
       localDate: localDate ?? this.localDate,
-      person: person ?? this.person,
+      people: people ?? this.people,
       team: team ?? this.team,
       tags: tags ?? this.tags,
       links: links ?? this.links,

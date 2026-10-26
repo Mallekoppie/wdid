@@ -6,6 +6,7 @@ import '../data/timer_api.dart';
 import '../models/taxonomy.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import 'panel.dart';
 import 'person_picker.dart';
@@ -24,7 +25,9 @@ class ServiceTimerCard extends StatefulWidget {
 
 class _ServiceTimerCardState extends State<ServiceTimerCard> {
   final _description = TextEditingController();
-  final _person = TextEditingController();
+
+  List<String> _people = const [];
+  final _personText = TextEditingController();
 
   String _categoryId = '';
   String _subcategoryId = '';
@@ -54,13 +57,13 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
   @override
   void dispose() {
     _description.dispose();
-    _person.dispose();
+    _personText.dispose();
     super.dispose();
   }
 
   Future<void> _start() async {
     final state = AppStateScope.read(context);
-    final person = _person.text.trim();
+    final people = peopleIncludingPending(_people, _personText);
     setState(() {
       _busy = true;
       _error = null;
@@ -70,13 +73,14 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
         categoryId: _categoryId,
         subcategoryId: _subcategoryId,
         description: _description.text,
-        person: person,
+        people: people,
       );
-      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
       if (!mounted) return;
+      unawaited(state.addSupportPeople(people));
       setState(() => _busy = false);
       _description.clear();
-      _person.clear();
+      _personText.clear();
+      setState(() => _people = const []);
     } on TimerFailure catch (failure) {
       if (!mounted) return;
       setState(() {
@@ -181,11 +185,17 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (timer.person.isNotEmpty) ...[
+                if (timer.people.isNotEmpty) ...[
                   const SizedBox(width: AppSpacing.sm),
                   Text('·', style: TextStyle(color: scheme.onSurfaceVariant)),
                   const SizedBox(width: AppSpacing.sm),
-                  Text(timer.person, style: theme.textTheme.bodySmall),
+                  Tooltip(
+                    message: peopleLabel(timer.people),
+                    child: Text(
+                      peopleLabel(timer.people),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
                 ],
                 const SizedBox(width: AppSpacing.sm),
                 Text('·', style: TextStyle(color: scheme.onSurfaceVariant)),
@@ -370,9 +380,11 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 360),
               child: PersonPicker(
-                controller: _person,
+                selected: _people,
+                textController: _personText,
                 enabled: !_busy,
                 hint: 'Who are you supporting?',
+                onChanged: (people) => setState(() => _people = people),
                 onSubmitted: (_) => unawaited(_start()),
               ),
             ),

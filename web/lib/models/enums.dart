@@ -154,7 +154,7 @@ enum CheckInState {
 /// Support modes from the Support screen design.
 ///
 /// The service stores these as the `category` of a category-type work item and
-/// uses `person` to mark the entry as support.
+/// uses the entry's `people` names to attribute the support.
 enum SupportMode {
   review,
   pair,

@@ -39,7 +39,7 @@ class TimerSnapshot {
     required this.categoryId,
     this.subcategoryId = '',
     this.description = '',
-    this.person = '',
+    this.people = const [],
     required this.startedAt,
     required this.segmentStartedAt,
     this.pausedAt,
@@ -51,7 +51,7 @@ class TimerSnapshot {
   final String categoryId;
   final String subcategoryId;
   final String description;
-  final String person;
+  final List<String> people;
   final DateTime startedAt;
   final DateTime segmentStartedAt;
   final DateTime? pausedAt;
@@ -89,7 +89,7 @@ abstract class TimerApi {
     required String categoryId,
     String subcategoryId = '',
     String description = '',
-    String person = '',
+    List<String> people = const [],
   });
 
   Future<TimerSnapshot> pauseTimer();
@@ -191,7 +191,7 @@ class GrpcTimerApi implements TimerApi {
     required String categoryId,
     String subcategoryId = '',
     String description = '',
-    String person = '',
+    List<String> people = const [],
   }) async {
     try {
       final response = await _rpc.startTimer(
@@ -199,7 +199,7 @@ class GrpcTimerApi implements TimerApi {
           categoryId: categoryId,
           subcategoryId: subcategoryId,
           description: description,
-          people: person.isEmpty ? const [] : [person],
+          people: people,
         ),
       );
       return _timerFromProto(response.timer);
@@ -275,7 +275,7 @@ TimerSnapshot _timerFromProto(generated.ActiveTimer timer) => TimerSnapshot(
   categoryId: timer.categoryId,
   subcategoryId: timer.subcategoryId,
   description: timer.description,
-  person: timer.people.join(', '),
+  people: timer.people,
   startedAt: timer.startedAt.toDateTime(),
   segmentStartedAt: timer.segmentStartedAt.toDateTime(),
   pausedAt: timer.hasPausedAt() ? timer.pausedAt.toDateTime() : null,

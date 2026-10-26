@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../models/drafts.dart';
@@ -8,6 +10,7 @@ import '../../state/app_state.dart';
 import '../../theme/app_tokens.dart';
 import '../../utils/time_utils.dart';
 import '../duration_chips.dart';
+import '../person_picker.dart';
 import 'dialog_frame.dart';
 
 /// Logs a work entry against [project]. The project's category and identity are
@@ -38,7 +41,8 @@ class _ProjectEntryDialogState extends State<_ProjectEntryDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _description;
   late final TextEditingController _outcome;
-  late final TextEditingController _person;
+  List<String> _people = const [];
+  late final TextEditingController _personText;
   late final TextEditingController _minutes;
   late DateTime _startedAt;
   bool _saving = false;
@@ -49,7 +53,7 @@ class _ProjectEntryDialogState extends State<_ProjectEntryDialog> {
     super.initState();
     _description = TextEditingController();
     _outcome = TextEditingController();
-    _person = TextEditingController();
+    _personText = TextEditingController();
     _minutes = TextEditingController(
       text: widget.state.settings.defaultDurationMinutes.toString(),
     );
@@ -60,7 +64,7 @@ class _ProjectEntryDialogState extends State<_ProjectEntryDialog> {
   void dispose() {
     _description.dispose();
     _outcome.dispose();
-    _person.dispose();
+    _personText.dispose();
     _minutes.dispose();
     super.dispose();
   }
@@ -119,11 +123,12 @@ class _ProjectEntryDialogState extends State<_ProjectEntryDialog> {
           outcome: _outcome.text.trim(),
           startedAt: _startedAt,
           minutes: int.parse(_minutes.text.trim()),
-          person: _person.text.trim(),
+          people: peopleIncludingPending(_people, _personText),
           source: EntrySource.manual,
         ),
       );
       if (!mounted) return;
+      unawaited(widget.state.addSupportPeople(saved.people));
       Navigator.of(context).pop(saved);
     } catch (error) {
       if (!mounted) return;
@@ -206,12 +211,12 @@ class _ProjectEntryDialogState extends State<_ProjectEntryDialog> {
               ],
             ),
             formGap,
-            TextFormField(
-              controller: _person,
-              decoration: const InputDecoration(
-                labelText: 'Person (optional)',
-                hintText: 'Priya',
-              ),
+            PersonPicker(
+              selected: _people,
+              textController: _personText,
+              label: 'Person (optional)',
+              hint: 'Priya',
+              onChanged: (people) => setState(() => _people = people),
             ),
             if (_error != null) FormError(message: _error!),
             const SizedBox(height: AppSpacing.sm),

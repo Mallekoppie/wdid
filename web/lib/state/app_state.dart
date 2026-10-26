@@ -23,6 +23,7 @@ import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../utils/analytics.dart';
+import '../utils/people.dart';
 import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 
@@ -34,7 +35,7 @@ class ActiveTimer {
   ActiveTimer({
     required this.categoryId,
     this.subcategoryId = '',
-    this.person = '',
+    this.people = const [],
     required this.description,
     required this.startedAt,
     required this.segmentStartedAt,
@@ -53,8 +54,8 @@ class ActiveTimer {
   final Duration? baseElapsed;
   final DateTime? observedAt;
 
-  /// Required for support-role categories.
-  final String person;
+  /// Required for support-role categories: at least one name.
+  final List<String> people;
   String description;
   final DateTime startedAt;
   DateTime segmentStartedAt;
@@ -104,7 +105,7 @@ class InterruptedTimer {
     required this.categoryId,
     this.subcategoryId = '',
     this.description = '',
-    this.person = '',
+    this.people = const [],
   });
 
   final String categoryId;
@@ -113,7 +114,7 @@ class InterruptedTimer {
 
   /// Carried so resuming an interrupted support timer still satisfies the
   /// support-person requirement.
-  final String person;
+  final List<String> people;
 }
 
 /// One Log listing request. The Log screen rebuilds it whenever a filter
@@ -796,7 +797,7 @@ class AppState extends ChangeNotifier {
     return [
       categoryById(stash.categoryId)?.name ?? 'Unknown category',
       if (subcategory != null) subcategory.name,
-      if (stash.person.isNotEmpty) stash.person,
+      if (stash.people.isNotEmpty) peopleLabel(stash.people),
     ].join(' · ');
   }
 
@@ -828,18 +829,20 @@ class AppState extends ChangeNotifier {
       categoryId: stash.categoryId,
       subcategoryId: stash.subcategoryId,
       description: stash.description,
-      person: stash.person,
+      people: stash.people,
       preserveInterruptedTimer: true,
     );
     clearInterruptedTimer();
   }
 
-  /// Starts a support timer with one tap: the default support category, no
-  /// mode and no description. "Interrupt" is UI state only; the stored entry
-  /// is an ordinary support entry. [preserveInterruptedTimer] keeps the
-  /// interrupt stash when this start is the second half of an interruption.
+  /// Starts a support timer: the default support category, no mode and no
+  /// description. [people] carries one or more names, so a one-tap caller
+  /// passes a single name while a multi-select surface passes several.
+  /// "Interrupt" is UI state only; the stored entry is an ordinary support
+  /// entry. [preserveInterruptedTimer] keeps the interrupt stash when this
+  /// start is the second half of an interruption.
   Future<void> startSupportTimer({
-    required String person,
+    required List<String> people,
     Category? category,
     bool preserveInterruptedTimer = false,
   }) {
@@ -853,7 +856,7 @@ class AppState extends ChangeNotifier {
       categoryId: target.id,
       subcategoryId: '',
       description: '',
-      person: person,
+      people: people,
       preserveInterruptedTimer: preserveInterruptedTimer,
     );
   }
@@ -1018,7 +1021,7 @@ class AppState extends ChangeNotifier {
     String description = '',
     String categoryId = '',
     String subcategoryId = '',
-    String person = '',
+    List<String> people = const [],
     bool preserveInterruptedTimer = false,
   }) async {
     final api = timerApi;
@@ -1055,7 +1058,7 @@ class AppState extends ChangeNotifier {
         );
       }
       if (categoryById(resolvedCategory)?.role == CategoryRole.support &&
-          person.trim().isEmpty) {
+          normalizePeople(people).isEmpty) {
         throw const TimerFailure('Who are you supporting? Add a person first.');
       }
       try {
@@ -1064,7 +1067,7 @@ class AppState extends ChangeNotifier {
             categoryId: resolvedCategory,
             subcategoryId: resolvedSubcategory,
             description: description.trim(),
-            person: person.trim(),
+            people: normalizePeople(people),
           ),
         );
       } catch (_) {
@@ -1220,7 +1223,7 @@ class AppState extends ChangeNotifier {
       categoryId: snapshot.categoryId,
       subcategoryId: snapshot.subcategoryId,
       description: snapshot.description,
-      person: snapshot.person,
+      people: snapshot.people,
       startedAt: snapshot.startedAt,
       segmentStartedAt: snapshot.segmentStartedAt,
       accumulatedPaused: snapshot.accumulatedPaused,
@@ -1578,7 +1581,7 @@ class AppState extends ChangeNotifier {
     required String description,
     required int minutes,
     String outcome = '',
-    String person = '',
+    List<String> people = const [],
   }) {
     final now = DateTime.now();
     return createWorkEntry(
@@ -1589,7 +1592,7 @@ class AppState extends ChangeNotifier {
         outcome: outcome,
         startedAt: now.subtract(Duration(minutes: minutes)),
         minutes: minutes,
-        person: person,
+        people: people,
         source: EntrySource.manual,
       ),
     );
@@ -2303,11 +2306,28 @@ class AppState extends ChangeNotifier {
   /// Adds a name to the roster, case-insensitively and only once. The local
   /// roster updates immediately; persistence is best-effort so capturing work
   /// never blocks on a settings write.
-  Future<void> addSupportPerson(String name) async {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty || _rosterContains(trimmed)) return;
-    _pendingRoster[trimmed.toLowerCase()] = trimmed;
-    await _saveSupportPeople([...settings.supportPeople, trimmed]);
+  Future<void> addSupportPerson(String name) => addSupportPeople([name]);
+
+  /// Adds every missing name in one batch and persists the roster once. Names
+  /// are trimmed and de-duplicated case-insensitively, keeping the first
+  /// spelling and order.
+  Future<void> addSupportPeople(Iterable<String> names) async {
+    final additions = <String>[];
+    for (final raw in names) {
+      final name = raw.trim();
+      if (name.isEmpty || _rosterContains(name)) continue;
+      if (additions.any(
+        (existing) => existing.toLowerCase() == name.toLowerCase(),
+      )) {
+        continue;
+      }
+      additions.add(name);
+    }
+    if (additions.isEmpty) return;
+    for (final name in additions) {
+      _pendingRoster[name.toLowerCase()] = name;
+    }
+    await _saveSupportPeople([...settings.supportPeople, ...additions]);
   }
 
   /// Removes every case-insensitive match from the roster. Work entries keep

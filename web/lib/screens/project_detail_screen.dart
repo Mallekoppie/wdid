@@ -12,6 +12,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/entry_grouping.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/milestone_dialog.dart';
 import '../widgets/forms/note_dialog.dart';
@@ -379,7 +380,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
         ? const <WorkEntry>[]
         : [
             for (final entry in entries)
-              if (entry.person.isNotEmpty && _entryFallsIn(entry, report))
+              if (entry.people.isNotEmpty && _entryFallsIn(entry, report))
                 entry,
           ];
 
@@ -503,7 +504,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       StatusBadge(
-                        label: entry.person,
+                        label: peopleLabel(entry.people),
                         color: scheme.tertiary,
                         icon: Icons.volunteer_activism_outlined,
                       ),
@@ -1089,10 +1090,10 @@ class _ProjectEntryRow extends StatelessWidget {
                   style: theme.textTheme.bodyMedium,
                 ),
               ),
-              if (entry.person.isNotEmpty) ...[
+              if (entry.people.isNotEmpty) ...[
                 const SizedBox(width: AppSpacing.sm),
                 StatusBadge(
-                  label: entry.person,
+                  label: peopleLabel(entry.people),
                   color: scheme.tertiary,
                   icon: Icons.volunteer_activism_outlined,
                 ),
