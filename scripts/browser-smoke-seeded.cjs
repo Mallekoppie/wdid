@@ -734,8 +734,8 @@ async function assertTodayDemo(page) {
 
   const interrupt = ANCHOR_ENTRIES.find((entry) => !entry.subcategory);
   if (!interrupt) fail('Today: the fixture has no mode-less interrupt row');
-  await waitForTextOrLabel(page, /No mode/, 'Today: no-mode label');
-  await waitForTextOrLabel(page, /Set mode/, 'Today: set-mode action');
+  await waitForTextOrLabel(page, /Mode/, 'Today: mode control');
+  await waitForTextOrLabel(page, /Not set/, 'Today: unset mode value');
 
   await waitForTextareaValue(
     page,
