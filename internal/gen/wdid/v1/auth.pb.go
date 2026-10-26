@@ -72,15 +72,72 @@ func (UserRole) EnumDescriptor() ([]byte, []int) {
 	return file_auth_proto_rawDescGZIP(), []int{0}
 }
 
+// AuthMode is the account model the service enforces.
+type AuthMode int32
+
+const (
+	AuthMode_AUTH_MODE_UNSPECIFIED AuthMode = 0
+	// AUTH_MODE_LOCAL is a single-user local install with a username and an
+	// optional password. It has no email, invites, additional accounts or OIDC.
+	AuthMode_AUTH_MODE_LOCAL AuthMode = 1
+	// AUTH_MODE_SERVER is the multi-user deployment: a bootstrap admin,
+	// email/password accounts and email-bound invite codes.
+	AuthMode_AUTH_MODE_SERVER AuthMode = 2
+)
+
+// Enum value maps for AuthMode.
+var (
+	AuthMode_name = map[int32]string{
+		0: "AUTH_MODE_UNSPECIFIED",
+		1: "AUTH_MODE_LOCAL",
+		2: "AUTH_MODE_SERVER",
+	}
+	AuthMode_value = map[string]int32{
+		"AUTH_MODE_UNSPECIFIED": 0,
+		"AUTH_MODE_LOCAL":       1,
+		"AUTH_MODE_SERVER":      2,
+	}
+)
+
+func (x AuthMode) Enum() *AuthMode {
+	p := new(AuthMode)
+	*p = x
+	return p
+}
+
+func (x AuthMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuthMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_auth_proto_enumTypes[1].Descriptor()
+}
+
+func (AuthMode) Type() protoreflect.EnumType {
+	return &file_auth_proto_enumTypes[1]
+}
+
+func (x AuthMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuthMode.Descriptor instead.
+func (AuthMode) EnumDescriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{1}
+}
+
 // User is the public account profile. Credentials and password hashes are
 // never returned by the API.
 type User struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Email         string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
-	DisplayName   string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	Role          UserRole               `protobuf:"varint,4,opt,name=role,proto3,enum=wdid.v1.UserRole" json:"role,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Email is set for server accounts and empty for local accounts.
+	Email       string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	DisplayName string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Role        UserRole               `protobuf:"varint,4,opt,name=role,proto3,enum=wdid.v1.UserRole" json:"role,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Username is set for local accounts and empty for server accounts.
+	Username      string `protobuf:"bytes,6,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -150,10 +207,17 @@ func (x *User) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
-// RegisterAccountRequest creates the first account with the deployment
-// bootstrap secret, and every later account with a single-use invite code.
-// Exactly one of invite_code or bootstrap_secret is used, depending on whether
-// the workspace already has an account.
+func (x *User) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+// RegisterAccountRequest creates an account. Local mode uses username and an
+// optional password and creates the single local account. Server mode creates
+// the first account with the deployment bootstrap secret, and every later
+// account with a single-use invite code.
 type RegisterAccountRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Email           string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
@@ -161,8 +225,10 @@ type RegisterAccountRequest struct {
 	DisplayName     string                 `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	InviteCode      string                 `protobuf:"bytes,5,opt,name=invite_code,json=inviteCode,proto3" json:"invite_code,omitempty"`
 	BootstrapSecret string                 `protobuf:"bytes,6,opt,name=bootstrap_secret,json=bootstrapSecret,proto3" json:"bootstrap_secret,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Username creates the single local-mode account.
+	Username      string `protobuf:"bytes,7,opt,name=username,proto3" json:"username,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RegisterAccountRequest) Reset() {
@@ -230,6 +296,13 @@ func (x *RegisterAccountRequest) GetBootstrapSecret() string {
 	return ""
 }
 
+func (x *RegisterAccountRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
 type RegisterAccountResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
@@ -283,9 +356,12 @@ func (x *RegisterAccountResponse) GetToken() string {
 }
 
 type LoginRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Email signs in a server-mode account. Username signs in a local-mode
+	// account; local accounts never have an email.
+	Email         string `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Password      string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	Username      string `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -330,6 +406,13 @@ func (x *LoginRequest) GetEmail() string {
 func (x *LoginRequest) GetPassword() string {
 	if x != nil {
 		return x.Password
+	}
+	return ""
+}
+
+func (x *LoginRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
 	}
 	return ""
 }
@@ -486,14 +569,26 @@ type GetAuthConfigResponse struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	LocalLogin bool                   `protobuf:"varint,1,opt,name=local_login,json=localLogin,proto3" json:"local_login,omitempty"`
 	// registration_enabled reports whether invite-based registration is
-	// available. It becomes true once the first account exists.
-	RegistrationEnabled bool        `protobuf:"varint,2,opt,name=registration_enabled,json=registrationEnabled,proto3" json:"registration_enabled,omitempty"`
-	Oidc                *OIDCConfig `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
+	// available. It becomes true once the first server-mode account exists and
+	// is always false in local mode.
+	RegistrationEnabled bool `protobuf:"varint,2,opt,name=registration_enabled,json=registrationEnabled,proto3" json:"registration_enabled,omitempty"`
+	// OIDC is only reported for server mode; local mode always disables it.
+	Oidc *OIDCConfig `protobuf:"bytes,3,opt,name=oidc,proto3" json:"oidc,omitempty"`
 	// bootstrap_required reports whether the workspace still needs its first
-	// account, created with the deployment bootstrap secret.
+	// server-mode account, created with the deployment bootstrap secret.
 	BootstrapRequired bool `protobuf:"varint,4,opt,name=bootstrap_required,json=bootstrapRequired,proto3" json:"bootstrap_required,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Mode is the account model the service enforces.
+	Mode AuthMode `protobuf:"varint,5,opt,name=mode,proto3,enum=wdid.v1.AuthMode" json:"mode,omitempty"`
+	// setup_required reports that local mode has no account yet and must show
+	// the first-run setup form.
+	SetupRequired bool `protobuf:"varint,6,opt,name=setup_required,json=setupRequired,proto3" json:"setup_required,omitempty"`
+	// password_required reports that the existing local account has a password.
+	PasswordRequired bool `protobuf:"varint,7,opt,name=password_required,json=passwordRequired,proto3" json:"password_required,omitempty"`
+	// Username is the existing local account's username, so a later launch can
+	// prefill it.
+	Username      string `protobuf:"bytes,8,opt,name=username,proto3" json:"username,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetAuthConfigResponse) Reset() {
@@ -552,6 +647,34 @@ func (x *GetAuthConfigResponse) GetBootstrapRequired() bool {
 		return x.BootstrapRequired
 	}
 	return false
+}
+
+func (x *GetAuthConfigResponse) GetMode() AuthMode {
+	if x != nil {
+		return x.Mode
+	}
+	return AuthMode_AUTH_MODE_UNSPECIFIED
+}
+
+func (x *GetAuthConfigResponse) GetSetupRequired() bool {
+	if x != nil {
+		return x.SetupRequired
+	}
+	return false
+}
+
+func (x *GetAuthConfigResponse) GetPasswordRequired() bool {
+	if x != nil {
+		return x.PasswordRequired
+	}
+	return false
+}
+
+func (x *GetAuthConfigResponse) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
 }
 
 type GetCurrentUserRequest struct {
@@ -639,27 +762,30 @@ var File_auth_proto protoreflect.FileDescriptor
 const file_auth_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"auth.proto\x12\awdid.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x01\n" +
+	"auth.proto\x12\awdid.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcd\x01\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12%\n" +
 	"\x04role\x18\x04 \x01(\x0e2\x11.wdid.v1.UserRoleR\x04role\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xd4\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1a\n" +
+	"\busername\x18\x06 \x01(\tR\busername\"\xf0\x01\n" +
 	"\x16RegisterAccountRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1f\n" +
 	"\vinvite_code\x18\x05 \x01(\tR\n" +
 	"inviteCode\x12)\n" +
-	"\x10bootstrap_secret\x18\x06 \x01(\tR\x0fbootstrapSecretJ\x04\b\x04\x10\x05R\x13registration_secret\"R\n" +
+	"\x10bootstrap_secret\x18\x06 \x01(\tR\x0fbootstrapSecret\x12\x1a\n" +
+	"\busername\x18\a \x01(\tR\busernameJ\x04\b\x04\x10\x05R\x13registration_secret\"R\n" +
 	"\x17RegisterAccountResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.wdid.v1.UserR\x04user\x12\x14\n" +
-	"\x05token\x18\x02 \x01(\tR\x05token\"@\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"\\\n" +
 	"\fLoginRequest\x12\x14\n" +
 	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"H\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\"H\n" +
 	"\rLoginResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.wdid.v1.UserR\x04user\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\"\x16\n" +
@@ -669,20 +795,28 @@ const file_auth_proto_rawDesc = "" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1d\n" +
 	"\n" +
 	"issuer_url\x18\x02 \x01(\tR\tissuerUrl\x12\x1b\n" +
-	"\tclient_id\x18\x03 \x01(\tR\bclientId\"\xc3\x01\n" +
+	"\tclient_id\x18\x03 \x01(\tR\bclientId\"\xda\x02\n" +
 	"\x15GetAuthConfigResponse\x12\x1f\n" +
 	"\vlocal_login\x18\x01 \x01(\bR\n" +
 	"localLogin\x121\n" +
 	"\x14registration_enabled\x18\x02 \x01(\bR\x13registrationEnabled\x12'\n" +
 	"\x04oidc\x18\x03 \x01(\v2\x13.wdid.v1.OIDCConfigR\x04oidc\x12-\n" +
-	"\x12bootstrap_required\x18\x04 \x01(\bR\x11bootstrapRequired\"\x17\n" +
+	"\x12bootstrap_required\x18\x04 \x01(\bR\x11bootstrapRequired\x12%\n" +
+	"\x04mode\x18\x05 \x01(\x0e2\x11.wdid.v1.AuthModeR\x04mode\x12%\n" +
+	"\x0esetup_required\x18\x06 \x01(\bR\rsetupRequired\x12+\n" +
+	"\x11password_required\x18\a \x01(\bR\x10passwordRequired\x12\x1a\n" +
+	"\busername\x18\b \x01(\tR\busername\"\x17\n" +
 	"\x15GetCurrentUserRequest\";\n" +
 	"\x16GetCurrentUserResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.wdid.v1.UserR\x04user*N\n" +
 	"\bUserRole\x12\x19\n" +
 	"\x15USER_ROLE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fUSER_ROLE_ADMIN\x10\x01\x12\x12\n" +
-	"\x0eUSER_ROLE_USER\x10\x022\xbe\x02\n" +
+	"\x0eUSER_ROLE_USER\x10\x02*P\n" +
+	"\bAuthMode\x12\x19\n" +
+	"\x15AUTH_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fAUTH_MODE_LOCAL\x10\x01\x12\x14\n" +
+	"\x10AUTH_MODE_SERVER\x10\x022\xbe\x02\n" +
 	"\vAuthService\x12T\n" +
 	"\x0fRegisterAccount\x12\x1f.wdid.v1.RegisterAccountRequest\x1a .wdid.v1.RegisterAccountResponse\x126\n" +
 	"\x05Login\x12\x15.wdid.v1.LoginRequest\x1a\x16.wdid.v1.LoginResponse\x12N\n" +
@@ -701,42 +835,44 @@ func file_auth_proto_rawDescGZIP() []byte {
 	return file_auth_proto_rawDescData
 }
 
-var file_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_auth_proto_goTypes = []any{
 	(UserRole)(0),                   // 0: wdid.v1.UserRole
-	(*User)(nil),                    // 1: wdid.v1.User
-	(*RegisterAccountRequest)(nil),  // 2: wdid.v1.RegisterAccountRequest
-	(*RegisterAccountResponse)(nil), // 3: wdid.v1.RegisterAccountResponse
-	(*LoginRequest)(nil),            // 4: wdid.v1.LoginRequest
-	(*LoginResponse)(nil),           // 5: wdid.v1.LoginResponse
-	(*GetAuthConfigRequest)(nil),    // 6: wdid.v1.GetAuthConfigRequest
-	(*OIDCConfig)(nil),              // 7: wdid.v1.OIDCConfig
-	(*GetAuthConfigResponse)(nil),   // 8: wdid.v1.GetAuthConfigResponse
-	(*GetCurrentUserRequest)(nil),   // 9: wdid.v1.GetCurrentUserRequest
-	(*GetCurrentUserResponse)(nil),  // 10: wdid.v1.GetCurrentUserResponse
-	(*timestamppb.Timestamp)(nil),   // 11: google.protobuf.Timestamp
+	(AuthMode)(0),                   // 1: wdid.v1.AuthMode
+	(*User)(nil),                    // 2: wdid.v1.User
+	(*RegisterAccountRequest)(nil),  // 3: wdid.v1.RegisterAccountRequest
+	(*RegisterAccountResponse)(nil), // 4: wdid.v1.RegisterAccountResponse
+	(*LoginRequest)(nil),            // 5: wdid.v1.LoginRequest
+	(*LoginResponse)(nil),           // 6: wdid.v1.LoginResponse
+	(*GetAuthConfigRequest)(nil),    // 7: wdid.v1.GetAuthConfigRequest
+	(*OIDCConfig)(nil),              // 8: wdid.v1.OIDCConfig
+	(*GetAuthConfigResponse)(nil),   // 9: wdid.v1.GetAuthConfigResponse
+	(*GetCurrentUserRequest)(nil),   // 10: wdid.v1.GetCurrentUserRequest
+	(*GetCurrentUserResponse)(nil),  // 11: wdid.v1.GetCurrentUserResponse
+	(*timestamppb.Timestamp)(nil),   // 12: google.protobuf.Timestamp
 }
 var file_auth_proto_depIdxs = []int32{
 	0,  // 0: wdid.v1.User.role:type_name -> wdid.v1.UserRole
-	11, // 1: wdid.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 2: wdid.v1.RegisterAccountResponse.user:type_name -> wdid.v1.User
-	1,  // 3: wdid.v1.LoginResponse.user:type_name -> wdid.v1.User
-	7,  // 4: wdid.v1.GetAuthConfigResponse.oidc:type_name -> wdid.v1.OIDCConfig
-	1,  // 5: wdid.v1.GetCurrentUserResponse.user:type_name -> wdid.v1.User
-	2,  // 6: wdid.v1.AuthService.RegisterAccount:input_type -> wdid.v1.RegisterAccountRequest
-	4,  // 7: wdid.v1.AuthService.Login:input_type -> wdid.v1.LoginRequest
-	6,  // 8: wdid.v1.AuthService.GetAuthConfig:input_type -> wdid.v1.GetAuthConfigRequest
-	9,  // 9: wdid.v1.AuthService.GetCurrentUser:input_type -> wdid.v1.GetCurrentUserRequest
-	3,  // 10: wdid.v1.AuthService.RegisterAccount:output_type -> wdid.v1.RegisterAccountResponse
-	5,  // 11: wdid.v1.AuthService.Login:output_type -> wdid.v1.LoginResponse
-	8,  // 12: wdid.v1.AuthService.GetAuthConfig:output_type -> wdid.v1.GetAuthConfigResponse
-	10, // 13: wdid.v1.AuthService.GetCurrentUser:output_type -> wdid.v1.GetCurrentUserResponse
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	12, // 1: wdid.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	2,  // 2: wdid.v1.RegisterAccountResponse.user:type_name -> wdid.v1.User
+	2,  // 3: wdid.v1.LoginResponse.user:type_name -> wdid.v1.User
+	8,  // 4: wdid.v1.GetAuthConfigResponse.oidc:type_name -> wdid.v1.OIDCConfig
+	1,  // 5: wdid.v1.GetAuthConfigResponse.mode:type_name -> wdid.v1.AuthMode
+	2,  // 6: wdid.v1.GetCurrentUserResponse.user:type_name -> wdid.v1.User
+	3,  // 7: wdid.v1.AuthService.RegisterAccount:input_type -> wdid.v1.RegisterAccountRequest
+	5,  // 8: wdid.v1.AuthService.Login:input_type -> wdid.v1.LoginRequest
+	7,  // 9: wdid.v1.AuthService.GetAuthConfig:input_type -> wdid.v1.GetAuthConfigRequest
+	10, // 10: wdid.v1.AuthService.GetCurrentUser:input_type -> wdid.v1.GetCurrentUserRequest
+	4,  // 11: wdid.v1.AuthService.RegisterAccount:output_type -> wdid.v1.RegisterAccountResponse
+	6,  // 12: wdid.v1.AuthService.Login:output_type -> wdid.v1.LoginResponse
+	9,  // 13: wdid.v1.AuthService.GetAuthConfig:output_type -> wdid.v1.GetAuthConfigResponse
+	11, // 14: wdid.v1.AuthService.GetCurrentUser:output_type -> wdid.v1.GetCurrentUserResponse
+	11, // [11:15] is the sub-list for method output_type
+	7,  // [7:11] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_auth_proto_init() }
@@ -749,7 +885,7 @@ func file_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_proto_rawDesc), len(file_auth_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,

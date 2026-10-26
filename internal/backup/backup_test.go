@@ -364,6 +364,7 @@ func TestManagerRestoresNamedSnapshot(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid.db"),
+		AuthMode:             config.AuthModeServer,
 		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
@@ -453,6 +454,7 @@ func TestManagerSnapshotsTheLiveStore(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid.db"),
+		AuthMode:             config.AuthModeServer,
 		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",

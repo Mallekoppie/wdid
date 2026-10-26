@@ -14,6 +14,13 @@ import (
 )
 
 const (
+	// AuthModeLocal is the single-user local install: one username account,
+	// optional password, no invites and no OIDC.
+	AuthModeLocal = "local"
+	// AuthModeServer is the hosted deployment: bootstrap admin, email/password
+	// accounts and email-bound invite codes.
+	AuthModeServer = "server"
+
 	defaultHTTPAddr            = "127.0.0.1:8080"
 	defaultDBPath              = "./data/wdid.db"
 	defaultJWTSigningMethod    = "HS256"
@@ -24,6 +31,7 @@ const (
 	minJWTSecretLen            = 32
 	defaultBackupInterval      = 6 * time.Hour
 	defaultBackupRetention     = 30
+	defaultAuthMode            = AuthModeLocal
 
 	// ServiceVersion and ServiceLicense are reported in Settings → About.
 	ServiceVersion = "0.1.0"
@@ -79,12 +87,15 @@ type Zitadel struct {
 
 // Config is the service configuration, loaded from the environment.
 type Config struct {
-	HTTPAddr             string
-	DBPath               string
-	BackupDir            string
-	BackupInterval       time.Duration
-	BackupRetention      int
-	AllowedOrigins       []string
+	HTTPAddr        string
+	DBPath          string
+	BackupDir       string
+	BackupInterval  time.Duration
+	BackupRetention int
+	AllowedOrigins  []string
+	// AuthMode selects the account model: local (single user, username,
+	// optional password) or server (bootstrap admin, email/password, invites).
+	AuthMode             string
 	DevMode              bool
 	BootstrapSecret      string
 	JWTSecret            string
@@ -110,6 +121,7 @@ func Load() (Config, error) {
 		BackupInterval:       envDuration("WDID_BACKUP_INTERVAL", defaultBackupInterval),
 		BackupRetention:      envInt("WDID_BACKUP_RETENTION", defaultBackupRetention),
 		AllowedOrigins:       splitList(envString("WDID_ALLOWED_ORIGINS", defaultAllowedOrigins)),
+		AuthMode:             strings.ToLower(envString("WDID_AUTH_MODE", defaultAuthMode)),
 		DevMode:              envBool("WDID_DEV_MODE", false),
 		BootstrapSecret:      os.Getenv("WDID_BOOTSTRAP_SECRET"),
 		JWTSecret:            os.Getenv("WDID_JWT_SECRET"),
@@ -141,9 +153,36 @@ func LoadStorage() Config {
 		BackupDir:       envString("WDID_BACKUP_DIR", defaultBackupDir(dbPath)),
 		BackupInterval:  envDuration("WDID_BACKUP_INTERVAL", defaultBackupInterval),
 		BackupRetention: envInt("WDID_BACKUP_RETENTION", defaultBackupRetention),
+		AuthMode:        strings.ToLower(envString("WDID_AUTH_MODE", defaultAuthMode)),
 		DevMode:         envBool("WDID_DEV_MODE", false),
 		StorageOnly:     true,
 	}
+}
+
+// NormalizedAuthMode is the configured mode with an empty value treated as the
+// local default. Development mode does not change the configured value, only
+// the behavior EffectiveAuthMode enforces.
+func (c Config) NormalizedAuthMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
+	if mode == "" {
+		return AuthModeLocal
+	}
+	return mode
+}
+
+// EffectiveAuthMode is the account model the service enforces. Development mode
+// keeps the pre-existing multi-user bootstrap and invite paths for testing, so
+// it runs as a server.
+func (c Config) EffectiveAuthMode() string {
+	if c.DevMode {
+		return AuthModeServer
+	}
+	return c.NormalizedAuthMode()
+}
+
+// LocalMode reports whether this deployment is the single-user local install.
+func (c Config) LocalMode() bool {
+	return c.EffectiveAuthMode() == AuthModeLocal
 }
 
 // EffectiveBackupDir is the configured backup directory, or the default
@@ -192,9 +231,18 @@ func (c Config) Validate() error {
 			problems = append(problems, fmt.Sprintf("WDID_ALLOWED_ORIGINS entry %q is invalid: %v", origin, err))
 		}
 	}
-	if len(c.BootstrapSecret) < minBootstrapSecretLen {
+	switch c.NormalizedAuthMode() {
+	case AuthModeLocal, AuthModeServer:
+	default:
+		problems = append(problems, "WDID_AUTH_MODE must be local or server")
+	}
+	effectiveMode := c.EffectiveAuthMode()
+	if effectiveMode == AuthModeServer && len(c.BootstrapSecret) < minBootstrapSecretLen {
 		problems = append(problems,
 			fmt.Sprintf("WDID_BOOTSTRAP_SECRET must be at least %d characters", minBootstrapSecretLen))
+	}
+	if effectiveMode == AuthModeLocal && c.Zitadel.Enabled {
+		problems = append(problems, "WDID_ZITADEL_ENABLED is not supported in local auth mode")
 	}
 	if len(c.JWTSecret) < minJWTSecretLen {
 		problems = append(problems,
@@ -284,7 +332,9 @@ func (c Config) PlatformConfig() platform.Config {
 	pc.Auth.Server.LocalJwt.JwtExpiration = c.JWTExpirationMinutes
 	pc.Auth.Server.LocalJwt.RolesClaim = "roles"
 
-	if c.Zitadel.Enabled {
+	// Local mode never advertises or accepts OIDC tokens, even if an operator
+	// left the Zitadel settings in the environment.
+	if !c.LocalMode() && c.Zitadel.Enabled {
 		pc.Grpc.Server.Auth = platform.AuthLocalOrOIDC
 		pc.Auth.Server.OAuth.Enabled = true
 		pc.Auth.Server.OAuth.IdpWellKnownURL = c.Zitadel.IssuerURL + "/.well-known/openid-configuration"

@@ -3,6 +3,22 @@ import 'package:grpc/grpc_or_grpcweb.dart';
 import '../src/generated/auth.pbgrpc.dart' as generated;
 import 'grpc_channel.dart';
 
+/// The account model the service enforces.
+enum AuthMode {
+  /// A single-user local install: username, optional password, no invites and
+  /// no OIDC.
+  local,
+
+  /// The multi-user deployment: bootstrap admin, email/password and invites.
+  server;
+
+  static AuthMode fromProto(generated.AuthMode mode) {
+    return mode == generated.AuthMode.AUTH_MODE_LOCAL
+        ? AuthMode.local
+        : AuthMode.server;
+  }
+}
+
 /// Login capabilities reported by the service before anyone signs in.
 class AuthConfig {
   const AuthConfig({
@@ -10,6 +26,10 @@ class AuthConfig {
     required this.registrationEnabled,
     required this.bootstrapRequired,
     required this.oidcEnabled,
+    this.mode = AuthMode.server,
+    this.setupRequired = false,
+    this.passwordRequired = false,
+    this.username = '',
     this.oidcIssuerUrl = '',
     this.oidcClientId = '',
   });
@@ -18,8 +38,21 @@ class AuthConfig {
   final bool registrationEnabled;
   final bool bootstrapRequired;
   final bool oidcEnabled;
+  final AuthMode mode;
+
+  /// Local mode has no account yet, so the first-run setup form is shown.
+  final bool setupRequired;
+
+  /// The existing local account has a password and prompts for it.
+  final bool passwordRequired;
+
+  /// The existing local account's username, prefilled on later launches.
+  final String username;
+
   final String oidcIssuerUrl;
   final String oidcClientId;
+
+  bool get isLocal => mode == AuthMode.local;
 }
 
 /// The signed-in account and its bearer token.
@@ -36,12 +69,19 @@ class AuthUser {
     required this.email,
     required this.displayName,
     required this.role,
+    this.username = '',
   });
 
   final String id;
+
+  /// Empty for a local single-user account.
   final String email;
+
   final String displayName;
   final String role;
+
+  /// Empty for a server account.
+  final String username;
 }
 
 /// A user-facing authentication failure.
@@ -58,10 +98,18 @@ class AuthFailure implements Exception {
 abstract class AuthApi {
   Future<AuthConfig> getConfig();
 
-  Future<AuthSession> login({required String email, required String password});
+  /// Signs in a server account by email or a local account by username.
+  Future<AuthSession> login({
+    String email = '',
+    String username = '',
+    required String password,
+  });
 
+  /// Creates a server account (email + invite/bootstrap) or the single local
+  /// account (username + optional password).
   Future<AuthSession> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -75,12 +123,14 @@ abstract class AuthRpc {
   Future<generated.GetAuthConfigResponse> getAuthConfig();
 
   Future<generated.LoginResponse> login({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
   });
 
   Future<generated.RegisterAccountResponse> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -103,17 +153,23 @@ class GrpcAuthRpc implements AuthRpc {
 
   @override
   Future<generated.LoginResponse> login({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
   }) {
     return _client.login(
-      generated.LoginRequest(email: email, password: password),
+      generated.LoginRequest(
+        email: email,
+        password: password,
+        username: username,
+      ),
     );
   }
 
   @override
   Future<generated.RegisterAccountResponse> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -126,6 +182,7 @@ class GrpcAuthRpc implements AuthRpc {
         displayName: displayName,
         inviteCode: inviteCode,
         bootstrapSecret: bootstrapSecret,
+        username: username,
       ),
     );
   }
@@ -147,6 +204,10 @@ class GrpcAuthApi implements AuthApi {
         registrationEnabled: response.registrationEnabled,
         bootstrapRequired: response.bootstrapRequired,
         oidcEnabled: oidc.enabled,
+        mode: AuthMode.fromProto(response.mode),
+        setupRequired: response.setupRequired,
+        passwordRequired: response.passwordRequired,
+        username: response.username,
         oidcIssuerUrl: oidc.issuerUrl,
         oidcClientId: oidc.clientId,
       );
@@ -157,11 +218,16 @@ class GrpcAuthApi implements AuthApi {
 
   @override
   Future<AuthSession> login({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
   }) async {
     try {
-      final response = await _rpc.login(email: email, password: password);
+      final response = await _rpc.login(
+        email: email,
+        username: username,
+        password: password,
+      );
       return _session(response.user, response.token);
     } on GrpcError catch (error) {
       throw AuthFailure(_message(error));
@@ -170,7 +236,8 @@ class GrpcAuthApi implements AuthApi {
 
   @override
   Future<AuthSession> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -179,6 +246,7 @@ class GrpcAuthApi implements AuthApi {
     try {
       final response = await _rpc.register(
         email: email,
+        username: username,
         password: password,
         displayName: displayName,
         inviteCode: inviteCode,
@@ -196,6 +264,7 @@ class GrpcAuthApi implements AuthApi {
         id: user.id,
         email: user.email,
         displayName: user.displayName,
+        username: user.username,
         role: user.role == generated.UserRole.USER_ROLE_ADMIN
             ? 'admin'
             : 'user',

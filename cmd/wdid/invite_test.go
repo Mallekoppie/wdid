@@ -15,6 +15,7 @@ import (
 
 func TestInviteCommandsRoundTrip(t *testing.T) {
 	t.Setenv("WDID_DB_PATH", filepath.Join(t.TempDir(), "wdid-cli.db"))
+	t.Setenv("WDID_DEV_MODE", "true")
 
 	var created bytes.Buffer
 	if err := runInvite([]string{"create", "--email", "New@Example.com"}, &created); err != nil {
@@ -58,6 +59,7 @@ func TestInviteCommandsRoundTrip(t *testing.T) {
 
 func TestCreatedInviteCodeCanBeRedeemed(t *testing.T) {
 	t.Setenv("WDID_DB_PATH", filepath.Join(t.TempDir(), "wdid-cli.db"))
+	t.Setenv("WDID_DEV_MODE", "true")
 
 	var created bytes.Buffer
 	if err := runInvite([]string{"create", "--email", "new@example.com"}, &created); err != nil {
@@ -85,6 +87,7 @@ func TestCreatedInviteCodeCanBeRedeemed(t *testing.T) {
 
 func TestInviteCreateRequiresAValidEmail(t *testing.T) {
 	t.Setenv("WDID_DB_PATH", filepath.Join(t.TempDir(), "wdid-cli.db"))
+	t.Setenv("WDID_DEV_MODE", "true")
 
 	var out bytes.Buffer
 	if err := runInvite([]string{"create"}, &out); err == nil {
@@ -95,8 +98,19 @@ func TestInviteCreateRequiresAValidEmail(t *testing.T) {
 	}
 }
 
+func TestInviteCommandsRejectLocalAuthMode(t *testing.T) {
+	t.Setenv("WDID_DB_PATH", filepath.Join(t.TempDir(), "wdid-cli.db"))
+	t.Setenv("WDID_DEV_MODE", "false")
+	t.Setenv("WDID_AUTH_MODE", "local")
+
+	if err := runInvite([]string{"list"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("expected invites to be unavailable in local auth mode")
+	}
+}
+
 func TestInviteRejectsAnUnknownCommand(t *testing.T) {
 	t.Setenv("WDID_DB_PATH", filepath.Join(t.TempDir(), "wdid-cli.db"))
+	t.Setenv("WDID_DEV_MODE", "true")
 
 	if err := runInvite([]string{"delete"}, &bytes.Buffer{}); err == nil {
 		t.Fatal("expected an error for an unknown command")

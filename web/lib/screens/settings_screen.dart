@@ -8,6 +8,7 @@ import '../models/check_in.dart';
 import '../models/enums.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
+import '../state/auth_state.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/app_dropdown.dart';
 import '../widgets/panel.dart';
@@ -26,7 +27,11 @@ const _weekdayNames = [
 ];
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.auth});
+
+  /// The sign-in state, used to describe the deployment in About. Optional so
+  /// screens can be embedded without an auth gate in tests.
+  final AuthState? auth;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -58,6 +63,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   PromptTemplate? _previewTemplate;
   String? _previewError;
   bool _previewLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.auth?.addListener(_refreshAuthDescription);
+    // A session injected without going through the login screen still needs
+    // the auth config so About can name the deployment mode.
+    if (widget.auth != null && widget.auth!.config == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(widget.auth!.loadConfig());
+      });
+    }
+  }
+
+  void _refreshAuthDescription() {
+    if (mounted) setState(() {});
+  }
+
+  String get _authDescription {
+    final config = widget.auth?.config;
+    if (config == null) return 'Loading…';
+    if (config.isLocal) return 'Local single-user · optional password';
+    if (config.oidcEnabled) {
+      return 'Zitadel OIDC · invite-gated registration';
+    }
+    return 'Email/password · invite-gated registration';
+  }
 
   @override
   void didChangeDependencies() {
@@ -140,6 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    widget.auth?.removeListener(_refreshAuthDescription);
     _timezone.dispose();
     _dailyTarget.dispose();
     _longTimer.dispose();
@@ -817,10 +850,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: 'Data adapter',
                     value: 'Connect service',
                   ),
-                  _AboutRow(
-                    label: 'Auth',
-                    value: 'Zitadel OIDC · invite-gated registration',
-                  ),
+                  _AboutRow(label: 'Auth', value: _authDescription),
                 ],
               ),
             ),

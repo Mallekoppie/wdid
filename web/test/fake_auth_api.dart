@@ -38,16 +38,18 @@ class FakeAuthApi implements AuthApi {
 
   @override
   Future<AuthSession> login({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
   }) async {
-    logins.add({'email': email, 'password': password});
-    return _session(email);
+    logins.add({'email': email, 'username': username, 'password': password});
+    return _session(email: email, username: username);
   }
 
   @override
   Future<AuthSession> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -55,20 +57,22 @@ class FakeAuthApi implements AuthApi {
   }) async {
     registrations.add({
       'email': email,
+      'username': username,
       'password': password,
       'displayName': displayName,
       'inviteCode': inviteCode,
       'bootstrapSecret': bootstrapSecret,
     });
-    return _session(email);
+    return _session(email: email, username: username);
   }
 
-  AuthSession _session(String email) {
+  AuthSession _session({String email = '', String username = ''}) {
     if (failure != null) throw failure!;
     return AuthSession(
       user: AuthUser(
         id: 'user-1',
         email: email,
+        username: username,
         displayName: 'Test User',
         role: 'user',
       ),

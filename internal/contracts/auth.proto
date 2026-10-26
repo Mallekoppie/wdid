@@ -13,20 +13,34 @@ enum UserRole {
   USER_ROLE_USER = 2;
 }
 
+// AuthMode is the account model the service enforces.
+enum AuthMode {
+  AUTH_MODE_UNSPECIFIED = 0;
+  // AUTH_MODE_LOCAL is a single-user local install with a username and an
+  // optional password. It has no email, invites, additional accounts or OIDC.
+  AUTH_MODE_LOCAL = 1;
+  // AUTH_MODE_SERVER is the multi-user deployment: a bootstrap admin,
+  // email/password accounts and email-bound invite codes.
+  AUTH_MODE_SERVER = 2;
+}
+
 // User is the public account profile. Credentials and password hashes are
 // never returned by the API.
 message User {
   string id = 1;
+  // Email is set for server accounts and empty for local accounts.
   string email = 2;
   string display_name = 3;
   UserRole role = 4;
   google.protobuf.Timestamp created_at = 5;
+  // Username is set for local accounts and empty for server accounts.
+  string username = 6;
 }
 
-// RegisterAccountRequest creates the first account with the deployment
-// bootstrap secret, and every later account with a single-use invite code.
-// Exactly one of invite_code or bootstrap_secret is used, depending on whether
-// the workspace already has an account.
+// RegisterAccountRequest creates an account. Local mode uses username and an
+// optional password and creates the single local account. Server mode creates
+// the first account with the deployment bootstrap secret, and every later
+// account with a single-use invite code.
 message RegisterAccountRequest {
   // Field 4 was registration_secret in the pre-invite contract. It is reserved
   // rather than reused so the field number stays stable.
@@ -38,6 +52,8 @@ message RegisterAccountRequest {
   string display_name = 3;
   string invite_code = 5;
   string bootstrap_secret = 6;
+  // Username creates the single local-mode account.
+  string username = 7;
 }
 
 message RegisterAccountResponse {
@@ -46,8 +62,11 @@ message RegisterAccountResponse {
 }
 
 message LoginRequest {
+  // Email signs in a server-mode account. Username signs in a local-mode
+  // account; local accounts never have an email.
   string email = 1;
   string password = 2;
+  string username = 3;
 }
 
 message LoginResponse {
@@ -66,12 +85,24 @@ message OIDCConfig {
 message GetAuthConfigResponse {
   bool local_login = 1;
   // registration_enabled reports whether invite-based registration is
-  // available. It becomes true once the first account exists.
+  // available. It becomes true once the first server-mode account exists and
+  // is always false in local mode.
   bool registration_enabled = 2;
+  // OIDC is only reported for server mode; local mode always disables it.
   OIDCConfig oidc = 3;
   // bootstrap_required reports whether the workspace still needs its first
-  // account, created with the deployment bootstrap secret.
+  // server-mode account, created with the deployment bootstrap secret.
   bool bootstrap_required = 4;
+  // Mode is the account model the service enforces.
+  AuthMode mode = 5;
+  // setup_required reports that local mode has no account yet and must show
+  // the first-run setup form.
+  bool setup_required = 6;
+  // password_required reports that the existing local account has a password.
+  bool password_required = 7;
+  // Username is the existing local account's username, so a later launch can
+  // prefill it.
+  string username = 8;
 }
 
 message GetCurrentUserRequest {}
