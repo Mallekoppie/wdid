@@ -52,25 +52,12 @@ class _AppShellState extends State<AppShell> {
 
   /// The keyboard shortcut has no header anchor to pop a menu from, so it uses
   /// a compact dialog with the same shared picker as the header button.
-  Future<String?> _askForPerson() {
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Start support'),
-        content: SizedBox(
-          width: 320,
-          child: PersonPicker(
-            autofocus: true,
-            onSelected: (name) => Navigator.of(context).pop(name),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
+  Future<List<String>?> _askForPerson() {
+    return showPeoplePickerDialog(
+      context,
+      title: 'Start support',
+      actionLabel: 'Start',
+      hint: 'Who are you supporting?',
     );
   }
 
@@ -91,9 +78,9 @@ class _AppShellState extends State<AppShell> {
             );
             return;
           }
-          final person = await _askForPerson();
-          if (person == null || !mounted) return;
-          await state.startSupportTimer(person: person, category: category);
+          final people = await _askForPerson();
+          if (people == null || !mounted) return;
+          await state.startSupportTimer(people: people, category: category);
         } else {
           await state.startTimer();
         }

@@ -79,14 +79,14 @@ void seedRunningTimer(
   String categoryId = 'cat-1',
   String subcategoryId = 'sub-1',
   String description = 'Backfill script',
-  String person = '',
+  List<String> people = const [],
 }) {
   final now = DateTime.now().toUtc();
   api.timer = TimerSnapshot(
     categoryId: categoryId,
     subcategoryId: subcategoryId,
     description: description,
-    person: person,
+    people: people,
     startedAt: now.subtract(const Duration(minutes: 20)),
     segmentStartedAt: now.subtract(const Duration(minutes: 20)),
     elapsed: const Duration(minutes: 20),
@@ -242,7 +242,7 @@ void main() {
     );
 
     await harness.state.startSupportTimer(
-      person: 'Priya',
+      people: const ['Priya'],
       preserveInterruptedTimer: true,
     );
     expect(
@@ -276,7 +276,10 @@ void main() {
       reason: 'without history the first support category is the fallback',
     );
 
-    await harness.state.startTimer(categoryId: 'cat-support-b', person: 'Sam');
+    await harness.state.startTimer(
+      categoryId: 'cat-support-b',
+      people: const ['Sam'],
+    );
     await harness.state.stopTimer();
 
     expect(harness.state.defaultSupportCategory!.id, 'cat-support-b');
@@ -326,7 +329,7 @@ void main() {
       expect(timerApi.lastStartCategoryId, 'cat-support');
       expect(timerApi.lastStartSubcategoryId, isEmpty);
       expect(timerApi.lastStartDescription, isEmpty);
-      expect(timerApi.lastStartPerson, 'Priya');
+      expect(timerApi.lastStartPeople, ['Priya']);
       expect(
         state.interruptedTimer,
         isNotNull,
@@ -412,7 +415,7 @@ void main() {
     expect(timerApi.lastStartCategoryId, 'cat-support');
     expect(timerApi.lastStartSubcategoryId, isEmpty);
     expect(timerApi.lastStartDescription, isEmpty);
-    expect(timerApi.lastStartPerson, 'Priya');
+    expect(timerApi.lastStartPeople, ['Priya']);
     expect(find.byType(TodayScreen), findsOneWidget);
   });
 
@@ -438,7 +441,7 @@ void main() {
     expect(timerApi.stopActions, [TimerStopAction.save]);
     expect(timerApi.startCalls, 1);
     expect(timerApi.lastStartCategoryId, 'cat-support');
-    expect(timerApi.lastStartPerson, 'Sam');
+    expect(timerApi.lastStartPeople, ['Sam']);
     expect(state.interruptedTimer!.categoryId, 'cat-1');
     expect(state.interruptedTimer!.subcategoryId, 'sub-1');
     expect(find.byType(TodayScreen), findsOneWidget);
@@ -660,7 +663,7 @@ void main() {
     final state = await pumpApp(tester, timerApi: timerApi);
 
     // Leave a support category as the remembered start category.
-    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await state.startTimer(categoryId: 'cat-support', people: const ['Priya']);
     await tester.pump();
     await state.stopTimer();
     await tester.pump();
@@ -688,7 +691,7 @@ void main() {
     expect(timerApi.startCalls, 2, reason: 'setup start plus the picker start');
     expect(timerApi.lastStartCategoryId, 'cat-support');
     expect(timerApi.lastStartSubcategoryId, isEmpty);
-    expect(timerApi.lastStartPerson, 'Sam');
+    expect(timerApi.lastStartPeople, ['Sam']);
   });
 
   testWidgets('header Start still starts an initiative default directly', (
@@ -718,7 +721,7 @@ void main() {
     final timerApi = FakeTimerApi();
     final state = await pumpApp(tester, timerApi: timerApi);
 
-    await state.startTimer(categoryId: 'cat-support', person: 'Priya');
+    await state.startTimer(categoryId: 'cat-support', people: const ['Priya']);
     await tester.pump();
     await state.stopTimer();
     await tester.pump();
@@ -735,10 +738,111 @@ void main() {
       ),
     );
     await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Start'),
+      ),
+    );
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(timerApi.startCalls, 2);
     expect(timerApi.lastStartCategoryId, 'cat-support');
-    expect(timerApi.lastStartPerson, 'Sam');
+    expect(timerApi.lastStartPeople, ['Sam']);
+  });
+
+  testWidgets('the Now strip can start support for several people', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    await pumpApp(tester, timerApi: timerApi);
+
+    final strip = find.byType(SupportNowStrip);
+    await tester.tap(
+      find.descendant(
+        of: strip,
+        matching: find.widgetWithText(TextButton, 'Several people'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Start support'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 1);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPeople, ['Priya', 'Sam']);
+  });
+
+  testWidgets('the header picker can start support for several people', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi();
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(categoryId: 'cat-support', people: const ['Priya']);
+    await tester.pump();
+    await state.stopTimer();
+    await tester.pump();
+
+    await tester.tap(find.text('Start timer'));
+    await tester.pumpAndSettle();
+    expect(find.text('Start a support timer'), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(TextButton, 'Several people'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'Start support'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 2);
+    expect(timerApi.lastStartCategoryId, 'cat-support');
+    expect(timerApi.lastStartPeople, ['Priya', 'Sam']);
   });
 }

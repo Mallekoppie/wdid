@@ -34,6 +34,8 @@ generated.CheckIn wireCheckIn() => generated.CheckIn(
     supportByPerson: [
       generated.CheckInTotal(key: 'Priya', duration: minutes(30)),
     ],
+    supportDuration: minutes(30),
+    supportInteractions: 1,
   ),
   createdAt: Timestamp.fromDateTime(DateTime.utc(2026, 10, 20, 12)),
   updatedAt: Timestamp.fromDateTime(DateTime.utc(2026, 10, 21, 9)),
@@ -172,6 +174,8 @@ void main() {
     expect(managers.single.totals.byCategory['cat-1'], 60);
     expect(managers.single.totals.bySubcategory['sub-1'], 60);
     expect(managers.single.totals.supportByPerson['Priya'], 30);
+    expect(managers.single.totals.supportMinutes, 30);
+    expect(managers.single.totals.supportInteractions, 1);
   });
 
   test('follows list pagination until the token is empty', () async {
@@ -379,6 +383,58 @@ void main() {
             ),
       ),
     );
+  });
+
+  test('legacy totals fall back to the per-person rows', () {
+    final legacy = generated.CheckInTotals(
+      total: minutes(90),
+      supportByPerson: [
+        generated.CheckInTotal(key: 'Priya', duration: minutes(30)),
+      ],
+    );
+
+    final totals = checkInTotalsFromProto(legacy);
+
+    expect(totals.supportMinutes, 30);
+    expect(totals.supportInteractions, 1);
+  });
+
+  test('fresh multi-person totals keep their authoritative values', () {
+    final fresh = generated.CheckInTotals(
+      supportByPerson: [
+        generated.CheckInTotal(key: 'Priya', duration: minutes(45)),
+        generated.CheckInTotal(key: 'Sam', duration: minutes(45)),
+      ],
+      supportDuration: minutes(45),
+      supportInteractions: 2,
+    );
+
+    final totals = checkInTotalsFromProto(fresh);
+
+    expect(totals.supportMinutes, 45);
+    expect(totals.supportInteractions, 2);
+  });
+
+  test('legacy JSON totals fall back to the per-person rows', () {
+    final totals = CheckInTotals.fromJson({
+      'minutes': 90,
+      'supportByPerson': {'Priya': 30},
+    });
+
+    expect(totals.supportMinutes, 30);
+    expect(totals.supportInteractions, 1);
+  });
+
+  test('fresh JSON totals keep their authoritative values', () {
+    final totals = CheckInTotals.fromJson({
+      'minutes': 90,
+      'supportByPerson': {'Priya': 45, 'Sam': 45},
+      'supportMinutes': 45,
+      'supportInteractions': 2,
+    });
+
+    expect(totals.supportMinutes, 45);
+    expect(totals.supportInteractions, 2);
   });
 
   test('maps a final check-in rejection to a state message', () async {

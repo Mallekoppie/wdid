@@ -42,7 +42,7 @@ Subcategory subcategory(String id, String categoryId, String name) =>
 
 WorkEntry supportEntry({
   required String id,
-  String person = 'Priya',
+  List<String> people = const ['Priya'],
   String team = '',
   String subcategoryId = 'mode-unblock',
   String description = 'Unblocked the migration',
@@ -63,7 +63,7 @@ WorkEntry supportEntry({
     endedAt: started.add(Duration(minutes: minutes)),
     minutes: minutes,
     localDate: isoDate(started),
-    person: person,
+    people: people,
     team: team,
     links: links,
     createdAt: started,
@@ -150,7 +150,7 @@ void main() {
           id: 'newer',
           hour: 14,
           subcategoryId: 'mode-review',
-          person: 'Sam',
+          people: const ['Sam'],
           description: 'Paired on the billing migration',
         ),
         WorkEntry(
@@ -237,7 +237,7 @@ void main() {
     expect(draft.subcategoryId, 'mode-unblock');
     expect(draft.description, 'Reviewed the event bus design');
     expect(draft.outcome, 'Risks identified');
-    expect(draft.person, 'Priya');
+    expect(draft.people, ['Priya']);
     expect(draft.team, 'Payments');
     expect(draft.minutes, 45);
     expect(draft.links, hasLength(1));
@@ -335,6 +335,10 @@ void main() {
         toDate: today,
         totalMinutes: 180,
         entryCount: 4,
+        // The authoritative totals count the shared entry once, while the
+        // per-person rows below credit each name in full.
+        supportMinutes: 150,
+        supportInteractions: 3,
         supportPeople: const [
           SupportPersonAllocation(
             person: 'Priya',
@@ -368,7 +372,9 @@ void main() {
       summaryApi: summary,
     );
 
-    expect(find.text('3h · 2 people · 4 interactions'), findsOneWidget);
+    // The header uses the authoritative 150m/3, not the per-person sum of
+    // 180m/4. The 2h30m is also above the one loaded 30m entry.
+    expect(find.text('2h 30m · 2 people · 3 interactions'), findsOneWidget);
     // Priya's report minutes, the person total, not the entry's 30m.
     expect(find.text('2h'), findsOneWidget);
     expect(find.text('3 interactions'), findsOneWidget);
@@ -409,7 +415,9 @@ void main() {
     );
     await pumpSupport(
       tester,
-      entries: [supportEntry(id: 'existing', person: 'Priya')],
+      entries: [
+        supportEntry(id: 'existing', people: const ['Priya']),
+      ],
       settingsApi: settingsApi,
     );
 
@@ -439,5 +447,76 @@ void main() {
 
     expect(find.widgetWithText(InputChip, 'Alex'), findsOneWidget);
     expect(settingsApi.settings.supportPeople, ['Priya', 'Alex']);
+  });
+
+  testWidgets('logs support for several people from the manual dialog', (
+    tester,
+  ) async {
+    final settingsApi = FakeSettingsApi();
+    final entryApi = await pumpSupport(tester, settingsApi: settingsApi);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Log support').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      field('What did you do?'),
+      'Reviewed the event bus design',
+    );
+
+    await tester.enterText(field('Person'), 'Priya');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.enterText(field('Person'), 'Sam');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Save support'));
+    await tester.pumpAndSettle();
+
+    expect(entryApi.drafts, hasLength(1));
+    expect(entryApi.drafts.single.people, ['Priya', 'Sam']);
+    expect(settingsApi.settings.supportPeople, ['Priya', 'Sam']);
+  });
+
+  testWidgets('a support feed row shows every name', (tester) async {
+    await pumpSupport(
+      tester,
+      entries: [
+        supportEntry(
+          id: 'multi',
+          people: const ['Priya', 'Sam'],
+          description: 'Paired on the migration',
+        ),
+      ],
+    );
+
+    expect(
+      find.textContaining('Support · Priya, Sam · Unblock'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a long support attribution wraps instead of truncating', (
+    tester,
+  ) async {
+    await pumpSupport(
+      tester,
+      entries: [
+        supportEntry(
+          id: 'many',
+          people: const ['Priya', 'Sam', 'Alex', 'Noor'],
+          description: 'Paired on the migration',
+        ),
+      ],
+    );
+
+    final label = tester.widget<Text>(
+      find.text('Support · Priya, Sam, Alex, Noor · Unblock'),
+    );
+    expect(label.maxLines, isNull, reason: 'the attribution must be able to wrap');
+    expect(
+      label.overflow,
+      isNot(TextOverflow.ellipsis),
+      reason: 'every name must stay readable',
+    );
   });
 }

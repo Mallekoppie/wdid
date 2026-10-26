@@ -208,7 +208,7 @@ func ValidateWorkEntry(entry WorkEntry, category Category, subcategory *Subcateg
 		}
 	}
 
-	if category.Role == CategoryRoleSupport && strings.TrimSpace(entry.Person) == "" {
+	if category.Role == CategoryRoleSupport && len(NormalizeList(entry.People)) == 0 {
 		return invalid("person", "is required for support entries")
 	}
 
@@ -307,6 +307,9 @@ func ValidateCheckIn(checkIn CheckIn) error {
 		if minutes < 0 {
 			return invalid("totals", "minutes must not be negative")
 		}
+	}
+	if checkIn.Totals.SupportMinutes < 0 || checkIn.Totals.SupportInteractions < 0 {
+		return invalid("totals", "support totals must not be negative")
 	}
 	return nil
 }

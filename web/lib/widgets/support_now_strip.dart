@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 import 'panel.dart';
 import 'person_picker.dart';
 import 'timer_actions.dart';
@@ -20,23 +21,16 @@ class SupportNowStrip extends StatefulWidget {
 }
 
 class _SupportNowStripState extends State<SupportNowStrip> {
-  final TextEditingController _person = TextEditingController();
   bool _busy = false;
-
-  @override
-  void dispose() {
-    _person.dispose();
-    super.dispose();
-  }
 
   void _show(String message) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _startWith(String raw) async {
-    final person = raw.trim();
-    if (person.isEmpty) return;
+  Future<void> _startWith(List<String> people) async {
+    final names = normalizePeople(people);
+    if (names.isEmpty) return;
     final state = AppStateScope.read(context);
     final category = state.defaultSupportCategory;
     if (category == null) {
@@ -58,19 +52,26 @@ class _SupportNowStripState extends State<SupportNowStrip> {
         preserveInterruptedTimer = true;
       }
       await state.startSupportTimer(
-        person: person,
+        people: names,
         category: category,
         preserveInterruptedTimer: preserveInterruptedTimer,
       );
       if (!mounted) return;
       setState(() => _busy = false);
-      _person.clear();
-      _show('Support timer started · $person');
+      _show('Support timer started · ${peopleLabel(names)}');
     } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
       _show('Could not start support: $error');
     }
+  }
+
+  /// Opens the multi-select path. A one-tap chip stays a one-person start;
+  /// several names are chosen here before the timer starts.
+  Future<void> _startSeveral() async {
+    final people = await showPeoplePickerDialog(context);
+    if (people == null || !mounted) return;
+    await _startWith(people);
   }
 
   @override
@@ -111,17 +112,22 @@ class _SupportNowStripState extends State<SupportNowStrip> {
                   ],
                 ),
               ),
+              TextButton.icon(
+                onPressed: _busy ? null : () => unawaited(_startSeveral()),
+                icon: const Icon(Icons.group_add_outlined, size: 16),
+                label: const Text('Several people'),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
             child: PersonPicker(
-              controller: _person,
               enabled: !_busy,
               compact: true,
+              oneTap: true,
               hint: 'Who are you supporting?',
-              onSelected: (name) => unawaited(_startWith(name)),
+              onCommitted: (people) => unawaited(_startWith(people)),
             ),
           ),
         ],

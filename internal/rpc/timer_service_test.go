@@ -157,6 +157,39 @@ func TestTimerServiceTransitionsAndSavedEntry(t *testing.T) {
 	}
 }
 
+func TestTimerServiceCarriesEverySupportPerson(t *testing.T) {
+	start := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+	clock := newTestClock(start)
+	server, _ := newDomainServerWithClock(t, clock.Now)
+	token := bootstrapToken(t, server)
+	supportID, modeID := createSupportTaxonomy(t, server, token)
+	client := timerClient(server)
+
+	started, err := client.StartTimer(context.Background(), withBearer(&wdidv1.StartTimerRequest{
+		CategoryId:    supportID,
+		SubcategoryId: modeID,
+		Description:   "Paired on the migration",
+		People:        []string{"Priya", "sam", "priya"},
+	}, token))
+	if err != nil {
+		t.Fatalf("start support timer: %v", err)
+	}
+	people := started.Msg.GetTimer().GetPeople()
+	if len(people) != 2 || people[0] != "Priya" || people[1] != "sam" {
+		t.Fatalf("timer people = %#v, want [Priya sam]", people)
+	}
+
+	clock.Advance(5 * time.Minute)
+	stopped, err := client.StopTimer(context.Background(), withBearer(&wdidv1.StopTimerRequest{}, token))
+	if err != nil {
+		t.Fatalf("stop support timer: %v", err)
+	}
+	entryPeople := stopped.Msg.GetEntry().GetPeople()
+	if len(entryPeople) != 2 || entryPeople[0] != "Priya" || entryPeople[1] != "sam" {
+		t.Fatalf("entry people = %#v, want [Priya sam]", entryPeople)
+	}
+}
+
 func TestTimerServiceTransitionsOverGRPCWeb(t *testing.T) {
 	start := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
 	clock := newTestClock(start)

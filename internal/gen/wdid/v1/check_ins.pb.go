@@ -354,8 +354,13 @@ type CheckInTotals struct {
 	ByCategory      []*CheckInTotal        `protobuf:"bytes,2,rep,name=by_category,json=byCategory,proto3" json:"by_category,omitempty"`
 	BySubcategory   []*CheckInTotal        `protobuf:"bytes,3,rep,name=by_subcategory,json=bySubcategory,proto3" json:"by_subcategory,omitempty"`
 	SupportByPerson []*CheckInTotal        `protobuf:"bytes,4,rep,name=support_by_person,json=supportByPerson,proto3" json:"support_by_person,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Authoritative support totals captured from the report at creation time.
+	// support_by_person rows credit each name the entry's full duration, so their
+	// sum may exceed support_duration.
+	SupportDuration     *durationpb.Duration `protobuf:"bytes,5,opt,name=support_duration,json=supportDuration,proto3" json:"support_duration,omitempty"`
+	SupportInteractions int32                `protobuf:"varint,6,opt,name=support_interactions,json=supportInteractions,proto3" json:"support_interactions,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CheckInTotals) Reset() {
@@ -414,6 +419,20 @@ func (x *CheckInTotals) GetSupportByPerson() []*CheckInTotal {
 		return x.SupportByPerson
 	}
 	return nil
+}
+
+func (x *CheckInTotals) GetSupportDuration() *durationpb.Duration {
+	if x != nil {
+		return x.SupportDuration
+	}
+	return nil
+}
+
+func (x *CheckInTotals) GetSupportInteractions() int32 {
+	if x != nil {
+		return x.SupportInteractions
+	}
+	return 0
 }
 
 // CheckIn is a saved artifact covering a period, with focus notes, aggregates
@@ -1454,13 +1473,15 @@ const file_check_ins_proto_rawDesc = "" +
 	"\x0fcheck_ins.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"W\n" +
 	"\fCheckInTotal\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x125\n" +
-	"\bduration\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\bduration\"\xf9\x01\n" +
+	"\bduration\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\bduration\"\xf2\x02\n" +
 	"\rCheckInTotals\x12/\n" +
 	"\x05total\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x05total\x126\n" +
 	"\vby_category\x18\x02 \x03(\v2\x15.wdid.v1.CheckInTotalR\n" +
 	"byCategory\x12<\n" +
 	"\x0eby_subcategory\x18\x03 \x03(\v2\x15.wdid.v1.CheckInTotalR\rbySubcategory\x12A\n" +
-	"\x11support_by_person\x18\x04 \x03(\v2\x15.wdid.v1.CheckInTotalR\x0fsupportByPerson\"\xa6\x04\n" +
+	"\x11support_by_person\x18\x04 \x03(\v2\x15.wdid.v1.CheckInTotalR\x0fsupportByPerson\x12D\n" +
+	"\x10support_duration\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\x0fsupportDuration\x121\n" +
+	"\x14support_interactions\x18\x06 \x01(\x05R\x13supportInteractions\"\xa6\x04\n" +
 	"\aCheckIn\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x14.wdid.v1.CheckInKindR\x04kind\x12!\n" +
@@ -1620,45 +1641,46 @@ var file_check_ins_proto_depIdxs = []int32{
 	5,  // 2: wdid.v1.CheckInTotals.by_category:type_name -> wdid.v1.CheckInTotal
 	5,  // 3: wdid.v1.CheckInTotals.by_subcategory:type_name -> wdid.v1.CheckInTotal
 	5,  // 4: wdid.v1.CheckInTotals.support_by_person:type_name -> wdid.v1.CheckInTotal
-	0,  // 5: wdid.v1.CheckIn.kind:type_name -> wdid.v1.CheckInKind
-	1,  // 6: wdid.v1.CheckIn.state:type_name -> wdid.v1.CheckInState
-	2,  // 7: wdid.v1.CheckIn.audience:type_name -> wdid.v1.CheckInAudience
-	6,  // 8: wdid.v1.CheckIn.totals:type_name -> wdid.v1.CheckInTotals
-	25, // 9: wdid.v1.CheckIn.created_at:type_name -> google.protobuf.Timestamp
-	25, // 10: wdid.v1.CheckIn.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 11: wdid.v1.ListCheckInsRequest.kind:type_name -> wdid.v1.CheckInKind
-	7,  // 12: wdid.v1.ListCheckInsResponse.check_ins:type_name -> wdid.v1.CheckIn
-	7,  // 13: wdid.v1.GetCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
-	0,  // 14: wdid.v1.GetCheckInDefaultsRequest.kind:type_name -> wdid.v1.CheckInKind
-	0,  // 15: wdid.v1.CreateCheckInRequest.kind:type_name -> wdid.v1.CheckInKind
-	2,  // 16: wdid.v1.CreateCheckInRequest.audience:type_name -> wdid.v1.CheckInAudience
-	7,  // 17: wdid.v1.CreateCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
-	2,  // 18: wdid.v1.UpdateCheckInRequest.audience:type_name -> wdid.v1.CheckInAudience
-	4,  // 19: wdid.v1.UpdateCheckInRequest.summary_source:type_name -> wdid.v1.CheckInSummarySource
-	7,  // 20: wdid.v1.UpdateCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
-	3,  // 21: wdid.v1.BuildCheckInPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
-	7,  // 22: wdid.v1.FinalizeCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
-	8,  // 23: wdid.v1.CheckInService.ListCheckIns:input_type -> wdid.v1.ListCheckInsRequest
-	10, // 24: wdid.v1.CheckInService.GetCheckIn:input_type -> wdid.v1.GetCheckInRequest
-	12, // 25: wdid.v1.CheckInService.GetCheckInDefaults:input_type -> wdid.v1.GetCheckInDefaultsRequest
-	14, // 26: wdid.v1.CheckInService.CreateCheckIn:input_type -> wdid.v1.CreateCheckInRequest
-	16, // 27: wdid.v1.CheckInService.UpdateCheckIn:input_type -> wdid.v1.UpdateCheckInRequest
-	18, // 28: wdid.v1.CheckInService.BuildCheckInPrompt:input_type -> wdid.v1.BuildCheckInPromptRequest
-	20, // 29: wdid.v1.CheckInService.FinalizeCheckIn:input_type -> wdid.v1.FinalizeCheckInRequest
-	22, // 30: wdid.v1.CheckInService.DeleteCheckIn:input_type -> wdid.v1.DeleteCheckInRequest
-	9,  // 31: wdid.v1.CheckInService.ListCheckIns:output_type -> wdid.v1.ListCheckInsResponse
-	11, // 32: wdid.v1.CheckInService.GetCheckIn:output_type -> wdid.v1.GetCheckInResponse
-	13, // 33: wdid.v1.CheckInService.GetCheckInDefaults:output_type -> wdid.v1.GetCheckInDefaultsResponse
-	15, // 34: wdid.v1.CheckInService.CreateCheckIn:output_type -> wdid.v1.CreateCheckInResponse
-	17, // 35: wdid.v1.CheckInService.UpdateCheckIn:output_type -> wdid.v1.UpdateCheckInResponse
-	19, // 36: wdid.v1.CheckInService.BuildCheckInPrompt:output_type -> wdid.v1.BuildCheckInPromptResponse
-	21, // 37: wdid.v1.CheckInService.FinalizeCheckIn:output_type -> wdid.v1.FinalizeCheckInResponse
-	23, // 38: wdid.v1.CheckInService.DeleteCheckIn:output_type -> wdid.v1.DeleteCheckInResponse
-	31, // [31:39] is the sub-list for method output_type
-	23, // [23:31] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	24, // 5: wdid.v1.CheckInTotals.support_duration:type_name -> google.protobuf.Duration
+	0,  // 6: wdid.v1.CheckIn.kind:type_name -> wdid.v1.CheckInKind
+	1,  // 7: wdid.v1.CheckIn.state:type_name -> wdid.v1.CheckInState
+	2,  // 8: wdid.v1.CheckIn.audience:type_name -> wdid.v1.CheckInAudience
+	6,  // 9: wdid.v1.CheckIn.totals:type_name -> wdid.v1.CheckInTotals
+	25, // 10: wdid.v1.CheckIn.created_at:type_name -> google.protobuf.Timestamp
+	25, // 11: wdid.v1.CheckIn.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 12: wdid.v1.ListCheckInsRequest.kind:type_name -> wdid.v1.CheckInKind
+	7,  // 13: wdid.v1.ListCheckInsResponse.check_ins:type_name -> wdid.v1.CheckIn
+	7,  // 14: wdid.v1.GetCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
+	0,  // 15: wdid.v1.GetCheckInDefaultsRequest.kind:type_name -> wdid.v1.CheckInKind
+	0,  // 16: wdid.v1.CreateCheckInRequest.kind:type_name -> wdid.v1.CheckInKind
+	2,  // 17: wdid.v1.CreateCheckInRequest.audience:type_name -> wdid.v1.CheckInAudience
+	7,  // 18: wdid.v1.CreateCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
+	2,  // 19: wdid.v1.UpdateCheckInRequest.audience:type_name -> wdid.v1.CheckInAudience
+	4,  // 20: wdid.v1.UpdateCheckInRequest.summary_source:type_name -> wdid.v1.CheckInSummarySource
+	7,  // 21: wdid.v1.UpdateCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
+	3,  // 22: wdid.v1.BuildCheckInPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	7,  // 23: wdid.v1.FinalizeCheckInResponse.check_in:type_name -> wdid.v1.CheckIn
+	8,  // 24: wdid.v1.CheckInService.ListCheckIns:input_type -> wdid.v1.ListCheckInsRequest
+	10, // 25: wdid.v1.CheckInService.GetCheckIn:input_type -> wdid.v1.GetCheckInRequest
+	12, // 26: wdid.v1.CheckInService.GetCheckInDefaults:input_type -> wdid.v1.GetCheckInDefaultsRequest
+	14, // 27: wdid.v1.CheckInService.CreateCheckIn:input_type -> wdid.v1.CreateCheckInRequest
+	16, // 28: wdid.v1.CheckInService.UpdateCheckIn:input_type -> wdid.v1.UpdateCheckInRequest
+	18, // 29: wdid.v1.CheckInService.BuildCheckInPrompt:input_type -> wdid.v1.BuildCheckInPromptRequest
+	20, // 30: wdid.v1.CheckInService.FinalizeCheckIn:input_type -> wdid.v1.FinalizeCheckInRequest
+	22, // 31: wdid.v1.CheckInService.DeleteCheckIn:input_type -> wdid.v1.DeleteCheckInRequest
+	9,  // 32: wdid.v1.CheckInService.ListCheckIns:output_type -> wdid.v1.ListCheckInsResponse
+	11, // 33: wdid.v1.CheckInService.GetCheckIn:output_type -> wdid.v1.GetCheckInResponse
+	13, // 34: wdid.v1.CheckInService.GetCheckInDefaults:output_type -> wdid.v1.GetCheckInDefaultsResponse
+	15, // 35: wdid.v1.CheckInService.CreateCheckIn:output_type -> wdid.v1.CreateCheckInResponse
+	17, // 36: wdid.v1.CheckInService.UpdateCheckIn:output_type -> wdid.v1.UpdateCheckInResponse
+	19, // 37: wdid.v1.CheckInService.BuildCheckInPrompt:output_type -> wdid.v1.BuildCheckInPromptResponse
+	21, // 38: wdid.v1.CheckInService.FinalizeCheckIn:output_type -> wdid.v1.FinalizeCheckInResponse
+	23, // 39: wdid.v1.CheckInService.DeleteCheckIn:output_type -> wdid.v1.DeleteCheckInResponse
+	32, // [32:40] is the sub-list for method output_type
+	24, // [24:32] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_check_ins_proto_init() }

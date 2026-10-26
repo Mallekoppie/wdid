@@ -7,6 +7,7 @@ import '../models/taxonomy.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import 'person_picker.dart';
 import 'timer_actions.dart';
@@ -130,27 +131,39 @@ class _TimerPillState extends State<TimerPill> {
     _openPicker(category);
   }
 
-  Future<void> _startSupport(String name, Category category) async {
-    final person = name.trim();
-    if (person.isEmpty) return;
+  Future<void> _startSupport(List<String> people, Category category) async {
+    final names = normalizePeople(people);
+    if (names.isEmpty) return;
     final preserveInterruptedTimer = _preserveInterruptOnStart;
     _preserveInterruptOnStart = false;
     final state = AppStateScope.read(context);
     try {
       await state.startSupportTimer(
-        person: person,
+        people: names,
         category: category,
         preserveInterruptedTimer: preserveInterruptedTimer,
       );
       if (!mounted) return;
-      final timer = state.activeTimer;
-      _showMessage(
-        'Support timer started · ${timer == null ? person : state.timerLabel(timer)}',
-      );
+      _showMessage('Support timer started · ${peopleLabel(names)}');
     } catch (error) {
       if (!mounted) return;
       _showMessage('Could not start support: $error');
     }
+  }
+
+  /// The multi-select counterpart of the one-tap menu: choose several names in
+  /// the shared dialog, then start a single support timer for all of them.
+  Future<void> _startSeveral(Category category) async {
+    _menu.close();
+    final people = await showPeoplePickerDialog(context);
+    if (!mounted) return;
+    if (people == null) {
+      // The interrupt offer was not consumed, so a later start must not keep
+      // the stash as if it had been the second half of the interruption.
+      _preserveInterruptOnStart = false;
+      return;
+    }
+    await _startSupport(people, category);
   }
 
   @override
@@ -210,13 +223,20 @@ class _TimerPillState extends State<TimerPill> {
             ),
             const SizedBox(height: AppSpacing.sm),
             PersonPicker(
+              oneTap: true,
               autofocus: true,
               compact: true,
               hint: 'Name',
-              onSelected: (name) {
+              onCommitted: (people) {
                 _menu.close();
-                unawaited(_startSupport(name, category));
+                unawaited(_startSupport(people, category));
               },
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: () => unawaited(_startSeveral(category)),
+              icon: const Icon(Icons.group_add_outlined, size: 16),
+              label: const Text('Several people'),
             ),
           ],
         ),
@@ -238,6 +258,12 @@ class _TimerPillState extends State<TimerPill> {
         _segmentedActions(context, timer, labels: labels),
       ],
     );
+  }
+
+  String _timerAttribution(AppState state, ActiveTimer timer) {
+    final label = state.timerLabel(timer);
+    final people = peopleLabel(timer.people);
+    return people.isEmpty ? label : '$label · $people';
   }
 
   Widget _timerSummary(
@@ -273,13 +299,16 @@ class _TimerPillState extends State<TimerPill> {
                     ? null
                     : () => context.go('/initiatives/$projectId'),
                 borderRadius: BorderRadius.circular(4),
-                child: Text(
-                  state.timerLabel(timer),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+                child: Tooltip(
+                  message: _timerAttribution(state, timer),
+                  child: Text(
+                    _timerAttribution(state, timer),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
               ),

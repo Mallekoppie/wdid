@@ -23,8 +23,10 @@ class QuickCaptureBar extends StatefulWidget {
 
 class _QuickCaptureBarState extends State<QuickCaptureBar> {
   final _controller = TextEditingController();
-  final _person = TextEditingController();
   final _focusNode = FocusNode();
+
+  List<String> _people = const [];
+  final _personText = TextEditingController();
 
   String _categoryId = '';
   String _subcategoryId = '';
@@ -62,7 +64,7 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
   @override
   void dispose() {
     _controller.dispose();
-    _person.dispose();
+    _personText.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -82,7 +84,9 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
     final categoryId = _categoryId;
     final category = state.categoryById(categoryId);
     final support = category?.role == CategoryRole.support;
-    final person = support ? _person.text.trim() : '';
+    final people = support
+        ? peopleIncludingPending(_people, _personText)
+        : const <String>[];
     String? descriptionError;
     String? categoryError;
     String? personError;
@@ -92,7 +96,7 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
     if (category == null) {
       categoryError = 'Choose a category.';
     }
-    if (support && person.isEmpty) {
+    if (support && people.isEmpty) {
       personError = 'Who did you support?';
     }
     if (_minutes < 1) {
@@ -128,10 +132,10 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
         subcategoryId: _subcategoryId,
         description: description,
         minutes: _minutes,
-        person: person,
+        people: people,
       );
       if (!mounted) return;
-      if (person.isNotEmpty) unawaited(state.addSupportPerson(person));
+      unawaited(state.addSupportPeople(people));
       _controller.clear();
       setState(() => _saving = false);
       _focusNode.requestFocus();
@@ -203,12 +207,16 @@ class _QuickCaptureBarState extends State<QuickCaptureBar> {
     final support =
         state.categoryById(_categoryId)?.role == CategoryRole.support;
     final personField = PersonPicker(
-      controller: _person,
+      selected: _people,
+      textController: _personText,
       enabled: !_saving,
       hint: 'Who did you support?',
       errorText: _personError,
-      onChanged: (_) {
-        if (_personError != null) setState(() => _personError = null);
+      onChanged: (people) {
+        setState(() {
+          _people = people;
+          _personError = null;
+        });
       },
       onSubmitted: (_) => _save(),
     );

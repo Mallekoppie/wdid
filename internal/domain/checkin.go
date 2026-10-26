@@ -67,6 +67,36 @@ type CheckInTotals struct {
 	ByCategory      map[string]int `json:"byCategory,omitempty"`
 	BySubcategory   map[string]int `json:"bySubcategory,omitempty"`
 	SupportByPerson map[string]int `json:"supportByPerson,omitempty"`
+	// SupportMinutes and SupportInteractions are the authoritative support
+	// totals captured from the period report. SupportByPerson rows credit each
+	// name the full entry minutes, so their sum may exceed SupportMinutes.
+	SupportMinutes      int `json:"supportMinutes"`
+	SupportInteractions int `json:"supportInteractions"`
+}
+
+// EffectiveSupportMinutes returns the support minutes to display. Check-ins
+// written before the authoritative totals existed store only SupportByPerson,
+// so a zero stored total falls back to the row sum, which is exact for
+// single-person legacy data. New snapshots keep their authoritative value.
+func (t CheckInTotals) EffectiveSupportMinutes() int {
+	if t.SupportMinutes == 0 && len(t.SupportByPerson) > 0 {
+		total := 0
+		for _, minutes := range t.SupportByPerson {
+			total += minutes
+		}
+		return total
+	}
+	return t.SupportMinutes
+}
+
+// EffectiveSupportInteractions returns the support interaction count to
+// display. Legacy check-ins have no stored count, so a zero falls back to the
+// number of distinct people rows, which is what the pre-upgrade UI showed.
+func (t CheckInTotals) EffectiveSupportInteractions() int {
+	if t.SupportInteractions == 0 && len(t.SupportByPerson) > 0 {
+		return len(t.SupportByPerson)
+	}
+	return t.SupportInteractions
 }
 
 // CheckInTotalsFromReport snapshots the authoritative period report into the
@@ -74,10 +104,12 @@ type CheckInTotals struct {
 // subcategory ID; support people keep their display spelling.
 func CheckInTotalsFromReport(report PeriodReport) CheckInTotals {
 	totals := CheckInTotals{
-		Minutes:         report.TotalMinutes,
-		ByCategory:      make(map[string]int, len(report.Categories)),
-		BySubcategory:   make(map[string]int, len(report.Subcategories)),
-		SupportByPerson: make(map[string]int, len(report.SupportPeople)),
+		Minutes:             report.TotalMinutes,
+		ByCategory:          make(map[string]int, len(report.Categories)),
+		BySubcategory:       make(map[string]int, len(report.Subcategories)),
+		SupportByPerson:     make(map[string]int, len(report.SupportPeople)),
+		SupportMinutes:      report.SupportMinutes,
+		SupportInteractions: report.SupportInteractions,
 	}
 	for _, category := range report.Categories {
 		totals.ByCategory[category.CategoryID] = category.Minutes

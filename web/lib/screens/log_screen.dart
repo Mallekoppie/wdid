@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/entry_grouping.dart';
+import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import '../widgets/app_dropdown.dart';
 import '../widgets/forms/entry_form.dart';
@@ -702,7 +703,7 @@ class _ServiceEntryRowState extends State<_ServiceEntryRow> {
     final attribution = [
       category?.name ?? 'Unknown category',
       if (subcategory != null) subcategory.name,
-      if (entry.person.isNotEmpty) entry.person,
+      if (entry.people.isNotEmpty) peopleLabel(entry.people),
     ].join(' · ');
 
     return Container(

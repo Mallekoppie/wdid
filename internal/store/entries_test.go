@@ -1,9 +1,13 @@
 package store_test
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
+
+	"go.etcd.io/bbolt"
 
 	"github.com/Mallekoppie/wdid/internal/domain"
 	"github.com/Mallekoppie/wdid/internal/store"
@@ -127,7 +131,7 @@ func TestWorkEntryRequiresItsCategoryAndSubcategory(t *testing.T) {
 		t.Fatalf("support without person error = %v, want a person validation error", err)
 	}
 
-	supportEntry.Person = "Priya"
+	supportEntry.People = []string{"Priya"}
 	if err := database.SaveWorkEntry(supportEntry); err != nil {
 		t.Fatalf("save support entry with person: %v", err)
 	}
@@ -135,8 +139,8 @@ func TestWorkEntryRequiresItsCategoryAndSubcategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read support entry: %v", err)
 	}
-	if stored.Person != "Priya" {
-		t.Fatalf("person = %q, want Priya", stored.Person)
+	if len(stored.People) != 1 || stored.People[0] != "Priya" {
+		t.Fatalf("people = %#v, want [Priya]", stored.People)
 	}
 }
 
@@ -165,7 +169,7 @@ func TestWorkEntryFiltersFollowIndexes(t *testing.T) {
 
 	backfill := testWorkEntry(userID, initiatives, billing.ID, dayOne, "Backfill script skeleton")
 	priya := testWorkEntry(userID, support, review.ID, dayTwo, "Reviewed the billing plan")
-	priya.Person = "Priya"
+	priya.People = []string{"Priya"}
 	for _, entry := range []domain.WorkEntry{backfill, priya} {
 		if err := database.SaveWorkEntry(entry); err != nil {
 			t.Fatalf("save entry: %v", err)
@@ -216,7 +220,7 @@ func TestWorkEntryFiltersFollowIndexes(t *testing.T) {
 	// Moving an entry updates its index: the old category and day stop matching.
 	backfill.CategoryID = support.ID
 	backfill.SubcategoryID = review.ID
-	backfill.Person = "Sam"
+	backfill.People = []string{"Sam"}
 	backfill.StartedAt = dayTwo
 	backfill.EndedAt = dayTwo.Add(42 * time.Minute)
 	if err := database.SaveWorkEntry(backfill); err != nil {
@@ -270,7 +274,7 @@ func TestSplitWorkEntryCreatesContiguousHalves(t *testing.T) {
 
 	start := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
 	entry := testWorkEntry(userID, category, subcategory.ID, start, "Long backfill")
-	entry.Person = ""
+	entry.People = nil
 	if err := database.SaveWorkEntry(entry); err != nil {
 		t.Fatalf("save entry: %v", err)
 	}
@@ -430,5 +434,205 @@ func TestSavedEntryTimestampsAreStoredInUTC(t *testing.T) {
 	}
 	if stored.CreatedAt.Location() != time.UTC {
 		t.Fatalf("createdAt = %v, want UTC", stored.CreatedAt)
+	}
+}
+
+func TestMultiPersonSupportEntryRoundTripsAndFiltersByAnyName(t *testing.T) {
+	database := newStore(t)
+	userID := "user-multi-person"
+	support := testCategory(userID, "Support", domain.CategoryRoleSupport)
+	if err := database.SaveCategory(support); err != nil {
+		t.Fatalf("save support category: %v", err)
+	}
+
+	start := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	entry := testWorkEntry(userID, support, "", start, "Paired on the migration")
+	entry.People = []string{"Priya", "Sam", "priya"}
+	if err := database.SaveWorkEntry(entry); err != nil {
+		t.Fatalf("save multi-person entry: %v", err)
+	}
+
+	stored, err := database.WorkEntry(userID, entry.ID)
+	if err != nil {
+		t.Fatalf("read multi-person entry: %v", err)
+	}
+	want := []string{"Priya", "Sam"}
+	if !reflect.DeepEqual(stored.People, want) {
+		t.Fatalf("people = %#v, want %#v", stored.People, want)
+	}
+
+	for _, person := range []string{"Priya", "priya", "  Priya  ", "Sam"} {
+		name := person
+		t.Run("filters "+name, func(t *testing.T) {
+			got, err := database.WorkEntries(userID, store.WorkEntryFilter{Person: name})
+			if err != nil {
+				t.Fatalf("filter by %q: %v", name, err)
+			}
+			if len(got) != 1 || got[0].ID != entry.ID {
+				t.Fatalf("entries for %q = %+v, want the multi-person entry", name, got)
+			}
+		})
+	}
+
+	missing, err := database.WorkEntries(userID, store.WorkEntryFilter{Person: "Noor"})
+	if err != nil {
+		t.Fatalf("filter by unknown person: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("entries for Noor = %+v, want none", missing)
+	}
+
+	// Replacing the list updates the person index for every name.
+	entry.People = []string{"Sam", "Noor"}
+	if err := database.SaveWorkEntry(entry); err != nil {
+		t.Fatalf("update multi-person entry: %v", err)
+	}
+	for person, wantFound := range map[string]bool{"Priya": false, "Sam": true, "noor": true} {
+		got, err := database.WorkEntries(userID, store.WorkEntryFilter{Person: person})
+		if err != nil {
+			t.Fatalf("filter by %q after update: %v", person, err)
+		}
+		if wantFound && (len(got) != 1 || got[0].ID != entry.ID) {
+			t.Fatalf("entries for %q = %+v, want the updated entry", person, got)
+		}
+		if !wantFound && len(got) != 0 {
+			t.Fatalf("entries for %q = %+v, want none after the update", person, got)
+		}
+	}
+}
+
+// TestLegacySinglePersonRecordLoadsAsOneNameList writes the old JSON shape
+// directly into the entries bucket and proves the read path still understands
+// it, then rewrites the record in the new shape.
+func TestLegacySinglePersonRecordLoadsAsOneNameList(t *testing.T) {
+	cfg := testConfig(t)
+
+	first, err := store.Open(cfg)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	user := newUser("legacy-person@example.com")
+	if err := first.CreateUser(user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	support := testCategory(user.ID, "Support", domain.CategoryRoleSupport)
+	if err := first.SaveCategory(support); err != nil {
+		t.Fatalf("save support category: %v", err)
+	}
+	start := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	entry := testWorkEntry(user.ID, support, "", start, "Legacy support")
+	entry.People = []string{"Priya"}
+	if err := first.SaveWorkEntry(entry); err != nil {
+		t.Fatalf("save entry: %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	legacy := struct {
+		ID          string             `json:"id"`
+		UserID      string             `json:"userId"`
+		CategoryID  string             `json:"categoryId"`
+		Description string             `json:"description"`
+		StartedAt   time.Time          `json:"startedAt"`
+		EndedAt     time.Time          `json:"endedAt"`
+		Minutes     int                `json:"minutes"`
+		LocalDate   string             `json:"localDate"`
+		Person      string             `json:"person"`
+		Source      domain.EntrySource `json:"source"`
+		CreatedAt   time.Time          `json:"createdAt"`
+		UpdatedAt   time.Time          `json:"updatedAt"`
+	}{
+		ID:          entry.ID,
+		UserID:      user.ID,
+		CategoryID:  support.ID,
+		Description: "Legacy support",
+		StartedAt:   start,
+		EndedAt:     start.Add(42 * time.Minute),
+		Minutes:     42,
+		LocalDate:   "2026-10-23",
+		Person:      " Priya ",
+		Source:      domain.EntrySourceManual,
+		CreatedAt:   start,
+		UpdatedAt:   start,
+	}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("encode legacy record: %v", err)
+	}
+
+	boltDB, err := bbolt.Open(cfg.DBPath, 0o600, nil)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	err = boltDB.Update(func(tx *bbolt.Tx) error {
+		if err := tx.Bucket([]byte("user_"+user.ID+":entries")).Put([]byte(entry.ID), raw); err != nil {
+			return err
+		}
+		// Simulate a database written by the previous index version so Open
+		// rebuilds the person index from the legacy record.
+		if err := tx.Bucket([]byte("sys:meta")).Delete([]byte("index_version")); err != nil {
+			return err
+		}
+		return tx.DeleteBucket([]byte("user_" + user.ID + ":idx_entries_person"))
+	})
+	if err != nil {
+		t.Fatalf("write legacy record: %v", err)
+	}
+	if err := boltDB.Close(); err != nil {
+		t.Fatalf("close raw database: %v", err)
+	}
+
+	second, err := store.Open(cfg)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+
+	loaded, err := second.WorkEntry(user.ID, entry.ID)
+	if err != nil {
+		t.Fatalf("read legacy entry: %v", err)
+	}
+	want := []string{"Priya"}
+	if !reflect.DeepEqual(loaded.People, want) {
+		t.Fatalf("legacy people = %#v, want %#v", loaded.People, want)
+	}
+
+	// The rebuilt index keys the legacy name, so the filter finds the record.
+	filtered, err := second.WorkEntries(user.ID, store.WorkEntryFilter{Person: "priya"})
+	if err != nil {
+		t.Fatalf("filter legacy entry: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != entry.ID {
+		t.Fatalf("legacy filter = %+v, want the migrated entry", filtered)
+	}
+
+	// Saving the migrated record writes the new shape.
+	if err := second.SaveWorkEntry(loaded); err != nil {
+		t.Fatalf("resave legacy entry: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatalf("close reopened store: %v", err)
+	}
+
+	boltDB, err = bbolt.Open(cfg.DBPath, 0o600, nil)
+	if err != nil {
+		t.Fatalf("open raw database again: %v", err)
+	}
+	defer boltDB.Close()
+	if err := boltDB.View(func(tx *bbolt.Tx) error {
+		value := tx.Bucket([]byte("user_" + user.ID + ":entries")).Get([]byte(entry.ID))
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(value, &fields); err != nil {
+			return err
+		}
+		if _, ok := fields["person"]; ok {
+			t.Error("rewritten record still has a person field")
+		}
+		if _, ok := fields["people"]; !ok {
+			t.Error("rewritten record has no people field")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("inspect rewritten record: %v", err)
 	}
 }

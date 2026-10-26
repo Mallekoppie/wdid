@@ -43,6 +43,7 @@ class FakeTimerRpc implements TimerRpc {
   ) async {
     startRequest = request;
     _maybeFail();
+    timer = protoTimer(people: request.people);
     return generated.StartTimerResponse(timer: timer);
   }
 
@@ -77,14 +78,14 @@ class FakeTimerRpc implements TimerRpc {
 generated.ActiveTimer protoTimer({
   bool paused = false,
   String description = 'Backfill script',
-  String person = '',
+  List<String> people = const [],
 }) {
   final started = DateTime.utc(2026, 10, 18, 9);
   return generated.ActiveTimer(
     categoryId: 'cat-1',
     subcategoryId: 'sub-1',
     description: description,
-    person: person,
+    people: people,
     startedAt: Timestamp.fromDateTime(started),
     segmentStartedAt: Timestamp.fromDateTime(
       started.add(const Duration(minutes: 10)),
@@ -123,21 +124,22 @@ void main() {
     expect(status.blockLimitMinutes, 240);
   });
 
-  test('startTimer sends the attribution, description and person', () async {
+  test('startTimer sends the attribution, description and people', () async {
     final rpc = FakeTimerRpc();
 
     final timer = await GrpcTimerApi(rpc: rpc).startTimer(
       categoryId: 'cat-1',
       subcategoryId: 'sub-1',
       description: 'Backfill script',
-      person: 'Priya',
+      people: const ['Priya', 'Sam'],
     );
 
     expect(rpc.startRequest!.categoryId, 'cat-1');
     expect(rpc.startRequest!.subcategoryId, 'sub-1');
     expect(rpc.startRequest!.description, 'Backfill script');
-    expect(rpc.startRequest!.person, 'Priya');
+    expect(rpc.startRequest!.people, ['Priya', 'Sam']);
     expect(timer.categoryId, 'cat-1');
+    expect(timer.people, ['Priya', 'Sam']);
   });
 
   test('pause and resume send their transitions', () async {

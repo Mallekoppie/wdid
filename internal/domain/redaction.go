@@ -60,7 +60,7 @@ func RedactExportInput(input ExportInput) ExportInput {
 		entry := &input.Entries[index]
 		entry.Description = redactText(entry.Description)
 		entry.Outcome = redactText(entry.Outcome)
-		entry.Person = redactText(entry.Person)
+		entry.People = redactStrings(entry.People)
 		entry.Team = redactText(entry.Team)
 		entry.Tags = redactStrings(entry.Tags)
 		entry.Links = nil

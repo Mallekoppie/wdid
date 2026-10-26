@@ -94,6 +94,7 @@ generated.WorkEntry protoEntry({
   String outcome = 'Script runs against staging',
   int minutes = 42,
   String localDate = '2026-10-17',
+  List<String> people = const [],
 }) {
   final started = Timestamp.fromDateTime(DateTime.utc(2026, 10, 17, 7, 15));
   return generated.WorkEntry(
@@ -108,6 +109,7 @@ generated.WorkEntry protoEntry({
     ),
     duration: duration.Duration(seconds: Int64(minutes * 60)),
     localDate: localDate,
+    people: people,
     source: generated.EntrySource.ENTRY_SOURCE_MANUAL,
     createdAt: started,
     updatedAt: started,
@@ -117,7 +119,11 @@ generated.WorkEntry protoEntry({
 void main() {
   test('listEntries maps generated entries and asks for today', () async {
     final rpc = FakeEntryRpc()
-      ..listResponse = generated.ListEntriesResponse(entries: [protoEntry()]);
+      ..listResponse = generated.ListEntriesResponse(
+        entries: [
+          protoEntry(people: ['Priya', 'Sam']),
+        ],
+      );
 
     final listing = await GrpcEntryApi(rpc: rpc).listEntries(today: true);
 
@@ -130,6 +136,7 @@ void main() {
     expect(listing.entries.first.outcome, 'Script runs against staging');
     expect(listing.entries.first.minutes, 42);
     expect(listing.entries.first.localDate, '2026-10-17');
+    expect(listing.entries.first.people, ['Priya', 'Sam']);
     expect(listing.entries.first.source, EntrySource.manual);
   });
 

@@ -69,6 +69,11 @@ message CheckInTotals {
   repeated CheckInTotal by_category = 2;
   repeated CheckInTotal by_subcategory = 3;
   repeated CheckInTotal support_by_person = 4;
+  // Authoritative support totals captured from the report at creation time.
+  // support_by_person rows credit each name the entry's full duration, so their
+  // sum may exceed support_duration.
+  google.protobuf.Duration support_duration = 5;
+  int32 support_interactions = 6;
 }
 
 // CheckIn is a saved artifact covering a period, with focus notes, aggregates

@@ -10,16 +10,22 @@ import (
 // calendar dates. Every screen that shows a period total reads these values
 // instead of composing its own.
 type PeriodReport struct {
-	FromDate      string
-	ToDate        string
-	TotalMinutes  int
-	EntryCount    int
-	Categories    []CategoryTotal
-	Subcategories []SubcategoryTotal
-	SupportPeople []SupportPersonTotal
-	SupportModes  []SupportModeTotal
-	Weeks         []WeekRhythm
-	Notes         []Note
+	FromDate     string
+	ToDate       string
+	TotalMinutes int
+	EntryCount   int
+	// SupportMinutes and SupportInteractions are the authoritative support
+	// totals: the minutes of every support-role entry and the number of such
+	// entries. They are not the sum of SupportPeople, whose rows each credit a
+	// named person the entry's full minutes.
+	SupportMinutes      int
+	SupportInteractions int
+	Categories          []CategoryTotal
+	Subcategories       []SubcategoryTotal
+	SupportPeople       []SupportPersonTotal
+	SupportModes        []SupportModeTotal
+	Weeks               []WeekRhythm
+	Notes               []Note
 	// Milestones is completion per project. Completion is a property of the
 	// project, not of the period, so every project with milestones is included
 	// even when it has no time inside the period.
@@ -194,7 +200,15 @@ func BuildPeriodReport(
 		}
 
 		if category.Role == CategoryRoleSupport {
-			if person := strings.TrimSpace(entry.Person); person != "" {
+			// Support totals come from the entries themselves, so a two-person
+			// entry counts once even though each name is credited in full below.
+			report.SupportMinutes += minutes
+			report.SupportInteractions++
+
+			// Every named person is credited the entry's full minutes and one
+			// interaction. Per-person minutes may therefore add up to more than
+			// the authoritative SupportMinutes.
+			for _, person := range NormalizeList(entry.People) {
 				key := strings.ToLower(person)
 				personTotal := supportPeople[key]
 				if personTotal == nil {

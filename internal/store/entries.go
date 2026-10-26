@@ -306,7 +306,7 @@ func workEntryMatches(entry domain.WorkEntry, filter WorkEntryFilter, query stri
 	if filter.SubcategoryID != "" && entry.SubcategoryID != filter.SubcategoryID {
 		return false
 	}
-	if filter.Person != "" && !strings.EqualFold(entry.Person, strings.TrimSpace(filter.Person)) {
+	if filter.Person != "" && !domain.HasPerson(entry.People, filter.Person) {
 		return false
 	}
 	if !filter.From.IsZero() && entry.StartedAt.Before(filter.From) {
@@ -336,8 +336,12 @@ func entryIndexValues(entry domain.WorkEntry) map[string][]string {
 	if entry.SubcategoryID != "" {
 		indexes[idxEntriesSubcategoryBucket] = []string{entry.SubcategoryID}
 	}
-	if entry.Person != "" {
-		indexes[idxEntriesPersonBucket] = []string{strings.ToLower(entry.Person)}
+	if people := domain.NormalizeList(entry.People); len(people) > 0 {
+		values := make([]string, 0, len(people))
+		for _, person := range people {
+			values = append(values, strings.ToLower(person))
+		}
+		indexes[idxEntriesPersonBucket] = values
 	}
 	return indexes
 }

@@ -4,34 +4,51 @@ import 'package:flutter/material.dart';
 
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/people.dart';
 
-/// The shared person field: one-tap roster chips plus a searchable, free-text
-/// field for a new name.
+/// The shared people field: roster chips, a removable selected list, and a
+/// free-text field for a new name.
 ///
-/// A person is a name, not an entity. Committing a name (a chip tap, Enter, or
-/// the add action) returns it through [onSelected] and grows the account's
-/// roster, so a name typed in any surface is available everywhere afterwards.
-/// [onChanged] fires for every value change, including a chip tap; #4 uses
-/// [onSelected] to tell a deliberate one-tap choice from keystrokes.
+/// A person is a name, not an entity. In its default mode the roster chips
+/// toggle membership and the committed names come back as an ordered list
+/// through [onChanged]. Committing a new name also grows the account's roster,
+/// so a name typed in any surface is available everywhere afterwards. A batch
+/// adds the name once.
+///
+/// [oneTap] keeps a single-tap surface (Support now, the header picker) working:
+/// a roster chip commits exactly that one name through [onCommitted] instead of
+/// toggling membership. Those surfaces reach multi-select through
+/// [showPeoplePickerDialog].
 class PersonPicker extends StatefulWidget {
   const PersonPicker({
     super.key,
-    this.controller,
+    this.selected = const [],
+    this.onChanged,
+    this.textController,
     this.label = 'Person',
     this.hint,
     this.errorText,
     this.enabled = true,
     this.autofocus = false,
     this.compact = false,
-    this.validator,
-    this.onChanged,
-    this.onSelected,
+    this.oneTap = false,
+    this.onCommitted,
     this.onSubmitted,
   });
 
-  /// An external controller keeps the caller's existing save paths working. A
-  /// private controller is owned and disposed when none is supplied.
-  final TextEditingController? controller;
+  /// The ordered names currently selected. The picker is controlled: every
+  /// change is reported through [onChanged] and the caller supplies the new
+  /// list back.
+  final List<String> selected;
+
+  /// Fires for every selection change: a chip toggle, a committed name, or a
+  /// removed selected chip.
+  final ValueChanged<List<String>>? onChanged;
+
+  /// The free-text field's controller. A caller that saves from outside the
+  /// picker can include uncommitted text with [peopleIncludingPending], so a
+  /// typed name is never silently dropped.
+  final TextEditingController? textController;
 
   final String label;
   final String? hint;
@@ -42,17 +59,20 @@ class PersonPicker extends StatefulWidget {
   /// Tighter chip styling for dense surfaces.
   final bool compact;
 
-  final FormFieldValidator<String>? validator;
+  /// When true, a roster chip commits exactly that one name through
+  /// [onCommitted] instead of toggling membership. Used by the one-tap support
+  /// surfaces, which must start a one-person timer from a single tap.
+  final bool oneTap;
 
-  /// Fires for every value change: typing, a chip tap, or a committed name.
-  final ValueChanged<String>? onChanged;
+  /// Fires with the resulting list when a name is committed: a one-tap chip,
+  /// Enter in the new-name field, or the add action. It never starts or saves
+  /// anything on its own.
+  final ValueChanged<List<String>>? onCommitted;
 
-  /// Fires only when a name is committed: a chip tap, Enter, or the add action.
-  final ValueChanged<String>? onSelected;
-
-  /// Fires after Enter in the new-name field, allowing callers to start or
-  /// save in the same gesture.
-  final ValueChanged<String>? onSubmitted;
+  /// Fires only after Enter (the keyboard submit action) in the new-name
+  /// field, once the name is committed, allowing callers to start or save in
+  /// the same gesture. The add action deliberately does not fire it.
+  final ValueChanged<List<String>>? onSubmitted;
 
   @override
   State<PersonPicker> createState() => _PersonPickerState();
@@ -65,15 +85,15 @@ class _PersonPickerState extends State<PersonPicker> {
   @override
   void initState() {
     super.initState();
-    _attachController(widget.controller);
+    _attachController(widget.textController);
   }
 
   @override
   void didUpdateWidget(PersonPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller == widget.controller) return;
+    if (oldWidget.textController == widget.textController) return;
     _detachController();
-    _attachController(widget.controller);
+    _attachController(widget.textController);
   }
 
   @override
@@ -104,15 +124,53 @@ class _PersonPickerState extends State<PersonPicker> {
     );
   }
 
-  /// Commits [raw] as the current person: normalises it, selects it, reports
-  /// it, and grows the roster. Adding an existing name is a no-op.
-  void _commit(String raw) {
+  bool _isSelected(String name) => widget.selected.any(
+    (selected) => selected.toLowerCase() == name.toLowerCase(),
+  );
+
+  /// Commits [raw] by appending it to the selection and returns the resulting
+  /// ordered list. A duplicate keeps the first spelling and adds nothing.
+  /// Returns null when the input is empty.
+  List<String>? _commit(String raw) {
     final name = raw.trim();
-    if (name.isEmpty) return;
-    _setText(name);
+    if (name.isEmpty) return null;
+    final next = normalizePeople([...widget.selected, name]);
+    _setText('');
+    // Grow the roster once for this batch. The state de-duplicates, so an
+    // existing name is a no-op.
     unawaited(AppStateScope.read(context).addSupportPerson(name));
-    widget.onChanged?.call(name);
-    widget.onSelected?.call(name);
+    if (!_sameNames(next, widget.selected)) {
+      widget.onChanged?.call(next);
+      widget.onCommitted?.call(next);
+    }
+    return next;
+  }
+
+  void _toggle(String name) {
+    final next = _isSelected(name)
+        ? [
+            for (final selected in widget.selected)
+              if (selected.toLowerCase() != name.toLowerCase()) selected,
+          ]
+        : normalizePeople([...widget.selected, name]);
+    widget.onChanged?.call(next);
+  }
+
+  void _tapChip(String name) {
+    if (widget.oneTap) {
+      final next = [name];
+      widget.onChanged?.call(next);
+      widget.onCommitted?.call(next);
+      return;
+    }
+    _toggle(name);
+  }
+
+  void _remove(String name) {
+    widget.onChanged?.call([
+      for (final selected in widget.selected)
+        if (selected.toLowerCase() != name.toLowerCase()) selected,
+    ]);
   }
 
   @override
@@ -125,6 +183,15 @@ class _PersonPickerState extends State<PersonPicker> {
             for (final name in roster)
               if (name.toLowerCase().contains(query)) name,
           ];
+    // Selected names the roster chips cannot show (a new name, or one filtered
+    // out by the query) still need a visible way to be removed.
+    final hiddenSelected = [
+      for (final name in widget.selected)
+        if (!visible.any(
+          (candidate) => candidate.toLowerCase() == name.toLowerCase(),
+        ))
+          name,
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -132,6 +199,10 @@ class _PersonPickerState extends State<PersonPicker> {
       children: [
         if (visible.isNotEmpty) ...[
           _chipWrap(visible),
+          if (hiddenSelected.isNotEmpty) const SizedBox(height: 5),
+        ],
+        if (hiddenSelected.isNotEmpty) ...[
+          _selectedWrap(hiddenSelected),
           const SizedBox(height: AppSpacing.sm),
         ],
         TextFormField(
@@ -139,14 +210,9 @@ class _PersonPickerState extends State<PersonPicker> {
           enabled: widget.enabled,
           autofocus: widget.autofocus,
           onFieldSubmitted: (value) {
-            _commit(value);
-            widget.onSubmitted?.call(value.trim());
+            final committed = _commit(value);
+            if (committed != null) widget.onSubmitted?.call(committed);
           },
-          onChanged: (value) {
-            setState(() {});
-            widget.onChanged?.call(value);
-          },
-          validator: widget.validator,
           decoration: InputDecoration(
             labelText: widget.label,
             hintText: widget.hint,
@@ -155,7 +221,11 @@ class _PersonPickerState extends State<PersonPicker> {
             suffixIcon: IconButton(
               tooltip: 'Add person',
               onPressed: widget.enabled
-                  ? () => _commit(_controller.text)
+                  ? () {
+                      // Add only commits the name; saving and starting stay on
+                      // Enter so a quick add never submits the surrounding form.
+                      _commit(_controller.text);
+                    }
                   : null,
               icon: const Icon(Icons.add, size: 18),
             ),
@@ -173,8 +243,8 @@ class _PersonPickerState extends State<PersonPicker> {
         for (final name in names)
           ChoiceChip(
             label: Text(name),
-            selected: _isSelected(name),
-            onSelected: widget.enabled ? (_) => _commit(name) : null,
+            selected: !widget.oneTap && _isSelected(name),
+            onSelected: widget.enabled ? (_) => _tapChip(name) : null,
             showCheckmark: false,
             labelPadding: EdgeInsets.symmetric(
               horizontal: widget.compact ? 4 : 6,
@@ -188,6 +258,145 @@ class _PersonPickerState extends State<PersonPicker> {
     );
   }
 
-  bool _isSelected(String name) =>
-      _controller.text.trim().toLowerCase() == name.toLowerCase();
+  Widget _selectedWrap(List<String> names) {
+    return Wrap(
+      spacing: 5,
+      runSpacing: 5,
+      children: [
+        for (final name in names)
+          InputChip(
+            label: Text(name),
+            onDeleted: widget.enabled ? () => _remove(name) : null,
+            deleteButtonTooltipMessage: 'Remove $name',
+            deleteIcon: const Icon(Icons.close, size: 14),
+            visualDensity: VisualDensity.compact,
+            labelPadding: EdgeInsets.symmetric(
+              horizontal: widget.compact ? 4 : 6,
+            ),
+            labelStyle: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(fontWeight: FontWeight.w600),
+          ),
+      ],
+    );
+  }
+}
+
+bool _sameNames(List<String> first, List<String> second) {
+  if (first.length != second.length) return false;
+  for (var index = 0; index < first.length; index++) {
+    if (first[index].toLowerCase() != second[index].toLowerCase()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// The selected names plus any free text typed but not committed yet. Save
+/// paths use this so clicking a form's save button after typing a name keeps
+/// that name.
+List<String> peopleIncludingPending(
+  List<String> selected,
+  TextEditingController? controller,
+) => normalizePeople([...selected, if (controller != null) controller.text]);
+
+/// Asks for an ordered list of people. Multi-select is reachable from every
+/// support surface through this dialog; the caller decides what to do with the
+/// chosen names (start a timer, save an entry, ...).
+Future<List<String>?> showPeoplePickerDialog(
+  BuildContext context, {
+  String title = 'Support several people',
+  String actionLabel = 'Start support',
+  String hint = 'Add a person',
+  List<String> initial = const [],
+}) {
+  return showDialog<List<String>>(
+    context: context,
+    builder: (context) => _PeoplePickerDialog(
+      title: title,
+      actionLabel: actionLabel,
+      hint: hint,
+      initial: initial,
+    ),
+  );
+}
+
+class _PeoplePickerDialog extends StatefulWidget {
+  const _PeoplePickerDialog({
+    required this.title,
+    required this.actionLabel,
+    required this.hint,
+    required this.initial,
+  });
+
+  final String title;
+  final String actionLabel;
+  final String hint;
+  final List<String> initial;
+
+  @override
+  State<_PeoplePickerDialog> createState() => _PeoplePickerDialogState();
+}
+
+class _PeoplePickerDialogState extends State<_PeoplePickerDialog> {
+  late List<String> _selected = normalizePeople(widget.initial);
+  final _textController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // The Start button is enabled by typed text too, not only a committed
+    // name, so it must rebuild while the user types.
+    _textController.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _textController
+      ..removeListener(_onTextChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  List<String> get _people =>
+      peopleIncludingPending(_selected, _textController);
+
+  void _confirm() {
+    final people = _people;
+    if (people.isEmpty) return;
+    // A name typed but never committed still becomes part of the roster.
+    unawaited(AppStateScope.read(context).addSupportPeople(people));
+    Navigator.of(context).pop(people);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 360,
+        child: PersonPicker(
+          selected: _selected,
+          textController: _textController,
+          autofocus: true,
+          hint: widget.hint,
+          onChanged: (people) => setState(() => _selected = people),
+          onSubmitted: (_) => _confirm(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _people.isEmpty ? null : _confirm,
+          child: Text(widget.actionLabel),
+        ),
+      ],
+    );
+  }
 }

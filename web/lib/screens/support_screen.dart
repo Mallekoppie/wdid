@@ -235,14 +235,10 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
     final report = state.supportReport;
     final personTotals = report?.supportPeople ?? const [];
     final modeTotals = report?.supportModes ?? const [];
-    final minutes = personTotals.fold<int>(
-      0,
-      (sum, total) => sum + total.minutes,
-    );
-    final interactions = personTotals.fold<int>(
-      0,
-      (sum, total) => sum + total.interactions,
-    );
+    // The header totals are authoritative: adding up the per-person rows would
+    // count a two-person entry twice.
+    final minutes = report?.supportMinutes ?? 0;
+    final interactions = report?.supportInteractions ?? 0;
     final people = personTotals.length;
     final grouped = groupEntriesByLocalDay(entries);
     for (final day in grouped.values) {

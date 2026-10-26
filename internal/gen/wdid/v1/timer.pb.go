@@ -98,7 +98,7 @@ type ActiveTimer struct {
 	Paused  bool                 `protobuf:"varint,9,opt,name=paused,proto3" json:"paused,omitempty"`
 	// Required when the category's reporting role is support, matching the
 	// work-entry rule.
-	Person        string `protobuf:"bytes,10,opt,name=person,proto3" json:"person,omitempty"`
+	People        []string `protobuf:"bytes,11,rep,name=people,proto3" json:"people,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -196,11 +196,11 @@ func (x *ActiveTimer) GetPaused() bool {
 	return false
 }
 
-func (x *ActiveTimer) GetPerson() string {
+func (x *ActiveTimer) GetPeople() []string {
 	if x != nil {
-		return x.Person
+		return x.People
 	}
-	return ""
+	return nil
 }
 
 type StartTimerRequest struct {
@@ -210,7 +210,7 @@ type StartTimerRequest struct {
 	SubcategoryId string `protobuf:"bytes,2,opt,name=subcategory_id,json=subcategoryId,proto3" json:"subcategory_id,omitempty"`
 	Description   string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	// Required when the category's reporting role is support.
-	Person        string `protobuf:"bytes,4,opt,name=person,proto3" json:"person,omitempty"`
+	People        []string `protobuf:"bytes,5,rep,name=people,proto3" json:"people,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -266,11 +266,11 @@ func (x *StartTimerRequest) GetDescription() string {
 	return ""
 }
 
-func (x *StartTimerRequest) GetPerson() string {
+func (x *StartTimerRequest) GetPeople() []string {
 	if x != nil {
-		return x.Person
+		return x.People
 	}
-	return ""
+	return nil
 }
 
 type StartTimerResponse struct {
@@ -669,7 +669,7 @@ var File_timer_proto protoreflect.FileDescriptor
 
 const file_timer_proto_rawDesc = "" +
 	"\n" +
-	"\vtimer.proto\x12\awdid.v1\x1a\rentries.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe4\x03\n" +
+	"\vtimer.proto\x12\awdid.v1\x1a\rentries.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf2\x03\n" +
 	"\vActiveTimer\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12%\n" +
@@ -682,14 +682,14 @@ const file_timer_proto_rawDesc = "" +
 	"\x12accumulated_paused\x18\a \x01(\v2\x19.google.protobuf.DurationR\x11accumulatedPaused\x123\n" +
 	"\aelapsed\x18\b \x01(\v2\x19.google.protobuf.DurationR\aelapsed\x12\x16\n" +
 	"\x06paused\x18\t \x01(\bR\x06paused\x12\x16\n" +
-	"\x06person\x18\n" +
-	" \x01(\tR\x06person\"\x95\x01\n" +
+	"\x06people\x18\v \x03(\tR\x06peopleJ\x04\b\n" +
+	"\x10\vR\x06person\"\xa3\x01\n" +
 	"\x11StartTimerRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12%\n" +
 	"\x0esubcategory_id\x18\x02 \x01(\tR\rsubcategoryId\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
-	"\x06person\x18\x04 \x01(\tR\x06person\"@\n" +
+	"\x06people\x18\x05 \x03(\tR\x06peopleJ\x04\b\x04\x10\x05R\x06person\"@\n" +
 	"\x12StartTimerResponse\x12*\n" +
 	"\x05timer\x18\x01 \x01(\v2\x14.wdid.v1.ActiveTimerR\x05timer\"\x13\n" +
 	"\x11PauseTimerRequest\"@\n" +

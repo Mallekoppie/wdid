@@ -478,10 +478,12 @@ func toProtoCheckIn(checkIn domain.CheckIn) *wdidv1.CheckIn {
 
 func toProtoCheckInTotals(totals domain.CheckInTotals) *wdidv1.CheckInTotals {
 	return &wdidv1.CheckInTotals{
-		Total:           minutesDuration(totals.Minutes),
-		ByCategory:      toProtoCheckInTotalsMap(totals.ByCategory),
-		BySubcategory:   toProtoCheckInTotalsMap(totals.BySubcategory),
-		SupportByPerson: toProtoCheckInTotalsMap(totals.SupportByPerson),
+		Total:               minutesDuration(totals.Minutes),
+		ByCategory:          toProtoCheckInTotalsMap(totals.ByCategory),
+		BySubcategory:       toProtoCheckInTotalsMap(totals.BySubcategory),
+		SupportByPerson:     toProtoCheckInTotalsMap(totals.SupportByPerson),
+		SupportDuration:     minutesDuration(totals.EffectiveSupportMinutes()),
+		SupportInteractions: int32(totals.EffectiveSupportInteractions()),
 	}
 }
 

@@ -38,7 +38,7 @@ func reportEntry(userID, categoryID, subcategoryID string, start time.Time, minu
 		StartedAt:     start,
 		EndedAt:       start.Add(time.Duration(minutes) * time.Minute),
 		Minutes:       minutes,
-		Person:        person,
+		People:        domain.NormalizeList([]string{person}),
 		Source:        domain.EntrySourceManual,
 	}
 }
@@ -104,6 +104,10 @@ func TestBuildPeriodReportAggregatesThePeriod(t *testing.T) {
 	if got := supportModes(report.SupportModes); got != "Unblock=50/2" {
 		t.Fatalf("support modes = %s, want Unblock=50/2", got)
 	}
+	if report.SupportMinutes != 50 || report.SupportInteractions != 2 {
+		t.Fatalf("support totals = %dm/%d interactions, want 50m across 2 support entries",
+			report.SupportMinutes, report.SupportInteractions)
+	}
 
 	if len(report.Weeks) != 1 {
 		t.Fatalf("weeks = %d, want one week", len(report.Weeks))
@@ -117,6 +121,56 @@ func TestBuildPeriodReportAggregatesThePeriod(t *testing.T) {
 	// context; an untouched day and an untouched project are not.
 	if got := noteIDs(report.Notes); got != "note-both,note-project,note-day" {
 		t.Fatalf("notes = %s, want the dated project note, project note and day note", got)
+	}
+}
+
+func TestBuildPeriodReportCreditsEveryNamedPersonTheFullEntryMinutes(t *testing.T) {
+	const userID = "user-report"
+	categories := []domain.Category{
+		reportCategory(userID, "cat-support", "Support", domain.CategoryRoleSupport),
+	}
+	subcategories := []domain.Subcategory{
+		reportSubcategory(userID, "sub-pairing", "cat-support", "Pairing"),
+		reportSubcategory(userID, "sub-unblock", "cat-support", "Unblock"),
+	}
+	day := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
+
+	pairing := reportEntry(userID, "cat-support", "sub-pairing", day, 45, "")
+	pairing.People = []string{"Sam", "Alex"}
+	pairing.Description = "Pair on the retry fix"
+	unblock := reportEntry(userID, "cat-support", "sub-unblock", day.Add(time.Hour), 30, "Alex")
+
+	report, err := domain.BuildPeriodReport(
+		"2026-10-19",
+		"2026-10-20",
+		time.UTC,
+		int(time.Monday),
+		[]domain.WorkEntry{pairing, unblock},
+		categories,
+		subcategories,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build report: %v", err)
+	}
+
+	// Each named person is credited the whole entry, so per-person minutes add
+	// up to more than the authoritative support total.
+	if got := supportPeople(report.SupportPeople); got != "Alex=75/2,Sam=45/1" {
+		t.Fatalf("support people = %s, want Alex=75/2 and Sam=45/1", got)
+	}
+	if report.SupportPeople[0].Minutes+report.SupportPeople[1].Minutes != 120 {
+		t.Fatalf("per-person minutes = %d, want 120 (more than the entry total 75)",
+			report.SupportPeople[0].Minutes+report.SupportPeople[1].Minutes)
+	}
+	// Totals come from the entries, never from adding up the per-person rows.
+	if report.SupportMinutes != 75 || report.SupportInteractions != 2 {
+		t.Fatalf("support totals = %dm/%d interactions, want 75m across 2 support entries",
+			report.SupportMinutes, report.SupportInteractions)
+	}
+	if report.TotalMinutes != 75 || report.EntryCount != 2 {
+		t.Fatalf("period totals = %dm/%d entries, want 75m across 2 entries",
+			report.TotalMinutes, report.EntryCount)
 	}
 }
 

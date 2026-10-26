@@ -92,6 +92,12 @@ message PeriodReport {
   repeated WeekRhythm weeks = 9;
   repeated PeriodNote notes = 10;
   repeated MilestoneProgress milestone_progress = 11;
+  // Authoritative support totals: the duration of every support-role entry and
+  // the number of support entries. Each named person in support_people is
+  // credited the entry's full duration, so those rows may add up to more than
+  // support_duration; clients must show these totals, never a sum of the rows.
+  google.protobuf.Duration support_duration = 12;
+  int32 support_interactions = 13;
 }
 
 message GetPeriodReportRequest {

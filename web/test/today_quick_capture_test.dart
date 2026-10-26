@@ -48,6 +48,7 @@ WorkEntry todayEntry({
   String description = 'Backfill script skeleton',
   String outcome = '',
   int minutes = 42,
+  List<String> people = const [],
 }) {
   final started = DateTime.now().subtract(Duration(minutes: minutes));
   return WorkEntry(
@@ -56,6 +57,7 @@ WorkEntry todayEntry({
     subcategoryId: subcategoryId,
     description: description,
     outcome: outcome,
+    people: people,
     startedAt: started.toUtc(),
     endedAt: started.add(Duration(minutes: minutes)).toUtc(),
     minutes: minutes,
@@ -225,8 +227,82 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(entryApi.drafts, hasLength(1));
-    expect(entryApi.drafts.single.person, 'Priya');
+    expect(entryApi.drafts.single.people, ['Priya']);
     expect(entryApi.drafts.single.categoryId, 'cat-support');
+  });
+
+  testWidgets('captures support for several selected people', (tester) async {
+    final entryApi = FakeEntryApi();
+    final settingsApi = FakeSettingsApi(
+      settings: const AppSettings(
+        defaultDurationMinutes: 45,
+        supportPeople: ['Priya', 'Sam'],
+      ),
+    );
+    await pumpToday(
+      tester,
+      entryApi: entryApi,
+      settingsApi: settingsApi,
+      categoryApi: FakeCategoryApi(
+        categories: [
+          category('cat-support', 'Support', role: CategoryRole.support),
+        ],
+        subcategories: [subcategory('sub-review', 'cat-support', 'Review')],
+      ),
+    );
+
+    await tester.enterText(descriptionField(), 'Reviewed the migration plan');
+    final bar = find.byType(QuickCaptureBar);
+    await tester.tap(
+      find.descendant(
+        of: bar,
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: bar,
+        matching: find.widgetWithText(ChoiceChip, 'Sam'),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    expect(entryApi.drafts, hasLength(1));
+    expect(entryApi.drafts.single.people, ['Priya', 'Sam']);
+    // Selecting existing roster names never rewrites the roster.
+    expect(settingsApi.updateCalls, 0);
+  });
+
+  testWidgets('a Today support row shows every name', (tester) async {
+    final entryApi = FakeEntryApi(
+      entries: [
+        todayEntry(
+          id: 'entry-multi',
+          categoryId: 'cat-support',
+          subcategoryId: 'sub-review',
+          description: 'Paired on the migration',
+          people: const ['Priya', 'Sam'],
+        ),
+      ],
+    );
+    await pumpToday(
+      tester,
+      entryApi: entryApi,
+      categoryApi: FakeCategoryApi(
+        categories: [
+          category('cat-support', 'Support', role: CategoryRole.support),
+        ],
+        subcategories: [subcategory('sub-review', 'cat-support', 'Review')],
+      ),
+    );
+
+    expect(
+      find.textContaining('Support · Review · Priya, Sam'),
+      findsOneWidget,
+    );
   });
 
   test('loading today entries prefills the remembered pair', () async {
@@ -472,7 +548,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(entryApi.drafts, hasLength(1));
-    expect(entryApi.drafts.single.person, 'Alex');
+    expect(entryApi.drafts.single.people, ['Alex']);
     expect(settingsApi.settings.supportPeople, ['Alex']);
     expect(find.widgetWithText(ChoiceChip, 'Alex'), findsWidgets);
   });

@@ -405,16 +405,18 @@ func checkInsInPeriod(checkIns []domain.CheckIn, fromDate, toDate string) []doma
 
 func toProtoPeriodReport(report domain.PeriodReport) *wdidv1.PeriodReport {
 	response := &wdidv1.PeriodReport{
-		FromDate:      report.FromDate,
-		ToDate:        report.ToDate,
-		Total:         minutesDuration(report.TotalMinutes),
-		EntryCount:    int32(report.EntryCount),
-		Categories:    make([]*wdidv1.CategoryAllocation, 0, len(report.Categories)),
-		Subcategories: make([]*wdidv1.SubcategoryAllocation, 0, len(report.Subcategories)),
-		SupportPeople: make([]*wdidv1.SupportPersonAllocation, 0, len(report.SupportPeople)),
-		SupportModes:  make([]*wdidv1.SupportModeAllocation, 0, len(report.SupportModes)),
-		Weeks:         make([]*wdidv1.WeekRhythm, 0, len(report.Weeks)),
-		Notes:         make([]*wdidv1.PeriodNote, 0, len(report.Notes)),
+		FromDate:            report.FromDate,
+		ToDate:              report.ToDate,
+		Total:               minutesDuration(report.TotalMinutes),
+		EntryCount:          int32(report.EntryCount),
+		SupportDuration:     minutesDuration(report.SupportMinutes),
+		SupportInteractions: int32(report.SupportInteractions),
+		Categories:          make([]*wdidv1.CategoryAllocation, 0, len(report.Categories)),
+		Subcategories:       make([]*wdidv1.SubcategoryAllocation, 0, len(report.Subcategories)),
+		SupportPeople:       make([]*wdidv1.SupportPersonAllocation, 0, len(report.SupportPeople)),
+		SupportModes:        make([]*wdidv1.SupportModeAllocation, 0, len(report.SupportModes)),
+		Weeks:               make([]*wdidv1.WeekRhythm, 0, len(report.Weeks)),
+		Notes:               make([]*wdidv1.PeriodNote, 0, len(report.Notes)),
 		MilestoneProgress: make(
 			[]*wdidv1.MilestoneProgress, 0, len(report.Milestones),
 		),

@@ -123,7 +123,7 @@ func TestSummaryServiceGetPeriodReportAggregates(t *testing.T) {
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
 		Description:   "Unblocked the CI keys",
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		StartedAt:     timestamppb.New(monday.Add(2 * time.Hour)),
 		Duration:      durationpb.New(30 * time.Minute),
 	})
@@ -190,6 +190,10 @@ func TestSummaryServiceGetPeriodReportAggregates(t *testing.T) {
 	if len(modes) != 1 || modes[0].GetName() != "Unblock" || modes[0].GetDuration().AsDuration() != 30*time.Minute {
 		t.Fatalf("support modes = %+v, want Unblock with 30m", modes)
 	}
+	if report.GetSupportDuration().AsDuration() != 30*time.Minute || report.GetSupportInteractions() != 1 {
+		t.Fatalf("support totals = %v/%d interactions, want the authoritative 30m support entry",
+			report.GetSupportDuration().AsDuration(), report.GetSupportInteractions())
+	}
 
 	weeks := report.GetWeeks()
 	if len(weeks) != 1 || weeks[0].GetWeekStartDate() != "2026-10-19" ||
@@ -224,7 +228,7 @@ func TestSummaryServiceSupportRollupsRespectPeriodBoundaries(t *testing.T) {
 		createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 			CategoryId:    supportID,
 			SubcategoryId: subcategoryID,
-			Person:        person,
+			People:        []string{person},
 			Description:   description,
 			StartedAt:     timestamppb.New(start),
 			Duration:      durationpb.New(length),
@@ -262,6 +266,10 @@ func TestSummaryServiceSupportRollupsRespectPeriodBoundaries(t *testing.T) {
 	}
 	if report.GetTotal().AsDuration() != 150*time.Minute || report.GetEntryCount() != 4 {
 		t.Fatalf("totals = %v/%d, want the four entries inside the period", report.GetTotal().AsDuration(), report.GetEntryCount())
+	}
+	if report.GetSupportDuration().AsDuration() != 150*time.Minute || report.GetSupportInteractions() != 4 {
+		t.Fatalf("support totals = %v/%d interactions, want the four support entries",
+			report.GetSupportDuration().AsDuration(), report.GetSupportInteractions())
 	}
 
 	// A period ending before the last entry drops both Sam's time and his row.
@@ -508,7 +516,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		Description:   "Late-night unblock",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 23, 30, 0, 0, time.UTC)),
 		Duration:      durationpb.New(25 * time.Minute),
@@ -516,7 +524,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		Description:   "Morning unblock",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(35 * time.Minute),
@@ -524,7 +532,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Sam",
+		People:        []string{"Sam"},
 		Description:   "First day of the period",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(20 * time.Minute),
@@ -532,7 +540,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Sam",
+		People:        []string{"Sam"},
 		Description:   "Day after the period",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 26, 0, 30, 0, 0, time.UTC)),
 		Duration:      durationpb.New(40 * time.Minute),
@@ -665,7 +673,7 @@ func buildSummaryExportFixture(t *testing.T, server *httptest.Server, database *
 		SubcategoryId: unblockID,
 		Description:   "event bus design",
 		Outcome:       "3 risks identified before implementation",
-		Person:        "Priya",
+		People:        []string{"Priya", "Sam"},
 		Team:          "Payments",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 11, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(30 * time.Minute),
@@ -744,7 +752,11 @@ func TestSummaryServiceBuildExportBundle(t *testing.T) {
 			"- Milestones: 1 of 1 complete",
 			"- Key outcomes:\n  - Shipped the backfill",
 			"## Support and collaboration",
+			// Both named people receive the entry's full minutes as a section
+			// and the same detail, while the period context counts the entry
+			// once.
 			"### Priya (Payments) — 0h 30m, 1 interactions",
+			"### Sam (Payments) — 0h 30m, 1 interactions",
 			"- Unblock: event bus design — 3 risks identified before implementation",
 			"## Weekly rhythm",
 			"| 2026-10-19 | 2h 00m | Focus |",
@@ -763,7 +775,7 @@ func TestSummaryServiceBuildExportBundle(t *testing.T) {
 			t.Fatalf("entries.csv rows = %d, want a header and two entries:\n%s", len(entriesRows), exportFile(t, bundle, "entries.csv"))
 		}
 		entriesHeader := strings.Join(entriesRows[0], ",")
-		for _, column := range []string{"date", "minutes", "category", "subcategory", "outcome"} {
+		for _, column := range []string{"date", "minutes", "category", "subcategory", "outcome", "people"} {
 			if !strings.Contains(entriesHeader, column) {
 				t.Fatalf("entries.csv header = %q, want %s", entriesHeader, column)
 			}
@@ -771,16 +783,22 @@ func TestSummaryServiceBuildExportBundle(t *testing.T) {
 		if joined := strings.Join(entriesRows[1], ","); !strings.Contains(joined, "Billing migration") || !strings.Contains(joined, "Shipped the backfill") {
 			t.Fatalf("entries.csv initiative row = %q", joined)
 		}
+		// The support entry carries both names joined, still as one row.
+		supportRow := strings.Join(entriesRows[2], ",")
+		if !strings.Contains(supportRow, "Priya;Sam") || !strings.Contains(supportRow, "Unblock") {
+			t.Fatalf("entries.csv support row = %q, want both people joined", supportRow)
+		}
 
 		supportRows := readExportCSV(t, exportFile(t, bundle, "support.csv"))
 		if len(supportRows) != 2 {
 			t.Fatalf("support.csv rows = %d, want a header and one support entry:\n%s", len(supportRows), exportFile(t, bundle, "support.csv"))
 		}
-		if header := strings.Join(supportRows[0], ","); !strings.Contains(header, "person") || !strings.Contains(header, "mode") {
-			t.Fatalf("support.csv header = %q, want person and mode columns", header)
+		if header := strings.Join(supportRows[0], ","); !strings.Contains(header, "people") || !strings.Contains(header, "mode") {
+			t.Fatalf("support.csv header = %q, want people and mode columns", header)
 		}
-		if row := strings.Join(supportRows[1], ","); !strings.Contains(row, "Priya") || !strings.Contains(row, "Unblock") {
-			t.Fatalf("support.csv row = %q, want the person and mode", row)
+		// One row per entry, every name joined by a semicolon.
+		if row := strings.Join(supportRows[1], ","); !strings.Contains(row, "Priya;Sam") || !strings.Contains(row, "Unblock") {
+			t.Fatalf("support.csv row = %q, want both people joined and the mode", row)
 		}
 
 		var data map[string]any
@@ -795,8 +813,8 @@ func TestSummaryServiceBuildExportBundle(t *testing.T) {
 				t.Fatalf("data.json is missing %q: %v", key, data)
 			}
 		}
-		if data["schemaVersion"].(float64) != 1 {
-			t.Fatalf("schemaVersion = %v, want 1", data["schemaVersion"])
+		if data["schemaVersion"].(float64) != 2 {
+			t.Fatalf("schemaVersion = %v, want 2", data["schemaVersion"])
 		}
 		for key, want := range map[string]int{
 			"entries":       2,
@@ -811,8 +829,15 @@ func TestSummaryServiceBuildExportBundle(t *testing.T) {
 		}
 		totals := data["totals"].(map[string]any)
 		if totals["minutes"].(float64) != 120 || totals["entryCount"].(float64) != 2 ||
+			totals["supportMinutes"].(float64) != 30 ||
 			totals["supportInteractions"].(float64) != 1 || totals["projects"].(float64) != 1 {
-			t.Fatalf("data.json totals = %v, want 120 minutes across two entries", totals)
+			t.Fatalf("data.json totals = %v, want 120 minutes, 30 support minutes and one support entry", totals)
+		}
+		// The structured rows keep every name as a list, not a joined string.
+		supportRowsData := data["support"].([]any)
+		people := supportRowsData[0].(map[string]any)["people"].([]any)
+		if len(people) != 2 || people[0] != "Priya" || people[1] != "Sam" {
+			t.Fatalf("data.json support people = %v, want Priya and Sam", people)
 		}
 	})
 }

@@ -239,16 +239,26 @@ func TestValidateWorkEntryRequiresPersonForSupport(t *testing.T) {
 
 	assertField(t, domain.ValidateWorkEntry(entry, category, &subcategory, 0), "person")
 
-	entry.Person = "Priya"
+	// Blank names do not count as a person.
+	entry.People = []string{"  ", ""}
+	assertField(t, domain.ValidateWorkEntry(entry, category, &subcategory, 0), "person")
+
+	entry.People = []string{"Priya"}
 	if err := domain.ValidateWorkEntry(entry, category, &subcategory, 0); err != nil {
 		t.Fatalf("support entry with a person: %v", err)
+	}
+
+	// An entry may support several people.
+	entry.People = []string{"Priya", "Sam"}
+	if err := domain.ValidateWorkEntry(entry, category, &subcategory, 0); err != nil {
+		t.Fatalf("support entry with several people: %v", err)
 	}
 
 	// A person is optional outside support-role categories.
 	initiative := validCategory()
 	initiativeSubcategory := validSubcategory()
 	entry = validWorkEntry()
-	entry.Person = ""
+	entry.People = nil
 	if err := domain.ValidateWorkEntry(entry, initiative, &initiativeSubcategory, 0); err != nil {
 		t.Fatalf("non-support entry without a person: %v", err)
 	}
@@ -409,6 +419,16 @@ func TestValidateCheckIn(t *testing.T) {
 		{name: "bad period start", mutate: func(c *domain.CheckIn) { c.PeriodStart = "01-07-2026" }, wantField: "periodStart"},
 		{name: "period ends before it starts", mutate: func(c *domain.CheckIn) { c.PeriodEnd = "2026-06-30" }, wantField: "periodEnd"},
 		{name: "negative totals", mutate: func(c *domain.CheckIn) { c.Totals.Minutes = -1 }, wantField: "totals"},
+		{
+			name:      "negative support minutes",
+			mutate:    func(c *domain.CheckIn) { c.Totals.SupportMinutes = -1 },
+			wantField: "totals",
+		},
+		{
+			name:      "negative support interactions",
+			mutate:    func(c *domain.CheckIn) { c.Totals.SupportInteractions = -1 },
+			wantField: "totals",
+		},
 	}
 
 	for _, test := range tests {
@@ -489,5 +509,33 @@ func TestValidateSettings(t *testing.T) {
 			}
 			assertField(t, err, test.wantField)
 		})
+	}
+}
+
+func TestHasPersonMatchesTrimmedNamesCaseInsensitively(t *testing.T) {
+	people := []string{"Priya", " Sam "}
+
+	tests := []struct {
+		name   string
+		person string
+		want   bool
+	}{
+		{name: "exact", person: "Priya", want: true},
+		{name: "case-insensitive", person: "PRIYA", want: true},
+		{name: "trimmed target", person: "  Priya  ", want: true},
+		{name: "trimmed stored name", person: "sam", want: true},
+		{name: "absent", person: "Noor", want: false},
+		{name: "blank", person: "   ", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := domain.HasPerson(people, test.person); got != test.want {
+				t.Fatalf("HasPerson(%#v, %q) = %v, want %v", people, test.person, got, test.want)
+			}
+		})
+	}
+
+	if domain.HasPerson(nil, "Priya") {
+		t.Fatal("an empty people list must not match")
 	}
 }

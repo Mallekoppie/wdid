@@ -37,7 +37,7 @@ type EntryFixture struct {
 	Minutes     int                `json:"minutes"`
 	Category    string             `json:"category"`
 	Subcategory string             `json:"subcategory,omitempty"`
-	Person      string             `json:"person,omitempty"`
+	People      []string           `json:"people,omitempty"`
 	Description string             `json:"description"`
 	Outcome     string             `json:"outcome,omitempty"`
 	Source      domain.EntrySource `json:"source"`
@@ -114,8 +114,8 @@ func (f Fixture) validateEntries() error {
 			return fmt.Errorf("fixture entry %q: invalid source %q", key, entry.Source)
 		}
 		if category.Role == domain.CategoryRoleSupport {
-			if strings.TrimSpace(entry.Person) == "" {
-				return fmt.Errorf("fixture entry %q: person is required for support entries", key)
+			if len(domain.NormalizeList(entry.People)) == 0 {
+				return fmt.Errorf("fixture entry %q: at least one person is required for support entries", key)
 			}
 		} else if subcategory == "" {
 			return fmt.Errorf("fixture entry %q: a %s entry needs a subcategory", key, category.Role)
@@ -191,7 +191,7 @@ func seedEntries(
 				StartedAt:     started,
 				EndedAt:       ended,
 				Minutes:       fixtureEntry.Minutes,
-				Person:        strings.TrimSpace(fixtureEntry.Person),
+				People:        domain.NormalizeList(fixtureEntry.People),
 				Source:        fixtureEntry.Source,
 				CreatedAt:     ended.UTC(),
 				UpdatedAt:     ended.UTC(),

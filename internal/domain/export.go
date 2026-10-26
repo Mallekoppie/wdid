@@ -12,7 +12,7 @@ import (
 // ExportSchemaVersion identifies the shape of data.json. It changes only when
 // a field is removed or its meaning changes, so tools can rely on a stable
 // contract.
-const ExportSchemaVersion = 1
+const ExportSchemaVersion = 2
 
 // ExportFile is one file in a generated export bundle.
 type ExportFile struct {
@@ -353,7 +353,7 @@ func buildEntriesCSV(input ExportInput) string {
 	writer := csv.NewWriter(&builder)
 	_ = writer.Write([]string{
 		"date", "start", "end", "minutes", "category", "subcategory",
-		"description", "outcome", "person", "team", "tags", "source",
+		"description", "outcome", "people", "team", "tags", "source",
 	})
 	for _, entry := range sortedEntries(input.Entries) {
 		_ = writer.Write([]string{
@@ -365,7 +365,7 @@ func buildEntriesCSV(input ExportInput) string {
 			subcategoryByID[entry.SubcategoryID].Name,
 			entry.Description,
 			entry.Outcome,
-			entry.Person,
+			strings.Join(entry.People, ";"),
 			entry.Team,
 			strings.Join(entry.Tags, ";"),
 			string(entry.Source),
@@ -375,8 +375,10 @@ func buildEntriesCSV(input ExportInput) string {
 	return builder.String()
 }
 
-// buildSupportCSV renders one row per support entry with the person and mode
-// columns the plan requires. Mode is the entry's subcategory.
+// buildSupportCSV renders one row per support entry with every person and the
+// mode columns the plan requires. Names on one entry are joined by `;`, so the
+// sheet never repeats an entry or inflates the support time. Mode is the
+// entry's subcategory.
 func buildSupportCSV(input ExportInput) string {
 	categoryByID := indexCategories(input.Categories)
 	subcategoryByID := indexSubcategories(input.Subcategories)
@@ -384,7 +386,7 @@ func buildSupportCSV(input ExportInput) string {
 	var builder strings.Builder
 	writer := csv.NewWriter(&builder)
 	_ = writer.Write([]string{
-		"date", "start", "end", "minutes", "person", "mode",
+		"date", "start", "end", "minutes", "people", "mode",
 		"team", "description", "outcome",
 	})
 	for _, entry := range sortedEntries(input.Entries) {
@@ -396,7 +398,7 @@ func buildSupportCSV(input ExportInput) string {
 			formatInstant(entry.StartedAt),
 			formatInstant(entry.EndedAt),
 			fmt.Sprintf("%d", entry.DurationMinutes()),
-			entry.Person,
+			strings.Join(entry.People, ";"),
 			subcategoryByID[entry.SubcategoryID].Name,
 			entry.Team,
 			entry.Description,
@@ -481,7 +483,7 @@ type exportEntry struct {
 	Subcategory   string       `json:"subcategory"`
 	Description   string       `json:"description"`
 	Outcome       string       `json:"outcome"`
-	Person        string       `json:"person"`
+	People        []string     `json:"people"`
 	Team          string       `json:"team"`
 	Tags          []string     `json:"tags"`
 	Source        string       `json:"source"`
@@ -529,6 +531,10 @@ func toExportEntry(entry WorkEntry, categories map[string]Category, subcategorie
 	if tags == nil {
 		tags = []string{}
 	}
+	people := entry.People
+	if people == nil {
+		people = []string{}
+	}
 	return exportEntry{
 		ID:            entry.ID,
 		Date:          entry.LocalDate,
@@ -541,7 +547,7 @@ func toExportEntry(entry WorkEntry, categories map[string]Category, subcategorie
 		Subcategory:   subcategories[entry.SubcategoryID].Name,
 		Description:   entry.Description,
 		Outcome:       entry.Outcome,
-		Person:        entry.Person,
+		People:        people,
 		Team:          entry.Team,
 		Tags:          tags,
 		Source:        string(entry.Source),
@@ -660,8 +666,7 @@ func projectOutcomes(entries []WorkEntry, subcategoryID string) []string {
 
 func supportTeam(entries []WorkEntry, person string) string {
 	for _, entry := range entries {
-		if strings.EqualFold(strings.TrimSpace(entry.Person), strings.TrimSpace(person)) &&
-			strings.TrimSpace(entry.Team) != "" {
+		if HasPerson(entry.People, person) && strings.TrimSpace(entry.Team) != "" {
 			return strings.TrimSpace(entry.Team)
 		}
 	}
@@ -672,7 +677,7 @@ func supportDetails(input ExportInput, person string, subcategories map[string]S
 	sorted := sortedEntries(input.Entries)
 	result := make([]string, 0)
 	for _, entry := range sorted {
-		if !strings.EqualFold(strings.TrimSpace(entry.Person), strings.TrimSpace(person)) {
+		if !HasPerson(entry.People, person) {
 			continue
 		}
 		mode := subcategories[entry.SubcategoryID].Name
@@ -706,20 +711,16 @@ func sortedEntries(entries []WorkEntry) []WorkEntry {
 	return result
 }
 
+// supportMinutes returns the authoritative support total. Adding up the
+// per-person rows would double-count a two-person entry, because each name is
+// credited the entry's full minutes.
 func supportMinutes(report PeriodReport) int {
-	minutes := 0
-	for _, person := range report.SupportPeople {
-		minutes += person.Minutes
-	}
-	return minutes
+	return report.SupportMinutes
 }
 
+// supportInteractionCount returns the authoritative number of support entries.
 func supportInteractionCount(report PeriodReport) int {
-	interactions := 0
-	for _, person := range report.SupportPeople {
-		interactions += person.Interactions
-	}
-	return interactions
+	return report.SupportInteractions
 }
 
 func periodDays(fromDate, toDate string) int {

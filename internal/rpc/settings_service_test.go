@@ -42,7 +42,7 @@ func seedSupportEntryForRoster(t *testing.T, database *store.Store, userID, id, 
 		EndedAt:     started.Add(30 * time.Minute),
 		Minutes:     30,
 		Source:      domain.EntrySourceManual,
-		Person:      person,
+		People:      []string{person},
 		CreatedAt:   started,
 		UpdatedAt:   started,
 	}
