@@ -94,6 +94,8 @@ generated.PeriodReport protoReport() {
     toDate: '2026-10-19',
     total: minutes(90),
     entryCount: 2,
+    supportMinutes: 30,
+    supportInteractions: 1,
     categories: [
       generated.CategoryAllocation(
         categoryId: 'cat-1',
@@ -187,6 +189,8 @@ void main() {
       expect(report.supportPeople.single.person, 'Priya');
       expect(report.supportPeople.single.minutes, 30);
       expect(report.supportPeople.single.interactions, 1);
+      expect(report.supportMinutes, 30);
+      expect(report.supportInteractions, 1);
       expect(report.supportModes.single.name, 'Unblock');
       expect(report.weeks.single.weekStartDate, '2026-10-19');
       expect(report.weeks.single.topCategoryName, 'Initiatives');

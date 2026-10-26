@@ -168,8 +168,8 @@ func (e *WorkEntry) Normalize() {
 	e.UpdatedAt = utc(e.UpdatedAt)
 }
 
-// PrimaryPerson returns the first name, which is how single-person reporting
-// and display treat a multi-person entry until per-person attribution lands.
+// PrimaryPerson returns the first name. Reporting credits every name in full;
+// this helper is for surfaces that need a single leading name.
 func (e WorkEntry) PrimaryPerson() string {
 	for _, person := range e.People {
 		if trimmed := strings.TrimSpace(person); trimmed != "" {

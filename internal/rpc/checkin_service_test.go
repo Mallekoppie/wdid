@@ -179,6 +179,10 @@ func TestCheckInServiceSnapshotsTheAuthoritativeReport(t *testing.T) {
 	if people := totalMinutesByKey(totals.GetSupportByPerson()); people["Priya"] != 30 {
 		t.Fatalf("support by person = %v, want Priya 30m", people)
 	}
+	if totals.GetSupportMinutes() != 30 || totals.GetSupportInteractions() != 1 {
+		t.Fatalf("support totals = %dm/%d interactions, want the authoritative 30m support entry",
+			totals.GetSupportMinutes(), totals.GetSupportInteractions())
+	}
 
 	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkIn.GetId()}, token))
 	if err != nil {

@@ -68,6 +68,10 @@ PeriodReport aggregateReport() => const PeriodReport(
   toDate: '1970-01-01',
   totalMinutes: 240,
   entryCount: 3,
+  // Deliberately different from the 60m/2 per-person row so the Review stats
+  // prove they read the authoritative totals.
+  supportMinutes: 45,
+  supportInteractions: 1,
   categories: [
     CategoryAllocation(
       categoryId: 'cat-projects',
@@ -120,6 +124,8 @@ PeriodReport reportFor(DateTime start, DateTime end) {
     toDate: isoDate(end),
     totalMinutes: base.totalMinutes,
     entryCount: base.entryCount,
+    supportMinutes: base.supportMinutes,
+    supportInteractions: base.supportInteractions,
     categories: base.categories,
     subcategories: base.subcategories,
     supportPeople: base.supportPeople,
@@ -245,6 +251,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Open review'));
     await tester.pumpAndSettle();
+
+    // The Review stat shows the authoritative support total, never the
+    // per-person 1h.
+    expect(find.text('45m'), findsOneWidget);
 
     await tester.enterText(
       find.byType(TextField).at(0),

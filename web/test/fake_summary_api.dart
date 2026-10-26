@@ -124,6 +124,8 @@ class FakeSummaryApi implements SummaryApi {
       toDate: toDate,
       totalMinutes: report.totalMinutes,
       entryCount: report.entryCount,
+      supportMinutes: report.supportMinutes,
+      supportInteractions: report.supportInteractions,
       categories: report.categories,
       subcategories: report.subcategories,
       supportPeople: report.supportPeople,

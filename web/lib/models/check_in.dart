@@ -7,16 +7,23 @@ class CheckInTotals {
     this.byCategory = const {},
     this.bySubcategory = const {},
     this.supportByPerson = const {},
+    this.supportMinutes = 0,
+    this.supportInteractions = 0,
   });
 
   final int minutes;
   final Map<String, int> byInitiative;
   final Map<String, int> byCategory;
   final Map<String, int> bySubcategory;
+
+  /// Per-person rows credit each name the entry's full minutes, so their sum
+  /// is not the support total.
   final Map<String, int> supportByPerson;
 
-  int get supportMinutes =>
-      supportByPerson.values.fold(0, (total, value) => total + value);
+  /// Authoritative support totals snapshotted from the period report. Never
+  /// derived by adding up [supportByPerson].
+  final int supportMinutes;
+  final int supportInteractions;
 
   factory CheckInTotals.fromJson(Map<String, dynamic> json) => CheckInTotals(
     minutes: (json['minutes'] as num?)?.round() ?? 0,
@@ -24,6 +31,8 @@ class CheckInTotals {
     byCategory: _intMap(json['byCategory']),
     bySubcategory: _intMap(json['bySubcategory']),
     supportByPerson: _intMap(json['supportByPerson']),
+    supportMinutes: (json['supportMinutes'] as num?)?.round() ?? 0,
+    supportInteractions: (json['supportInteractions'] as num?)?.round() ?? 0,
   );
 
   Map<String, dynamic> toJson() => {
@@ -32,6 +41,8 @@ class CheckInTotals {
     'byCategory': byCategory,
     'bySubcategory': bySubcategory,
     'supportByPerson': supportByPerson,
+    'supportMinutes': supportMinutes,
+    'supportInteractions': supportInteractions,
   };
 
   static Map<String, int> _intMap(Object? value) {

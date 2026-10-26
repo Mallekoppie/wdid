@@ -9,6 +9,8 @@ class PeriodReport {
     required this.toDate,
     this.totalMinutes = 0,
     this.entryCount = 0,
+    this.supportMinutes = 0,
+    this.supportInteractions = 0,
     this.categories = const [],
     this.subcategories = const [],
     this.supportPeople = const [],
@@ -22,6 +24,13 @@ class PeriodReport {
   final String toDate;
   final int totalMinutes;
   final int entryCount;
+
+  /// Authoritative support totals: minutes of every support entry and the
+  /// number of support entries. Per-person allocations credit each name the
+  /// entry's full minutes, so they may add up to more than these totals.
+  final int supportMinutes;
+  final int supportInteractions;
+
   final List<CategoryAllocation> categories;
   final List<SubcategoryAllocation> subcategories;
   final List<SupportPersonAllocation> supportPeople;

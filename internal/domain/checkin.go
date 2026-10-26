@@ -67,6 +67,11 @@ type CheckInTotals struct {
 	ByCategory      map[string]int `json:"byCategory,omitempty"`
 	BySubcategory   map[string]int `json:"bySubcategory,omitempty"`
 	SupportByPerson map[string]int `json:"supportByPerson,omitempty"`
+	// SupportMinutes and SupportInteractions are the authoritative support
+	// totals captured from the period report. SupportByPerson rows credit each
+	// name the full entry minutes, so their sum may exceed SupportMinutes.
+	SupportMinutes      int `json:"supportMinutes"`
+	SupportInteractions int `json:"supportInteractions"`
 }
 
 // CheckInTotalsFromReport snapshots the authoritative period report into the
@@ -74,10 +79,12 @@ type CheckInTotals struct {
 // subcategory ID; support people keep their display spelling.
 func CheckInTotalsFromReport(report PeriodReport) CheckInTotals {
 	totals := CheckInTotals{
-		Minutes:         report.TotalMinutes,
-		ByCategory:      make(map[string]int, len(report.Categories)),
-		BySubcategory:   make(map[string]int, len(report.Subcategories)),
-		SupportByPerson: make(map[string]int, len(report.SupportPeople)),
+		Minutes:             report.TotalMinutes,
+		ByCategory:          make(map[string]int, len(report.Categories)),
+		BySubcategory:       make(map[string]int, len(report.Subcategories)),
+		SupportByPerson:     make(map[string]int, len(report.SupportPeople)),
+		SupportMinutes:      report.SupportMinutes,
+		SupportInteractions: report.SupportInteractions,
 	}
 	for _, category := range report.Categories {
 		totals.ByCategory[category.CategoryID] = category.Minutes
