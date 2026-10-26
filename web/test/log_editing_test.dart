@@ -93,6 +93,7 @@ Future<FakeEntryApi> pumpLog(
   Completer<List<WorkEntry>>? logGate,
   bool settle = true,
   FakeCategoryApi? categoryApi,
+  AppSettings settings = const AppSettings(),
 }) async {
   tester.view.physicalSize = const Size(1600, 1400);
   tester.view.devicePixelRatio = 1.0;
@@ -123,7 +124,7 @@ Future<FakeEntryApi> pumpLog(
               subcategory('sub-s', 'cat-s', 'Unblock'),
             ],
           ),
-      settingsApiBuilder: (_) => FakeSettingsApi(settings: const AppSettings()),
+      settingsApiBuilder: (_) => FakeSettingsApi(settings: settings),
       entryApiBuilder: (_) => entryApi,
     ),
   );
@@ -600,6 +601,51 @@ void main() {
     expect(find.text('PR #412'), findsOneWidget);
     expect(find.text('TAGS'), findsOneWidget);
     expect(find.text('migration'), findsOneWidget);
+  });
+
+  testWidgets('row actions are 48px targets and rows keep vertical padding', (
+    tester,
+  ) async {
+    await pumpLog(
+      tester,
+      entries: [
+        testWorkEntry(id: 'entry-a', description: 'Backfill script skeleton'),
+      ],
+    );
+
+    final target = tester.getSize(find.byTooltip('Row actions'));
+    expect(target.width, greaterThanOrEqualTo(48));
+    expect(target.height, greaterThanOrEqualTo(48));
+
+    // The header keeps clear space above and below its text instead of
+    // letting the description sit on the divider.
+    final description = find.text('Backfill script skeleton');
+    final header = find
+        .ancestor(of: description, matching: find.byType(InkWell))
+        .first;
+    final descriptionRect = tester.getRect(description);
+    final headerRect = tester.getRect(header);
+    expect(descriptionRect.top - headerRect.top, greaterThanOrEqualTo(10));
+    expect(
+      headerRect.bottom - descriptionRect.bottom,
+      greaterThanOrEqualTo(10),
+    );
+  });
+
+  testWidgets('compact density still keeps the row action at 48px', (
+    tester,
+  ) async {
+    await pumpLog(
+      tester,
+      settings: const AppSettings(density: DensityPreference.compact),
+      entries: [
+        testWorkEntry(id: 'entry-a', description: 'Backfill script skeleton'),
+      ],
+    );
+
+    final target = tester.getSize(find.byTooltip('Row actions'));
+    expect(target.width, greaterThanOrEqualTo(48));
+    expect(target.height, greaterThanOrEqualTo(48));
   });
 
   testWidgets('shows loading, error and empty states', (tester) async {
