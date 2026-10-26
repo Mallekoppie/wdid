@@ -27,13 +27,18 @@ message WorkEntry {
   google.protobuf.Timestamp ended_at = 7;
   google.protobuf.Duration duration = 8;
   string local_date = 9;
-  string person = 10;
+  // Retired single-person field; records now carry an ordered name list.
+  reserved 10;
+  reserved "person";
   string team = 11;
   repeated string tags = 12;
   repeated Link links = 13;
   EntrySource source = 14;
   google.protobuf.Timestamp created_at = 15;
   google.protobuf.Timestamp updated_at = 16;
+  // Ordered, case-insensitively deduplicated names. At least one name is
+  // required when the category's reporting role is support.
+  repeated string people = 17;
 }
 
 message ListEntriesRequest {
@@ -86,11 +91,15 @@ message CreateEntryRequest {
   // duration from Settings decides the block length.
   google.protobuf.Timestamp ended_at = 6;
   google.protobuf.Duration duration = 7;
-  string person = 8;
+  // Retired single-person field; send people instead.
+  reserved 8;
+  reserved "person";
   string team = 9;
   repeated string tags = 10;
   repeated Link links = 11;
   EntrySource source = 12;
+  // Required when the category's reporting role is support.
+  repeated string people = 13;
 }
 
 message CreateEntryResponse {
@@ -108,10 +117,13 @@ message UpdateEntryRequest {
   google.protobuf.Timestamp started_at = 6;
   google.protobuf.Timestamp ended_at = 7;
   google.protobuf.Duration duration = 8;
-  string person = 9;
+  // Retired single-person field; send people instead.
+  reserved 9;
+  reserved "person";
   string team = 10;
   repeated string tags = 11;
   repeated Link links = 12;
+  repeated string people = 13;
 }
 
 message UpdateEntryResponse {

@@ -86,13 +86,15 @@ type WorkEntry struct {
 	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
 	Duration      *durationpb.Duration   `protobuf:"bytes,8,opt,name=duration,proto3" json:"duration,omitempty"`
 	LocalDate     string                 `protobuf:"bytes,9,opt,name=local_date,json=localDate,proto3" json:"local_date,omitempty"`
-	Person        string                 `protobuf:"bytes,10,opt,name=person,proto3" json:"person,omitempty"`
 	Team          string                 `protobuf:"bytes,11,opt,name=team,proto3" json:"team,omitempty"`
 	Tags          []string               `protobuf:"bytes,12,rep,name=tags,proto3" json:"tags,omitempty"`
 	Links         []*Link                `protobuf:"bytes,13,rep,name=links,proto3" json:"links,omitempty"`
 	Source        EntrySource            `protobuf:"varint,14,opt,name=source,proto3,enum=wdid.v1.EntrySource" json:"source,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// Ordered, case-insensitively deduplicated names. At least one name is
+	// required when the category's reporting role is support.
+	People        []string `protobuf:"bytes,17,rep,name=people,proto3" json:"people,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -190,13 +192,6 @@ func (x *WorkEntry) GetLocalDate() string {
 	return ""
 }
 
-func (x *WorkEntry) GetPerson() string {
-	if x != nil {
-		return x.Person
-	}
-	return ""
-}
-
 func (x *WorkEntry) GetTeam() string {
 	if x != nil {
 		return x.Team
@@ -235,6 +230,13 @@ func (x *WorkEntry) GetCreatedAt() *timestamppb.Timestamp {
 func (x *WorkEntry) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *WorkEntry) GetPeople() []string {
+	if x != nil {
+		return x.People
 	}
 	return nil
 }
@@ -539,13 +541,14 @@ type CreateEntryRequest struct {
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	// When both ended_at and duration are absent, the user's default entry
 	// duration from Settings decides the block length.
-	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	Duration      *durationpb.Duration   `protobuf:"bytes,7,opt,name=duration,proto3" json:"duration,omitempty"`
-	Person        string                 `protobuf:"bytes,8,opt,name=person,proto3" json:"person,omitempty"`
-	Team          string                 `protobuf:"bytes,9,opt,name=team,proto3" json:"team,omitempty"`
-	Tags          []string               `protobuf:"bytes,10,rep,name=tags,proto3" json:"tags,omitempty"`
-	Links         []*Link                `protobuf:"bytes,11,rep,name=links,proto3" json:"links,omitempty"`
-	Source        EntrySource            `protobuf:"varint,12,opt,name=source,proto3,enum=wdid.v1.EntrySource" json:"source,omitempty"`
+	EndedAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
+	Duration *durationpb.Duration   `protobuf:"bytes,7,opt,name=duration,proto3" json:"duration,omitempty"`
+	Team     string                 `protobuf:"bytes,9,opt,name=team,proto3" json:"team,omitempty"`
+	Tags     []string               `protobuf:"bytes,10,rep,name=tags,proto3" json:"tags,omitempty"`
+	Links    []*Link                `protobuf:"bytes,11,rep,name=links,proto3" json:"links,omitempty"`
+	Source   EntrySource            `protobuf:"varint,12,opt,name=source,proto3,enum=wdid.v1.EntrySource" json:"source,omitempty"`
+	// Required when the category's reporting role is support.
+	People        []string `protobuf:"bytes,13,rep,name=people,proto3" json:"people,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -629,13 +632,6 @@ func (x *CreateEntryRequest) GetDuration() *durationpb.Duration {
 	return nil
 }
 
-func (x *CreateEntryRequest) GetPerson() string {
-	if x != nil {
-		return x.Person
-	}
-	return ""
-}
-
 func (x *CreateEntryRequest) GetTeam() string {
 	if x != nil {
 		return x.Team
@@ -662,6 +658,13 @@ func (x *CreateEntryRequest) GetSource() EntrySource {
 		return x.Source
 	}
 	return EntrySource_ENTRY_SOURCE_UNSPECIFIED
+}
+
+func (x *CreateEntryRequest) GetPeople() []string {
+	if x != nil {
+		return x.People
+	}
+	return nil
 }
 
 type CreateEntryResponse struct {
@@ -720,10 +723,10 @@ type UpdateEntryRequest struct {
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	EndedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
 	Duration      *durationpb.Duration   `protobuf:"bytes,8,opt,name=duration,proto3" json:"duration,omitempty"`
-	Person        string                 `protobuf:"bytes,9,opt,name=person,proto3" json:"person,omitempty"`
 	Team          string                 `protobuf:"bytes,10,opt,name=team,proto3" json:"team,omitempty"`
 	Tags          []string               `protobuf:"bytes,11,rep,name=tags,proto3" json:"tags,omitempty"`
 	Links         []*Link                `protobuf:"bytes,12,rep,name=links,proto3" json:"links,omitempty"`
+	People        []string               `protobuf:"bytes,13,rep,name=people,proto3" json:"people,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -814,13 +817,6 @@ func (x *UpdateEntryRequest) GetDuration() *durationpb.Duration {
 	return nil
 }
 
-func (x *UpdateEntryRequest) GetPerson() string {
-	if x != nil {
-		return x.Person
-	}
-	return ""
-}
-
 func (x *UpdateEntryRequest) GetTeam() string {
 	if x != nil {
 		return x.Team
@@ -838,6 +834,13 @@ func (x *UpdateEntryRequest) GetTags() []string {
 func (x *UpdateEntryRequest) GetLinks() []*Link {
 	if x != nil {
 		return x.Links
+	}
+	return nil
+}
+
+func (x *UpdateEntryRequest) GetPeople() []string {
+	if x != nil {
+		return x.People
 	}
 	return nil
 }
@@ -1079,7 +1082,7 @@ var File_entries_proto protoreflect.FileDescriptor
 
 const file_entries_proto_rawDesc = "" +
 	"\n" +
-	"\rentries.proto\x12\awdid.v1\x1a\x10categories.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x04\n" +
+	"\rentries.proto\x12\awdid.v1\x1a\x10categories.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfe\x04\n" +
 	"\tWorkEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\tR\n" +
@@ -1092,9 +1095,7 @@ const file_entries_proto_rawDesc = "" +
 	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x125\n" +
 	"\bduration\x18\b \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x1d\n" +
 	"\n" +
-	"local_date\x18\t \x01(\tR\tlocalDate\x12\x16\n" +
-	"\x06person\x18\n" +
-	" \x01(\tR\x06person\x12\x12\n" +
+	"local_date\x18\t \x01(\tR\tlocalDate\x12\x12\n" +
 	"\x04team\x18\v \x01(\tR\x04team\x12\x12\n" +
 	"\x04tags\x18\f \x03(\tR\x04tags\x12#\n" +
 	"\x05links\x18\r \x03(\v2\r.wdid.v1.LinkR\x05links\x12,\n" +
@@ -1102,7 +1103,9 @@ const file_entries_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x8d\x03\n" +
+	"updated_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x16\n" +
+	"\x06people\x18\x11 \x03(\tR\x06peopleJ\x04\b\n" +
+	"\x10\vR\x06person\"\x8d\x03\n" +
 	"\x12ListEntriesRequest\x12\x1d\n" +
 	"\n" +
 	"local_date\x18\x01 \x01(\tR\tlocalDate\x12.\n" +
@@ -1127,7 +1130,7 @@ const file_entries_proto_rawDesc = "" +
 	"\x0fGetEntryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"<\n" +
 	"\x10GetEntryResponse\x12(\n" +
-	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"\xd4\x03\n" +
+	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"\xe2\x03\n" +
 	"\x12CreateEntryRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12%\n" +
@@ -1137,15 +1140,15 @@ const file_entries_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x125\n" +
-	"\bduration\x18\a \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x16\n" +
-	"\x06person\x18\b \x01(\tR\x06person\x12\x12\n" +
+	"\bduration\x18\a \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x12\n" +
 	"\x04team\x18\t \x01(\tR\x04team\x12\x12\n" +
 	"\x04tags\x18\n" +
 	" \x03(\tR\x04tags\x12#\n" +
 	"\x05links\x18\v \x03(\v2\r.wdid.v1.LinkR\x05links\x12,\n" +
-	"\x06source\x18\f \x01(\x0e2\x14.wdid.v1.EntrySourceR\x06source\"?\n" +
+	"\x06source\x18\f \x01(\x0e2\x14.wdid.v1.EntrySourceR\x06source\x12\x16\n" +
+	"\x06people\x18\r \x03(\tR\x06peopleJ\x04\b\b\x10\tR\x06person\"?\n" +
 	"\x13CreateEntryResponse\x12(\n" +
-	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"\xb6\x03\n" +
+	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"\xc4\x03\n" +
 	"\x12UpdateEntryRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcategory_id\x18\x02 \x01(\tR\n" +
@@ -1156,12 +1159,13 @@ const file_entries_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x125\n" +
-	"\bduration\x18\b \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x16\n" +
-	"\x06person\x18\t \x01(\tR\x06person\x12\x12\n" +
+	"\bduration\x18\b \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x12\n" +
 	"\x04team\x18\n" +
 	" \x01(\tR\x04team\x12\x12\n" +
 	"\x04tags\x18\v \x03(\tR\x04tags\x12#\n" +
-	"\x05links\x18\f \x03(\v2\r.wdid.v1.LinkR\x05links\"?\n" +
+	"\x05links\x18\f \x03(\v2\r.wdid.v1.LinkR\x05links\x12\x16\n" +
+	"\x06people\x18\r \x03(\tR\x06peopleJ\x04\b\t\x10\n" +
+	"R\x06person\"?\n" +
 	"\x13UpdateEntryResponse\x12(\n" +
 	"\x05entry\x18\x01 \x01(\v2\x12.wdid.v1.WorkEntryR\x05entry\"$\n" +
 	"\x12DeleteEntryRequest\x12\x0e\n" +

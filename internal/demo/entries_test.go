@@ -163,6 +163,7 @@ func TestSeedDemoEntriesKeepTaxonomyAndRosterAttribution(t *testing.T) {
 	}
 
 	timerEntries, manualEntries := 0, 0
+	multiPersonEntries := 0
 	var noMode []domain.WorkEntry
 	supportModes := make(map[string]struct{})
 	for _, entry := range entries {
@@ -186,12 +187,17 @@ func TestSeedDemoEntriesKeepTaxonomyAndRosterAttribution(t *testing.T) {
 					entry.ID, entry.SubcategoryID, category.Name)
 			}
 		case domain.CategoryRoleSupport:
-			if entry.Person == "" {
+			if len(entry.People) == 0 {
 				t.Fatalf("support entry %q has no person", entry.ID)
 			}
-			if _, ok := roster[strings.ToLower(entry.Person)]; !ok {
-				t.Fatalf("support entry %q person %q is not on the roster %v",
-					entry.ID, entry.Person, settings.SupportPeople)
+			if len(entry.People) > 1 {
+				multiPersonEntries++
+			}
+			for _, person := range entry.People {
+				if _, ok := roster[strings.ToLower(person)]; !ok {
+					t.Fatalf("support entry %q person %q is not on the roster %v",
+						entry.ID, person, settings.SupportPeople)
+				}
 			}
 			if entry.SubcategoryID == "" {
 				noMode = append(noMode, entry)
@@ -234,6 +240,9 @@ func TestSeedDemoEntriesKeepTaxonomyAndRosterAttribution(t *testing.T) {
 	if timerEntries == 0 || manualEntries == 0 {
 		t.Fatalf("timer/manual entries = %d/%d, want both sources", timerEntries, manualEntries)
 	}
+	if multiPersonEntries == 0 {
+		t.Fatal("seeded entries have no multi-person support row")
+	}
 
 	if len(noMode) != 1 {
 		t.Fatalf("entries without a mode = %d, want exactly one", len(noMode))
@@ -242,7 +251,7 @@ func TestSeedDemoEntriesKeepTaxonomyAndRosterAttribution(t *testing.T) {
 	if noMode[0].LocalDate != anchorDate {
 		t.Fatalf("no-mode entry local date = %s, want the anchor %s", noMode[0].LocalDate, anchorDate)
 	}
-	if noMode[0].Person == "" || noMode[0].Description == "" {
+	if len(noMode[0].People) == 0 || noMode[0].Description == "" {
 		t.Fatalf("no-mode entry = %+v, want a person and description", noMode[0])
 	}
 
@@ -384,7 +393,7 @@ func TestSeedDemoEntriesFixtureDirectoryOverride(t *testing.T) {
 				"start": "11:00",
 				"minutes": 15,
 				"category": "Support",
-				"person": "Priya",
+				"people": ["Priya"],
 				"description": "Override interrupt",
 				"source": "manual"
 			}
@@ -411,17 +420,17 @@ func TestSeedDemoEntriesFixtureDirectoryOverride(t *testing.T) {
 		t.Fatalf("entries = %d, want the 2 override rows", len(entries))
 	}
 	anchorDate := testAnchor.Format(domain.DateLayout)
-	descriptions := map[string]string{}
+	descriptions := map[string][]string{}
 	for _, entry := range entries {
 		if entry.LocalDate != anchorDate {
 			t.Fatalf("override entry local date = %s, want %s", entry.LocalDate, anchorDate)
 		}
-		descriptions[entry.Description] = entry.Person
+		descriptions[entry.Description] = entry.People
 	}
 	if _, ok := descriptions["Override standup"]; !ok {
 		t.Fatalf("descriptions = %v, want the override standup row", descriptions)
 	}
-	if person, ok := descriptions["Override interrupt"]; !ok || person != "Priya" {
+	if people, ok := descriptions["Override interrupt"]; !ok || len(people) != 1 || people[0] != "Priya" {
 		t.Fatalf("descriptions = %v, want the override interrupt row for Priya", descriptions)
 	}
 }

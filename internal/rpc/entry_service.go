@@ -171,7 +171,7 @@ func (s *EntryService) CreateEntry(ctx context.Context, request *connect.Request
 		StartedAt:     startedAt,
 		EndedAt:       endedAt,
 		Minutes:       duration,
-		Person:        request.Msg.GetPerson(),
+		People:        request.Msg.GetPeople(),
 		Team:          request.Msg.GetTeam(),
 		Tags:          request.Msg.GetTags(),
 		Links:         fromProtoLinks(request.Msg.GetLinks()),
@@ -230,7 +230,7 @@ func (s *EntryService) UpdateEntry(ctx context.Context, request *connect.Request
 	entry.StartedAt = startedAt
 	entry.EndedAt = endedAt
 	entry.Minutes = duration
-	entry.Person = request.Msg.GetPerson()
+	entry.People = request.Msg.GetPeople()
 	entry.Team = request.Msg.GetTeam()
 	entry.Tags = request.Msg.GetTags()
 	entry.Links = fromProtoLinks(request.Msg.GetLinks())
@@ -320,7 +320,7 @@ func toProtoWorkEntry(entry domain.WorkEntry) *wdidv1.WorkEntry {
 		EndedAt:       endedAt,
 		Duration:      minutesDuration(entry.DurationMinutes()),
 		LocalDate:     entry.LocalDate,
-		Person:        entry.Person,
+		People:        entry.People,
 		Team:          entry.Team,
 		Tags:          entry.Tags,
 		Links:         toProtoLinks(entry.Links),

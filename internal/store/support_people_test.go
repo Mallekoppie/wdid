@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -12,15 +13,15 @@ import (
 // deterministic.
 func saveSupportSeedEntry(t *testing.T, database interface {
 	SaveWorkEntry(domain.WorkEntry) error
-}, userID string, category domain.Category, id string, person string) {
+}, userID string, category domain.Category, id string, people ...string) {
 	t.Helper()
 
 	start := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
-	entry := testWorkEntry(userID, category, "", start, "Support "+person)
+	entry := testWorkEntry(userID, category, "", start, "Support "+strings.Join(people, ", "))
 	entry.ID = id
-	entry.Person = person
+	entry.People = people
 	if err := database.SaveWorkEntry(entry); err != nil {
-		t.Fatalf("save support entry %q: %v", person, err)
+		t.Fatalf("save support entry %v: %v", people, err)
 	}
 }
 
@@ -54,6 +55,8 @@ func TestEnsureSupportPeopleSeedsOnceFromSupportEntries(t *testing.T) {
 	saveSupportSeedEntry(t, database, user.ID, support, "00000000-0000-7000-8000-000000000001", " Priya ")
 	saveSupportSeedEntry(t, database, user.ID, support, "00000000-0000-7000-8000-000000000002", "priya")
 	saveSupportSeedEntry(t, database, user.ID, support, "00000000-0000-7000-8000-000000000003", "Sam")
+	// Every name on a multi-person entry seeds the roster.
+	saveSupportSeedEntry(t, database, user.ID, support, "00000000-0000-7000-8000-000000000005", "Sam", "noor")
 	// A person on a non-support entry is never part of the roster.
 	saveSupportSeedEntry(t, database, user.ID, initiative, "00000000-0000-7000-8000-000000000004", "Mallory")
 
@@ -61,10 +64,11 @@ func TestEnsureSupportPeopleSeedsOnceFromSupportEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure support people: %v", err)
 	}
-	want := []string{"Priya", "Sam"}
+	want := []string{"Priya", "Sam", "noor"}
 	if len(seeded.SupportPeople) != len(want) ||
 		seeded.SupportPeople[0] != want[0] ||
-		seeded.SupportPeople[1] != want[1] {
+		seeded.SupportPeople[1] != want[1] ||
+		seeded.SupportPeople[2] != want[2] {
 		t.Fatalf("support people = %#v, want %#v", seeded.SupportPeople, want)
 	}
 	if !seeded.SupportPeopleSeeded {

@@ -239,16 +239,26 @@ func TestValidateWorkEntryRequiresPersonForSupport(t *testing.T) {
 
 	assertField(t, domain.ValidateWorkEntry(entry, category, &subcategory, 0), "person")
 
-	entry.Person = "Priya"
+	// Blank names do not count as a person.
+	entry.People = []string{"  ", ""}
+	assertField(t, domain.ValidateWorkEntry(entry, category, &subcategory, 0), "person")
+
+	entry.People = []string{"Priya"}
 	if err := domain.ValidateWorkEntry(entry, category, &subcategory, 0); err != nil {
 		t.Fatalf("support entry with a person: %v", err)
+	}
+
+	// An entry may support several people.
+	entry.People = []string{"Priya", "Sam"}
+	if err := domain.ValidateWorkEntry(entry, category, &subcategory, 0); err != nil {
+		t.Fatalf("support entry with several people: %v", err)
 	}
 
 	// A person is optional outside support-role categories.
 	initiative := validCategory()
 	initiativeSubcategory := validSubcategory()
 	entry = validWorkEntry()
-	entry.Person = ""
+	entry.People = nil
 	if err := domain.ValidateWorkEntry(entry, initiative, &initiativeSubcategory, 0); err != nil {
 		t.Fatalf("non-support entry without a person: %v", err)
 	}

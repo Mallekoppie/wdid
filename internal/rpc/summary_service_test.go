@@ -123,7 +123,7 @@ func TestSummaryServiceGetPeriodReportAggregates(t *testing.T) {
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
 		Description:   "Unblocked the CI keys",
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		StartedAt:     timestamppb.New(monday.Add(2 * time.Hour)),
 		Duration:      durationpb.New(30 * time.Minute),
 	})
@@ -224,7 +224,7 @@ func TestSummaryServiceSupportRollupsRespectPeriodBoundaries(t *testing.T) {
 		createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 			CategoryId:    supportID,
 			SubcategoryId: subcategoryID,
-			Person:        person,
+			People:        []string{person},
 			Description:   description,
 			StartedAt:     timestamppb.New(start),
 			Duration:      durationpb.New(length),
@@ -508,7 +508,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		Description:   "Late-night unblock",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 23, 30, 0, 0, time.UTC)),
 		Duration:      durationpb.New(25 * time.Minute),
@@ -516,7 +516,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		Description:   "Morning unblock",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(35 * time.Minute),
@@ -524,7 +524,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Sam",
+		People:        []string{"Sam"},
 		Description:   "First day of the period",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(20 * time.Minute),
@@ -532,7 +532,7 @@ func TestSummaryServiceSupportRollupsServeGRPCWeb(t *testing.T) {
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
-		Person:        "Sam",
+		People:        []string{"Sam"},
 		Description:   "Day after the period",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 26, 0, 30, 0, 0, time.UTC)),
 		Duration:      durationpb.New(40 * time.Minute),
@@ -665,7 +665,7 @@ func buildSummaryExportFixture(t *testing.T, server *httptest.Server, database *
 		SubcategoryId: unblockID,
 		Description:   "event bus design",
 		Outcome:       "3 risks identified before implementation",
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		Team:          "Payments",
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 19, 11, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(30 * time.Minute),

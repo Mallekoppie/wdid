@@ -282,19 +282,30 @@ func TestTimerStartRequiresPersonForSupportCategory(t *testing.T) {
 	if err := database.StartTimer(domain.ActiveTimer{
 		UserID:           userID,
 		CategoryID:       category.ID,
-		Person:           "Priya",
+		People:           []string{"Priya", "sam", "priya"},
 		StartedAt:        start,
 		SegmentStartedAt: start,
 	}); err != nil {
-		t.Fatalf("start support timer with person: %v", err)
+		t.Fatalf("start support timer with people: %v", err)
+	}
+
+	stored, active, err := database.ActiveTimer(userID)
+	if err != nil {
+		t.Fatalf("read active timer: %v", err)
+	}
+	if !active {
+		t.Fatal("active timer = none, want the started timer")
+	}
+	if len(stored.People) != 2 || stored.People[0] != "Priya" || stored.People[1] != "sam" {
+		t.Fatalf("timer people = %#v, want [Priya sam]", stored.People)
 	}
 
 	entry, _, err := database.StopTimer(userID, start.Add(30*time.Minute), domain.TimerStopSave, 240)
 	if err != nil {
 		t.Fatalf("stop support timer: %v", err)
 	}
-	if entry.Person != "Priya" {
-		t.Fatalf("entry person = %q, want Priya", entry.Person)
+	if len(entry.People) != 2 || entry.People[0] != "Priya" || entry.People[1] != "sam" {
+		t.Fatalf("entry people = %#v, want [Priya sam]", entry.People)
 	}
 }
 

@@ -18,7 +18,10 @@ const (
 	instanceIDKey    = "instance_id"
 	indexVersionKey  = "index_version"
 	schemaVersion    = 1
-	indexVersion     = 1
+	// indexVersion 2 rebuilds the person index with one key per name after the
+	// single person string became an ordered list. Read-time JSON compatibility
+	// lives on WorkEntry/ActiveTimer.UnmarshalJSON, not in a rewrite pass.
+	indexVersion = 2
 )
 
 // DefaultCategory describes one entry in the taxonomy every new account

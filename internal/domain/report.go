@@ -194,7 +194,9 @@ func BuildPeriodReport(
 		}
 
 		if category.Role == CategoryRoleSupport {
-			if person := strings.TrimSpace(entry.Person); person != "" {
+			// Ticket #27 assigns each named person the full entry minutes. Until
+			// then the first name keeps the existing single-person attribution.
+			if person := entry.PrimaryPerson(); person != "" {
 				key := strings.ToLower(person)
 				personTotal := supportPeople[key]
 				if personTotal == nil {

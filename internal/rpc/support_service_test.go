@@ -73,7 +73,7 @@ func TestSupportLoggingServesConnectAndGRPCWeb(t *testing.T) {
 				SubcategoryId: unblock,
 				Description:   "Unblocked the billing migration",
 				Outcome:       "Shipped the fix the same day",
-				Person:        "Priya",
+				People:        []string{"Priya", "Alex"},
 				Team:          "Payments",
 				StartedAt:     timestamppb.New(earlier),
 				Duration:      durationpb.New(45 * time.Minute),
@@ -81,8 +81,9 @@ func TestSupportLoggingServesConnectAndGRPCWeb(t *testing.T) {
 					{Label: "Thread", Url: "https://example.com/thread"},
 				},
 			})
-			if first.GetPerson() != "Priya" || first.GetTeam() != "Payments" {
-				t.Fatalf("support entry = %+v, want person and team", first)
+			if len(first.GetPeople()) != 2 || first.GetPeople()[0] != "Priya" ||
+				first.GetPeople()[1] != "Alex" || first.GetTeam() != "Payments" {
+				t.Fatalf("support entry = %+v, want people and team", first)
 			}
 			if first.GetSubcategoryId() != unblock {
 				t.Fatalf("mode = %q, want the support subcategory", first.GetSubcategoryId())
@@ -102,7 +103,7 @@ func TestSupportLoggingServesConnectAndGRPCWeb(t *testing.T) {
 				CategoryId:    supportID,
 				SubcategoryId: review,
 				Description:   "Reviewed the launch plan",
-				Person:        "Sam",
+				People:        []string{"Sam"},
 				StartedAt:     timestamppb.New(later),
 				Duration:      durationpb.New(30 * time.Minute),
 			})
@@ -128,15 +129,18 @@ func TestSupportLoggingServesConnectAndGRPCWeb(t *testing.T) {
 				}
 			}
 
-			byPerson, err := entries.ListEntries(context.Background(), withBearer(&wdidv1.ListEntriesRequest{
-				Person:     "priya",
-				CategoryId: supportID,
-			}, token))
-			if err != nil {
-				t.Fatalf("list support by person: %v", err)
-			}
-			if len(byPerson.Msg.GetEntries()) != 1 || byPerson.Msg.GetEntries()[0].GetId() != first.GetId() {
-				t.Fatalf("person entries = %+v, want Priya's entry", byPerson.Msg.GetEntries())
+			// The filter matches any name on an entry, case-insensitively.
+			for _, name := range []string{"priya", " ALEX "} {
+				byPerson, err := entries.ListEntries(context.Background(), withBearer(&wdidv1.ListEntriesRequest{
+					Person:     name,
+					CategoryId: supportID,
+				}, token))
+				if err != nil {
+					t.Fatalf("list support by %q: %v", name, err)
+				}
+				if len(byPerson.Msg.GetEntries()) != 1 || byPerson.Msg.GetEntries()[0].GetId() != first.GetId() {
+					t.Fatalf("entries for %q = %+v, want the multi-person entry", name, byPerson.Msg.GetEntries())
+				}
 			}
 
 			// A support entry without a person is rejected on the person field.
@@ -160,7 +164,7 @@ func TestSupportLoggingServesConnectAndGRPCWeb(t *testing.T) {
 				CategoryId:    supportID,
 				SubcategoryId: project,
 				Description:   "Cross-attributed support",
-				Person:        "Priya",
+				People:        []string{"Priya"},
 				StartedAt:     timestamppb.New(earlier),
 				Duration:      durationpb.New(15 * time.Minute),
 			}, token))

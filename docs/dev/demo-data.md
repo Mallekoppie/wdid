@@ -298,8 +298,9 @@ non-identical values.
 #### Work entries
 
 `entries.json` holds 14 templates. Each template names a window-relative day
-selector, a local wall-clock start, duration, category/project or mode, optional
-person, description, optional outcome and source. A selector is expanded once
+selector, a local wall-clock start, duration, category/project or mode, support
+people (one or more names for support entries), description, optional outcome
+and source. A selector is expanded once
 per matching day, so the dataset shape does not depend on the anchor's weekday:
 
 | Selector | Matching days | Entries per matching day |
@@ -332,8 +333,9 @@ Attribution uses the seeded taxonomy and roster. Weekday templates cover
 Client Delivery, Platform and Growth projects plus `Other · Meetings`; the
 sparse day uses `Other · Learning` and `Client Delivery · Acme migration`; the
 on-call day covers all five support modes (`Incident support`, `Pairing`,
-`Mentoring`, `Code review`, `1:1`) with roster people. Entries mix `timer` and
-`manual` sources.
+`Mentoring`, `Code review`, `1:1`) with roster people. The `Pairing` row names
+two people, `Sam · Alex`, so a multi-person support entry is always seeded.
+Entries mix `timer` and `manual` sources.
 
 Exactly one support entry has **no mode** and falls on the **anchor day**, so
 Today renders it as `No mode` with a `Set mode` action. It is the 15-minute

@@ -66,7 +66,7 @@ func (s *TimerService) StartTimer(ctx context.Context, request *connect.Request[
 		CategoryID:       request.Msg.GetCategoryId(),
 		SubcategoryID:    request.Msg.GetSubcategoryId(),
 		Description:      request.Msg.GetDescription(),
-		Person:           request.Msg.GetPerson(),
+		People:           request.Msg.GetPeople(),
 		StartedAt:        now,
 		SegmentStartedAt: now,
 	}
@@ -189,7 +189,7 @@ func toProtoActiveTimer(timer domain.ActiveTimer, now time.Time) *wdidv1.ActiveT
 		CategoryId:        timer.CategoryID,
 		SubcategoryId:     timer.SubcategoryID,
 		Description:       timer.Description,
-		Person:            timer.Person,
+		People:            timer.People,
 		StartedAt:         timestamppb.New(timer.StartedAt),
 		SegmentStartedAt:  timestamppb.New(timer.SegmentStartedAt),
 		AccumulatedPaused: durationpb.New(time.Duration(timer.AccumulatedSeconds) * time.Second),

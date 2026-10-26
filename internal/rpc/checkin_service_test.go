@@ -123,7 +123,7 @@ func TestCheckInServiceSnapshotsTheAuthoritativeReport(t *testing.T) {
 		CategoryId:    supportID,
 		SubcategoryId: unblockID,
 		Description:   "Unblocked CI keys",
-		Person:        "Priya",
+		People:        []string{"Priya"},
 		StartedAt:     timestamppb.New(time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)),
 		Duration:      durationpb.New(30 * time.Minute),
 	})

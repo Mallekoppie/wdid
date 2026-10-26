@@ -365,7 +365,7 @@ func buildEntriesCSV(input ExportInput) string {
 			subcategoryByID[entry.SubcategoryID].Name,
 			entry.Description,
 			entry.Outcome,
-			entry.Person,
+			strings.Join(entry.People, ";"),
 			entry.Team,
 			strings.Join(entry.Tags, ";"),
 			string(entry.Source),
@@ -396,7 +396,7 @@ func buildSupportCSV(input ExportInput) string {
 			formatInstant(entry.StartedAt),
 			formatInstant(entry.EndedAt),
 			fmt.Sprintf("%d", entry.DurationMinutes()),
-			entry.Person,
+			strings.Join(entry.People, ";"),
 			subcategoryByID[entry.SubcategoryID].Name,
 			entry.Team,
 			entry.Description,
@@ -481,7 +481,7 @@ type exportEntry struct {
 	Subcategory   string       `json:"subcategory"`
 	Description   string       `json:"description"`
 	Outcome       string       `json:"outcome"`
-	Person        string       `json:"person"`
+	People        []string     `json:"people"`
 	Team          string       `json:"team"`
 	Tags          []string     `json:"tags"`
 	Source        string       `json:"source"`
@@ -529,6 +529,10 @@ func toExportEntry(entry WorkEntry, categories map[string]Category, subcategorie
 	if tags == nil {
 		tags = []string{}
 	}
+	people := entry.People
+	if people == nil {
+		people = []string{}
+	}
 	return exportEntry{
 		ID:            entry.ID,
 		Date:          entry.LocalDate,
@@ -541,7 +545,7 @@ func toExportEntry(entry WorkEntry, categories map[string]Category, subcategorie
 		Subcategory:   subcategories[entry.SubcategoryID].Name,
 		Description:   entry.Description,
 		Outcome:       entry.Outcome,
-		Person:        entry.Person,
+		People:        people,
 		Team:          entry.Team,
 		Tags:          tags,
 		Source:        string(entry.Source),
@@ -660,19 +664,30 @@ func projectOutcomes(entries []WorkEntry, subcategoryID string) []string {
 
 func supportTeam(entries []WorkEntry, person string) string {
 	for _, entry := range entries {
-		if strings.EqualFold(strings.TrimSpace(entry.Person), strings.TrimSpace(person)) &&
-			strings.TrimSpace(entry.Team) != "" {
+		if entrySupportsPerson(entry, person) && strings.TrimSpace(entry.Team) != "" {
 			return strings.TrimSpace(entry.Team)
 		}
 	}
 	return ""
 }
 
+// entrySupportsPerson reports whether any name on the entry matches, using the
+// same case-insensitive comparison as the person filter.
+func entrySupportsPerson(entry WorkEntry, person string) bool {
+	target := strings.TrimSpace(person)
+	for _, name := range entry.People {
+		if strings.EqualFold(strings.TrimSpace(name), target) {
+			return true
+		}
+	}
+	return false
+}
+
 func supportDetails(input ExportInput, person string, subcategories map[string]Subcategory) []string {
 	sorted := sortedEntries(input.Entries)
 	result := make([]string, 0)
 	for _, entry := range sorted {
-		if !strings.EqualFold(strings.TrimSpace(entry.Person), strings.TrimSpace(person)) {
+		if !entrySupportsPerson(entry, person) {
 			continue
 		}
 		mode := subcategories[entry.SubcategoryID].Name
