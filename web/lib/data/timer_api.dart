@@ -199,7 +199,7 @@ class GrpcTimerApi implements TimerApi {
           categoryId: categoryId,
           subcategoryId: subcategoryId,
           description: description,
-          person: person,
+          people: person.isEmpty ? const [] : [person],
         ),
       );
       return _timerFromProto(response.timer);
@@ -275,7 +275,7 @@ TimerSnapshot _timerFromProto(generated.ActiveTimer timer) => TimerSnapshot(
   categoryId: timer.categoryId,
   subcategoryId: timer.subcategoryId,
   description: timer.description,
-  person: timer.person,
+  person: timer.people.join(', '),
   startedAt: timer.startedAt.toDateTime(),
   segmentStartedAt: timer.segmentStartedAt.toDateTime(),
   pausedAt: timer.hasPausedAt() ? timer.pausedAt.toDateTime() : null,

@@ -35,9 +35,12 @@ message ActiveTimer {
   // Elapsed time at the moment the response was built, excluding pauses.
   google.protobuf.Duration elapsed = 8;
   bool paused = 9;
+  // Retired single-person field; timers now carry an ordered name list.
+  reserved 10;
+  reserved "person";
   // Required when the category's reporting role is support, matching the
   // work-entry rule.
-  string person = 10;
+  repeated string people = 11;
 }
 
 message StartTimerRequest {
@@ -45,8 +48,11 @@ message StartTimerRequest {
   // Optional; must belong to the category.
   string subcategory_id = 2;
   string description = 3;
+  // Retired single-person field; send people instead.
+  reserved 4;
+  reserved "person";
   // Required when the category's reporting role is support.
-  string person = 4;
+  repeated string people = 5;
 }
 
 message StartTimerResponse {

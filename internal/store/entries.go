@@ -306,7 +306,7 @@ func workEntryMatches(entry domain.WorkEntry, filter WorkEntryFilter, query stri
 	if filter.SubcategoryID != "" && entry.SubcategoryID != filter.SubcategoryID {
 		return false
 	}
-	if filter.Person != "" && !strings.EqualFold(entry.Person, strings.TrimSpace(filter.Person)) {
+	if filter.Person != "" && !entrySupportsPerson(entry, filter.Person) {
 		return false
 	}
 	if !filter.From.IsZero() && entry.StartedAt.Before(filter.From) {
@@ -336,10 +336,26 @@ func entryIndexValues(entry domain.WorkEntry) map[string][]string {
 	if entry.SubcategoryID != "" {
 		indexes[idxEntriesSubcategoryBucket] = []string{entry.SubcategoryID}
 	}
-	if entry.Person != "" {
-		indexes[idxEntriesPersonBucket] = []string{strings.ToLower(entry.Person)}
+	if people := domain.NormalizeList(entry.People); len(people) > 0 {
+		values := make([]string, 0, len(people))
+		for _, person := range people {
+			values = append(values, strings.ToLower(person))
+		}
+		indexes[idxEntriesPersonBucket] = values
 	}
 	return indexes
+}
+
+// entrySupportsPerson reports whether any name on the entry matches the
+// filter, using the same case-insensitive, trimmed comparison the indexes use.
+func entrySupportsPerson(entry domain.WorkEntry, person string) bool {
+	target := strings.TrimSpace(person)
+	for _, name := range entry.People {
+		if strings.EqualFold(strings.TrimSpace(name), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func addEntryIndexes(tx *bbolt.Tx, entry domain.WorkEntry) error {

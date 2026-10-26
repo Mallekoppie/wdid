@@ -77,14 +77,14 @@ class FakeTimerRpc implements TimerRpc {
 generated.ActiveTimer protoTimer({
   bool paused = false,
   String description = 'Backfill script',
-  String person = '',
+  List<String> people = const [],
 }) {
   final started = DateTime.utc(2026, 10, 18, 9);
   return generated.ActiveTimer(
     categoryId: 'cat-1',
     subcategoryId: 'sub-1',
     description: description,
-    person: person,
+    people: people,
     startedAt: Timestamp.fromDateTime(started),
     segmentStartedAt: Timestamp.fromDateTime(
       started.add(const Duration(minutes: 10)),
@@ -136,7 +136,7 @@ void main() {
     expect(rpc.startRequest!.categoryId, 'cat-1');
     expect(rpc.startRequest!.subcategoryId, 'sub-1');
     expect(rpc.startRequest!.description, 'Backfill script');
-    expect(rpc.startRequest!.person, 'Priya');
+    expect(rpc.startRequest!.people, ['Priya']);
     expect(timer.categoryId, 'cat-1');
   });
 

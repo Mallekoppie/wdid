@@ -2,12 +2,20 @@
 
 **Status:** Accepted — 2026-10-25
 
-A person is the `person` string on a support work entry. There is no Person
-record, identifier, rename or migration path. A per-account **Person roster**
-persists common names as a convenience for one-tap selection; it is a list of
-names, so removing or editing one only changes the list of suggestions and never
-rewrites a historical entry. Repeated names are deduplicated case-insensitively,
-keeping the first spelling in stable order.
+A person is a name on a support work entry or active support timer. An entry
+holds an ordered list of names, and a support entry requires at least one. There
+is no Person record, identifier or rename. A per-account **Person roster**
+persists common names as a convenience for selection; it is a list of names, so
+removing or editing one only changes the list of suggestions and never rewrites
+a historical entry. Repeated names are deduplicated case-insensitively, keeping
+the first spelling in stable order.
+
+**JSON migration:** records written before multi-person support carry a single
+`"person":"Priya"` field. `WorkEntry.UnmarshalJSON` and
+`ActiveTimer.UnmarshalJSON` read it as a one-name list, so stored records
+continue to load without a rewrite pass. Every save writes the new
+`"people":["Priya"]` shape. The person index version is bumped so existing
+databases rebuild the index with one key per name.
 
 **Considered options:** a Person entity with identifiers and rename (rejected:
 entries are immutable records of what happened, a rename would silently rewrite
@@ -19,8 +27,8 @@ resurrected, so the roster is persisted with an internal seeded marker).
 
 **Consequences:** the roster lives in the per-account settings record and its
 internal `supportPeopleSeeded` marker is never exposed on the wire. It is seeded
-once from existing support-role entries and then replaced wholesale by
-`UpdateSettings`. Removing a name changes only the roster. Reports may show a
+once from every name on existing support-role entries and then replaced wholesale
+by `UpdateSettings`. Removing a name changes only the roster. Reports may show a
 person's spelling differently from the roster because report aggregation picks
 its own display spelling; that is acceptable while people are names rather than
 entities.

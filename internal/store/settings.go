@@ -101,10 +101,12 @@ func supportPeopleFromEntriesTx(tx *bbolt.Tx, userID string) ([]string, error) {
 		if roles[entry.CategoryID] != domain.CategoryRoleSupport {
 			continue
 		}
-		if strings.TrimSpace(entry.Person) == "" {
-			continue
+		for _, person := range entry.People {
+			if strings.TrimSpace(person) == "" {
+				continue
+			}
+			people = append(people, person)
 		}
-		people = append(people, entry.Person)
 	}
 	return people, nil
 }

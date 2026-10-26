@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -117,23 +118,25 @@ func (s EntrySource) Valid() bool {
 // WorkEntry is a recorded block of work time with exactly one category and an
 // optional subcategory from that category.
 type WorkEntry struct {
-	ID            string      `json:"id"`
-	UserID        string      `json:"userId"`
-	CategoryID    string      `json:"categoryId"`
-	SubcategoryID string      `json:"subcategoryId,omitempty"`
-	Description   string      `json:"description"`
-	Outcome       string      `json:"outcome,omitempty"`
-	StartedAt     time.Time   `json:"startedAt"`
-	EndedAt       time.Time   `json:"endedAt"`
-	Minutes       int         `json:"minutes"`
-	LocalDate     string      `json:"localDate"`
-	Person        string      `json:"person,omitempty"`
-	Team          string      `json:"team,omitempty"`
-	Tags          []string    `json:"tags,omitempty"`
-	Links         []Link      `json:"links,omitempty"`
-	Source        EntrySource `json:"source"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	UpdatedAt     time.Time   `json:"updatedAt"`
+	ID            string    `json:"id"`
+	UserID        string    `json:"userId"`
+	CategoryID    string    `json:"categoryId"`
+	SubcategoryID string    `json:"subcategoryId,omitempty"`
+	Description   string    `json:"description"`
+	Outcome       string    `json:"outcome,omitempty"`
+	StartedAt     time.Time `json:"startedAt"`
+	EndedAt       time.Time `json:"endedAt"`
+	Minutes       int       `json:"minutes"`
+	LocalDate     string    `json:"localDate"`
+	// People is the ordered, case-insensitively deduplicated list of names this
+	// entry supports. It is empty outside support-role categories.
+	People    []string    `json:"people,omitempty"`
+	Team      string      `json:"team,omitempty"`
+	Tags      []string    `json:"tags,omitempty"`
+	Links     []Link      `json:"links,omitempty"`
+	Source    EntrySource `json:"source"`
+	CreatedAt time.Time   `json:"createdAt"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 // DurationMinutes returns the recorded minutes, falling back to the timestamp
@@ -155,7 +158,7 @@ func (e *WorkEntry) Normalize() {
 	e.Description = strings.TrimSpace(e.Description)
 	e.Outcome = strings.TrimSpace(e.Outcome)
 	e.LocalDate = strings.TrimSpace(e.LocalDate)
-	e.Person = strings.TrimSpace(e.Person)
+	e.People = NormalizeList(e.People)
 	e.Team = strings.TrimSpace(e.Team)
 	e.Tags = NormalizeList(e.Tags)
 	e.Links = NormalizeLinks(e.Links)
@@ -163,6 +166,36 @@ func (e *WorkEntry) Normalize() {
 	e.EndedAt = utc(e.EndedAt)
 	e.CreatedAt = utc(e.CreatedAt)
 	e.UpdatedAt = utc(e.UpdatedAt)
+}
+
+// PrimaryPerson returns the first name, which is how single-person reporting
+// and display treat a multi-person entry until per-person attribution lands.
+func (e WorkEntry) PrimaryPerson() string {
+	for _, person := range e.People {
+		if trimmed := strings.TrimSpace(person); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// UnmarshalJSON accepts the legacy single "person" field so records written
+// before multi-person support load as a one-name list. Records written from now
+// on use "people".
+func (e *WorkEntry) UnmarshalJSON(data []byte) error {
+	type workEntry WorkEntry
+	aux := struct {
+		*workEntry
+		LegacyPerson string `json:"person"`
+	}{workEntry: (*workEntry)(e)}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(e.People) == 0 && strings.TrimSpace(aux.LegacyPerson) != "" {
+		e.People = NormalizeList([]string{aux.LegacyPerson})
+	}
+	return nil
 }
 
 // Normalize trims category input into its canonical form and stores

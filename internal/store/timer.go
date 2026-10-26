@@ -42,7 +42,7 @@ func (s *Store) StartTimer(timer domain.ActiveTimer) error {
 			return err
 		}
 
-		if category.Role == domain.CategoryRoleSupport && timer.Person == "" {
+		if category.Role == domain.CategoryRoleSupport && len(timer.People) == 0 {
 			return domain.ValidationError{Field: "person", Message: "is required for support timers"}
 		}
 
@@ -178,7 +178,7 @@ func (s *Store) StopTimer(userID string, now time.Time, action domain.TimerStopA
 			CategoryID:    timer.CategoryID,
 			SubcategoryID: timer.SubcategoryID,
 			Description:   timer.Description,
-			Person:        timer.Person,
+			People:        timer.People,
 			StartedAt:     timer.StartedAt,
 			EndedAt:       timer.StartedAt.Add(time.Duration(elapsedMinutes) * time.Minute),
 			Minutes:       elapsedMinutes,

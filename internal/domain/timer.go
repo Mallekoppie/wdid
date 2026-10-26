@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -67,7 +68,7 @@ type ActiveTimer struct {
 	CategoryID         string     `json:"categoryId"`
 	SubcategoryID      string     `json:"subcategoryId,omitempty"`
 	Description        string     `json:"description,omitempty"`
-	Person             string     `json:"person,omitempty"`
+	People             []string   `json:"people,omitempty"`
 	StartedAt          time.Time  `json:"startedAt"`
 	PausedAt           *time.Time `json:"pausedAt,omitempty"`
 	SegmentStartedAt   time.Time  `json:"segmentStartedAt"`
@@ -94,11 +95,29 @@ func (t *ActiveTimer) Normalize() {
 	t.CategoryID = strings.TrimSpace(t.CategoryID)
 	t.SubcategoryID = strings.TrimSpace(t.SubcategoryID)
 	t.Description = strings.TrimSpace(t.Description)
-	t.Person = strings.TrimSpace(t.Person)
+	t.People = NormalizeList(t.People)
 	t.StartedAt = utc(t.StartedAt)
 	t.SegmentStartedAt = utc(t.SegmentStartedAt)
 	if t.PausedAt != nil {
 		pausedAt := utc(*t.PausedAt)
 		t.PausedAt = &pausedAt
 	}
+}
+
+// UnmarshalJSON accepts the legacy single "person" field so a timer written
+// before multi-person support loads as a one-name list.
+func (t *ActiveTimer) UnmarshalJSON(data []byte) error {
+	type activeTimer ActiveTimer
+	aux := struct {
+		*activeTimer
+		LegacyPerson string `json:"person"`
+	}{activeTimer: (*activeTimer)(t)}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(t.People) == 0 && strings.TrimSpace(aux.LegacyPerson) != "" {
+		t.People = NormalizeList([]string{aux.LegacyPerson})
+	}
+	return nil
 }

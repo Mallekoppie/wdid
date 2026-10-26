@@ -200,7 +200,7 @@ function expandEntries() {
         minutes: template.minutes,
         category: template.category,
         subcategory: template.subcategory || '',
-        person: template.person || '',
+        people: Array.isArray(template.people) ? template.people : [],
         description: template.description,
         outcome: template.outcome || '',
         source: template.source,
@@ -247,15 +247,15 @@ function distinctDays(entries) {
 }
 
 function attribution(entry) {
-  return [entry.category, entry.subcategory, entry.person]
+  return [entry.category, entry.subcategory, entry.people.join(', ')]
     .filter((part) => part)
     .join(' · ');
 }
 
-/// SupportEntryRow renders `Support · <person> · <mode>` (no mode when the
+/// SupportEntryRow renders `Support · <people> · <mode>` (no mode when the
 /// entry is a mode-less interrupt), unlike the Log's category-first order.
 function supportAttribution(entry) {
-  return ['Support', entry.person, entry.subcategory]
+  return ['Support', entry.people.join(', '), entry.subcategory]
     .filter((part) => part)
     .join(' · ');
 }
@@ -288,10 +288,14 @@ function supportTotals(entries) {
   const byPerson = new Map();
   const byMode = new Map();
   for (const entry of support) {
-    const person = byPerson.get(entry.person) || { minutes: 0, interactions: 0 };
-    person.minutes += entry.minutes;
-    person.interactions += 1;
-    byPerson.set(entry.person, person);
+    // Each named person is credited the entry's full minutes and one
+    // interaction. Totals still come from the entries, never the sum of rows.
+    for (const name of entry.people) {
+      const person = byPerson.get(name) || { minutes: 0, interactions: 0 };
+      person.minutes += entry.minutes;
+      person.interactions += 1;
+      byPerson.set(name, person);
+    }
     if (entry.subcategory) {
       const mode = byMode.get(entry.subcategory) ||
         { minutes: 0, interactions: 0 };

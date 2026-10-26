@@ -38,7 +38,7 @@ func reportEntry(userID, categoryID, subcategoryID string, start time.Time, minu
 		StartedAt:     start,
 		EndedAt:       start.Add(time.Duration(minutes) * time.Minute),
 		Minutes:       minutes,
-		Person:        person,
+		People:        domain.NormalizeList([]string{person}),
 		Source:        domain.EntrySourceManual,
 	}
 }

@@ -33,15 +33,15 @@ _Avoid_: epic, goal, objective
 
 **Support**:
 Work in a category whose reporting role is `support`: time spent helping another
-person succeed. A support entry requires a person; its mode is its subcategory and
-its impact is its outcome.
+person succeed. A support entry holds an ordered list of people and requires at
+least one name; its mode is its subcategory and its impact is its outcome.
 _Avoid_: assistance, help, mentoring (that is a mode)
 
 **Person roster**:
 The per-account list of common support-person names offered wherever a support
-person is entered. It is a convenience list of names, not a directory of
-entities: adding or removing a name never changes any work entry, and there is
-no rename.
+person is entered. An entry may name several people from it. It is a convenience
+list of names, not a directory of entities: adding or removing a name never
+changes any work entry, and there is no rename.
 _Avoid_: contacts, people directory, person entity, team members
 
 **Other**:
