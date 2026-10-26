@@ -332,10 +332,8 @@ class _ReviewStats extends StatelessWidget {
     final scheme = theme.colorScheme;
     final total = report?.totalMinutes;
     final entries = report?.entryCount;
-    final support = report?.supportPeople.fold<int>(
-      0,
-      (sum, person) => sum + person.minutes,
-    );
+    // Authoritative support total; per-person rows may double-count an entry.
+    final support = report?.supportMinutes;
     Widget stat(String label, String value) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

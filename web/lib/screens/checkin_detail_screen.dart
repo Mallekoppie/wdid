@@ -776,18 +776,12 @@ class _Stats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final report = this.report;
-    final supportMinutes = report == null
-        ? checkIn.totals.supportMinutes
-        : report.supportPeople.fold(
-            0,
-            (total, person) => total + person.minutes,
-          );
-    final interactions = report == null
-        ? checkIn.totals.supportByPerson.length
-        : report.supportPeople.fold(
-            0,
-            (total, person) => total + person.interactions,
-          );
+    // Live totals come from the report; the snapshot fallback carries the
+    // authoritative values captured at creation. Neither sums per-person rows.
+    final supportMinutes =
+        report?.supportMinutes ?? checkIn.totals.supportMinutes;
+    final interactions =
+        report?.supportInteractions ?? checkIn.totals.supportInteractions;
     return Wrap(
       spacing: AppSpacing.xl,
       runSpacing: AppSpacing.md,

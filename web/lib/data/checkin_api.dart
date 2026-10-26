@@ -329,6 +329,8 @@ CheckInTotals checkInTotalsFromProto(generated.CheckInTotals totals) =>
       byCategory: _totalsMap(totals.byCategory),
       bySubcategory: _totalsMap(totals.bySubcategory),
       supportByPerson: _totalsMap(totals.supportByPerson),
+      supportMinutes: totals.supportMinutes,
+      supportInteractions: totals.supportInteractions,
     );
 
 Map<String, int> _totalsMap(Iterable<generated.CheckInTotal> totals) => {

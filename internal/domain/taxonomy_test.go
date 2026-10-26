@@ -419,6 +419,16 @@ func TestValidateCheckIn(t *testing.T) {
 		{name: "bad period start", mutate: func(c *domain.CheckIn) { c.PeriodStart = "01-07-2026" }, wantField: "periodStart"},
 		{name: "period ends before it starts", mutate: func(c *domain.CheckIn) { c.PeriodEnd = "2026-06-30" }, wantField: "periodEnd"},
 		{name: "negative totals", mutate: func(c *domain.CheckIn) { c.Totals.Minutes = -1 }, wantField: "totals"},
+		{
+			name:      "negative support minutes",
+			mutate:    func(c *domain.CheckIn) { c.Totals.SupportMinutes = -1 },
+			wantField: "totals",
+		},
+		{
+			name:      "negative support interactions",
+			mutate:    func(c *domain.CheckIn) { c.Totals.SupportInteractions = -1 },
+			wantField: "totals",
+		},
 	}
 
 	for _, test := range tests {

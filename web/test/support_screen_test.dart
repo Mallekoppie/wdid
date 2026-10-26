@@ -335,6 +335,10 @@ void main() {
         toDate: today,
         totalMinutes: 180,
         entryCount: 4,
+        // The authoritative totals count the shared entry once, while the
+        // per-person rows below credit each name in full.
+        supportMinutes: 150,
+        supportInteractions: 3,
         supportPeople: const [
           SupportPersonAllocation(
             person: 'Priya',
@@ -368,7 +372,9 @@ void main() {
       summaryApi: summary,
     );
 
-    expect(find.text('3h · 2 people · 4 interactions'), findsOneWidget);
+    // The header uses the authoritative 150m/3, not the per-person sum of
+    // 180m/4. The 2h30m is also above the one loaded 30m entry.
+    expect(find.text('2h 30m · 2 people · 3 interactions'), findsOneWidget);
     // Priya's report minutes, the person total, not the entry's 30m.
     expect(find.text('2h'), findsOneWidget);
     expect(find.text('3 interactions'), findsOneWidget);
