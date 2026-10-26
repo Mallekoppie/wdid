@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
+import '../theme/app_tokens.dart';
 import 'app_header.dart';
 import 'forms/entry_form.dart';
 import 'forms/shortcuts_dialog.dart';
 import 'forms/support_dialog.dart';
+import 'interrupt_resume_card.dart';
 import 'nav_rail.dart';
 import 'person_picker.dart';
 import 'timer_actions.dart';
@@ -96,8 +98,7 @@ class _AppShellState extends State<AppShell> {
       } else {
         final result = await stopTimerWithDecision(context, state: state);
         if (!mounted || result == null) return;
-        ScaffoldMessenger.of(context)
-            .showSnackBar(stoppedTimerSnackBar(context, state, result));
+        showStoppedTimerToast(context, result);
       }
     } catch (error) {
       if (!mounted) return;
@@ -207,29 +208,44 @@ class _AppShellState extends State<AppShell> {
       autofocus: true,
       onKeyEvent: _handleKey,
       child: Scaffold(
-        body: Column(
+        body: Stack(
           children: [
-            const AppHeader(),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 820;
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      NavRail(
-                        currentPath: widget.currentPath,
-                        compact: compact,
-                      ),
-                      VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: scheme.outlineVariant,
-                      ),
-                      Expanded(child: widget.child),
-                    ],
-                  );
-                },
+            Column(
+              children: [
+                const AppHeader(),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 820;
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          NavRail(
+                            currentPath: widget.currentPath,
+                            compact: compact,
+                          ),
+                          VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            color: scheme.outlineVariant,
+                          ),
+                          Expanded(child: widget.child),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              right: AppSpacing.xl,
+              bottom: AppSpacing.xl,
+              child: ListenableBuilder(
+                listenable: AppStateScope.read(context),
+                builder: (context, _) =>
+                    AppStateScope.read(context).interruptedTimer == null
+                    ? const SizedBox.shrink()
+                    : const InterruptResumeCard(),
               ),
             ),
           ],

@@ -10,6 +10,7 @@ import 'package:wdid_web/screens/today_screen.dart';
 import 'package:wdid_web/state/app_state.dart';
 import 'package:wdid_web/state/app_state_scope.dart';
 import 'package:wdid_web/widgets/app_shell.dart';
+import 'package:wdid_web/widgets/interrupt_resume_card.dart';
 import 'package:wdid_web/widgets/support_now_strip.dart';
 
 import 'fake_auth_api.dart';
@@ -340,6 +341,191 @@ void main() {
     },
   );
 
+  testWidgets('an interrupt shows a pinned, auto-width resume card', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()..elapsedMinutesOnStop = 20;
+    seedRunningTimer(timerApi);
+    await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+
+    final card = find.byType(InterruptResumeCard);
+    expect(card, findsOneWidget);
+    expect(
+      find.descendant(of: card, matching: find.text('Saved 20m')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.text('Initiatives · Billing migration'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.byTooltip('Done')),
+      findsOneWidget,
+    );
+
+    final rect = tester.getRect(card);
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(
+      rect.width,
+      lessThan(screen.width / 2),
+      reason: 'the card is auto-width, not full-width',
+    );
+    expect(
+      rect.right,
+      greaterThan(screen.width - 64),
+      reason: 'the card is pinned to the right edge',
+    );
+    expect(
+      rect.bottom,
+      greaterThan(screen.height - 64),
+      reason: 'the card is pinned to the bottom edge',
+    );
+  });
+
+  testWidgets('Resume on the card starts a fresh timer and closes it', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()..elapsedMinutesOnStop = 20;
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+
+    final card = find.byType(InterruptResumeCard);
+    expect(card, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: card,
+        matching: find.widgetWithText(FilledButton, 'Resume'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(timerApi.startCalls, 1, reason: 'Resume starts a new timer');
+    expect(timerApi.lastStartCategoryId, 'cat-1');
+    expect(timerApi.lastStartSubcategoryId, 'sub-1');
+    expect(timerApi.lastStartDescription, 'Backfill script');
+    expect(state.interruptedTimer, isNull);
+    expect(find.byType(InterruptResumeCard), findsNothing);
+  });
+
+  testWidgets('Done on the card forgets the stash without starting', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()..elapsedMinutesOnStop = 20;
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+
+    final card = find.byType(InterruptResumeCard);
+    expect(card, findsOneWidget);
+
+    await tester.tap(
+      find.descendant(of: card, matching: find.byTooltip('Done')),
+    );
+    await tester.pump();
+
+    expect(state.interruptedTimer, isNull);
+    expect(find.byType(InterruptResumeCard), findsNothing);
+    expect(timerApi.startCalls, 0);
+    expect(timerApi.timer, isNull);
+  });
+
+  testWidgets('an old interrupt stash never attaches Resume to a later stop', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()..elapsedMinutesOnStop = 20;
+    seedRunningTimer(timerApi);
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    // Interrupt the initiative and start support, leaving the stash in memory.
+    await tester.tap(find.text('Interrupt'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(MenuAnchor),
+        matching: find.widgetWithText(ChoiceChip, 'Priya'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(state.interruptedTimer, isNotNull);
+    expect(find.byType(InterruptResumeCard), findsOneWidget);
+
+    // Let the support-start toast retire so the stop toast is the only one.
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsNothing);
+
+    // This stop is ordinary even though an old interrupt stash exists.
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final snackBar = find.byType(SnackBar);
+    expect(snackBar, findsOneWidget);
+    expect(tester.widget<SnackBar>(snackBar).action, isNull);
+    expect(find.byType(SnackBarAction), findsNothing);
+    expect(
+      find.byType(InterruptResumeCard),
+      findsOneWidget,
+      reason: 'a later stop must not replace the interrupt card',
+    );
+    expect(state.interruptedTimer, isNotNull);
+  });
+
+  testWidgets('an ordinary stop shows only a brief, actionless toast', (
+    tester,
+  ) async {
+    final timerApi = FakeTimerApi()..elapsedMinutesOnStop = 20;
+    final state = await pumpApp(tester, timerApi: timerApi);
+
+    await state.startTimer(
+      categoryId: 'cat-1',
+      subcategoryId: 'sub-1',
+      description: 'Backfill script',
+    );
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final snackBar = find.byType(SnackBar);
+    expect(snackBar, findsOneWidget);
+    expect(
+      find.text('Saved 20m · Backfill script'),
+      findsOneWidget,
+      reason: 'the ordinary stop still confirms what it saved',
+    );
+    final bar = tester.widget<SnackBar>(snackBar);
+    expect(bar.action, isNull);
+    expect(bar.duration, const Duration(seconds: 2));
+    expect(find.byType(SnackBarAction), findsNothing);
+    expect(find.byType(InterruptResumeCard), findsNothing);
+
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(SnackBar),
+      findsNothing,
+      reason: 'the toast auto-dismisses',
+    );
+  });
+
   testWidgets('cancelling the under-a-minute decision starts nothing', (
     tester,
   ) async {
@@ -472,14 +658,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Nothing resumes automatically; the offer is explicit in the card and
-    // in the stop snackbar.
-    final label = 'Resume Initiatives · Billing migration';
+    // Nothing resumes automatically; the interrupt card survives the later
+    // ordinary stop and keeps carrying the offer.
+    final card = find.byType(InterruptResumeCard);
     expect(timerApi.timer, isNull);
     expect(timerApi.startCalls, 1);
-    expect(find.text(label), findsWidgets);
+    expect(card, findsOneWidget);
+    expect(state.interruptedTimer, isNotNull);
 
-    await tester.tap(find.widgetWithText(FilledButton, label));
+    await tester.tap(
+      find.descendant(
+        of: card,
+        matching: find.widgetWithText(FilledButton, 'Resume'),
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -488,13 +680,10 @@ void main() {
     expect(timerApi.lastStartSubcategoryId, 'sub-1');
     expect(timerApi.lastStartDescription, 'Backfill script');
     expect(state.interruptedTimer, isNull);
-
-    // Let the stop snackbar retire before checking the offer is gone.
-    await tester.pump(const Duration(seconds: 5));
     expect(
-      find.text(label),
+      find.byType(InterruptResumeCard),
       findsNothing,
-      reason: 'the offer disappears once the stash is consumed',
+      reason: 'the card disappears once the stash is consumed',
     );
   });
 
@@ -523,25 +712,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(state.interruptedTimer, isNotNull);
 
-    // Let the stop snackbar retire so only the Today card carries the offer.
+    // The interrupt card carries the offer once the toast has retired.
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 5));
-    final label = 'Resume Initiatives · Billing migration';
-    expect(find.text(label), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byType(InterruptResumeCard), findsOneWidget);
 
     await state.startTimer(categoryId: 'cat-1', subcategoryId: 'sub-1');
     await tester.pump();
 
     expect(state.interruptedTimer, isNull);
     expect(
-      find.text(label),
+      find.byType(InterruptResumeCard),
       findsNothing,
       reason: 'starting anything else retires the old Resume offer',
     );
   });
 
-  testWidgets('an unrelated stop snackbar has no Resume action', (
-    tester,
-  ) async {
+  testWidgets('an unrelated stop toast has no Resume action', (tester) async {
     final timerApi = FakeTimerApi();
     final state = await pumpApp(tester, timerApi: timerApi);
 
