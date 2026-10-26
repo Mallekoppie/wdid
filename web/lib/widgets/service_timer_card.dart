@@ -120,8 +120,7 @@ class _ServiceTimerCardState extends State<ServiceTimerCard> {
       if (!mounted) return;
       setState(() => _busy = false);
       if (result != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(stoppedTimerSnackBar(context, state, result));
+        showStoppedTimerToast(context, result);
       }
     } catch (error) {
       if (!mounted) return;

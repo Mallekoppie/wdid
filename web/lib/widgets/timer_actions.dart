@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../data/timer_api.dart';
@@ -65,44 +63,35 @@ Future<bool> stopForInterrupt(
   final timer = state.activeTimer;
   if (timer == null) return false;
 
-  final stash = InterruptedTimer(
-    categoryId: timer.categoryId,
-    subcategoryId: timer.subcategoryId,
-    description: timer.description,
-    people: timer.people,
-  );
   final result = await stopTimerWithDecision(context, state: state);
   if (result == null) return false;
-  if (!result.discarded) state.setInterruptedTimer(stash);
+  if (result.discarded) return true;
+  state.setInterruptedTimer(
+    InterruptedTimer(
+      categoryId: timer.categoryId,
+      subcategoryId: timer.subcategoryId,
+      description: timer.description,
+      people: timer.people,
+      minutes: result.minutes,
+    ),
+  );
   return true;
 }
 
-/// The snackbar shown after a stop. When an interrupt stash exists it also
-/// offers Resume; resuming is never automatic.
-SnackBar stoppedTimerSnackBar(
-  BuildContext context,
-  AppState state,
-  StoppedTimer? result,
-) {
-  final stash = state.interruptedTimer;
-  final messenger = ScaffoldMessenger.of(context);
-  return SnackBar(
-    content: Text(stoppedTimerMessage(result)),
-    action: stash == null
-        ? null
-        : SnackBarAction(
-            label: 'Resume ${state.interruptedTimerLabel}',
-            onPressed: () {
-              unawaited(
-                state.resumeInterruptedTimer().catchError((Object error) {
-                  messenger.showSnackBar(
-                    SnackBar(content: Text('Could not resume: $error')),
-                  );
-                }),
-              );
-            },
-          ),
-  );
+/// Shows the brief toast after an ordinary stop.
+///
+/// It never offers Resume: the interrupt stash belongs to the Resume card, so
+/// a stash left by an earlier interrupt cannot attach an action here.
+void showStoppedTimerToast(BuildContext context, StoppedTimer? result) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(stoppedTimerMessage(result)),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
 }
 
 class _TimerConflictDialog extends StatelessWidget {

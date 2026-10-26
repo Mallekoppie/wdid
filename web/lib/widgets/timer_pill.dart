@@ -99,8 +99,7 @@ class _TimerPillState extends State<TimerPill> {
       if (!mounted) return;
       setState(() => _stopping = false);
       if (result != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(stoppedTimerSnackBar(context, state, result));
+        showStoppedTimerToast(context, result);
       }
     } catch (error) {
       if (!mounted) return;
