@@ -11,6 +11,8 @@ import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/utils/time_utils.dart';
+import 'package:wdid_web/widgets/forms/date_range_dialog.dart';
+import 'package:wdid_web/widgets/forms/dialog_frame.dart';
 import 'package:wdid_web/widgets/panel.dart';
 import 'package:wdid_web/widgets/support_entry_row.dart';
 
@@ -292,6 +294,64 @@ void main() {
     expect(find.byType(SupportEntryRow), findsOneWidget);
   });
 
+  testWidgets('custom range reloads the support report and feed', (
+    tester,
+  ) async {
+    final summary = FakeSummaryApi();
+    final entryApi = await pumpSupport(tester, summaryApi: summary);
+
+    await tester.tap(periodDropdown().first);
+    await tester.pumpAndSettle();
+    expect(find.text('Custom range'), findsOneWidget);
+    await tester.tap(find.text('Custom range').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DateRangeDialog), findsOneWidget);
+    final frame = tester.widget<DialogFrame>(find.byType(DialogFrame));
+    expect(frame.maxWidth, DateRangeDialog.maxWidth);
+    expect(find.widgetWithText(ChoiceChip, 'This quarter'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'This month'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.pumpAndSettle();
+
+    final today = dateOnly(DateTime.now());
+    final monthStart = DateTime(today.year, today.month);
+    expect(entryApi.lastFromDate, isoDate(monthStart));
+    expect(entryApi.lastToDate, isoDate(today));
+    final reportRequest = summary.requests.lastWhere(
+      (request) => !request.currentWeek,
+    );
+    expect(reportRequest.from, isoDate(monthStart));
+    expect(reportRequest.to, isoDate(today));
+    expect(find.byType(DateRangeDialog), findsNothing);
+  });
+
+  testWidgets('cancelling custom range keeps the support period', (
+    tester,
+  ) async {
+    final summary = FakeSummaryApi();
+    final entryApi = await pumpSupport(tester, summaryApi: summary);
+    final from = entryApi.lastFromDate;
+    final to = entryApi.lastToDate;
+    final requests = summary.requests.length;
+
+    await tester.tap(periodDropdown().first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom range').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'This month'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DateRangeDialog), findsNothing);
+    expect(entryApi.lastFromDate, from);
+    expect(entryApi.lastToDate, to);
+    expect(summary.requests.length, requests);
+  });
+
   testWidgets('edits and deletes support entries', (tester) async {
     final entryApi = await pumpSupport(
       tester,
@@ -512,7 +572,11 @@ void main() {
     final label = tester.widget<Text>(
       find.text('Support · Priya, Sam, Alex, Noor · Unblock'),
     );
-    expect(label.maxLines, isNull, reason: 'the attribution must be able to wrap');
+    expect(
+      label.maxLines,
+      isNull,
+      reason: 'the attribution must be able to wrap',
+    );
     expect(
       label.overflow,
       isNot(TextOverflow.ellipsis),

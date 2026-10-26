@@ -11,6 +11,7 @@ import '../utils/entry_grouping.dart';
 import '../utils/time_utils.dart';
 import '../widgets/allocation_bars.dart';
 import '../widgets/app_dropdown.dart';
+import '../widgets/forms/date_range_dialog.dart';
 import '../widgets/forms/support_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
@@ -19,18 +20,31 @@ import '../widgets/support_entry_row.dart';
 enum _SupportPeriod {
   quarter('This quarter'),
   month('This month'),
-  all('All time');
+  all('All time'),
+  custom('Custom range');
 
   const _SupportPeriod(this.label);
   final String label;
 }
 
-DateTime _periodStart(_SupportPeriod period, AppState state) {
-  return switch (period) {
-    _SupportPeriod.quarter => startOfQuarter(state.today),
-    _SupportPeriod.month => DateTime(state.today.year, state.today.month, 1),
+/// The inclusive local-date range a period covers. Custom ranges fall back to
+/// the last seven days until the user picks one.
+DateTimeRange _periodRange(
+  _SupportPeriod period,
+  AppState state,
+  DateTimeRange? custom,
+) {
+  final today = state.today;
+  final fallback =
+      custom ?? DateTimeRange(start: addDays(today, -6), end: today);
+  final start = switch (period) {
+    _SupportPeriod.quarter => startOfQuarter(today),
+    _SupportPeriod.month => DateTime(today.year, today.month, 1),
     _SupportPeriod.all => DateTime(2000),
+    _SupportPeriod.custom => fallback.start,
   };
+  final end = period == _SupportPeriod.custom ? fallback.end : today;
+  return DateTimeRange(start: start, end: end);
 }
 
 /// Support work is work in a support-role category. Entries are read from
@@ -53,6 +67,7 @@ class _ServiceSupportScreen extends StatefulWidget {
 
 class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
   _SupportPeriod _period = _SupportPeriod.quarter;
+  DateTimeRange? _customRange;
   AppState? _state;
   bool _loaded = false;
   final _newPerson = TextEditingController();
@@ -88,16 +103,39 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
   void _load() {
     final state = _state;
     if (state == null) return;
+    final range = _periodRange(_period, state, _customRange);
     unawaited(
       state.loadSupport(
-        fromDate: isoDate(_periodStart(_period, state)),
-        toDate: state.todayIso,
+        fromDate: isoDate(range.start),
+        toDate: isoDate(range.end),
       ),
     );
   }
 
   void _selectPeriod(_SupportPeriod period) {
     setState(() => _period = period);
+    _load();
+  }
+
+  Future<void> _pickCustomRange(AppState state) async {
+    final picked = await showDateRangeDialog(
+      context,
+      initialRange: _periodRange(_period, state, _customRange),
+      today: state.today,
+      presets: [
+        for (final period in _SupportPeriod.values)
+          if (period != _SupportPeriod.custom)
+            DateRangePreset(
+              label: period.label,
+              range: _periodRange(period, state, null),
+            ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _customRange = picked;
+      _period = _SupportPeriod.custom;
+    });
     _load();
   }
 
@@ -282,7 +320,12 @@ class _ServiceSupportScreenState extends State<_ServiceSupportScreen> {
                         ),
                     ],
                     onChanged: (period) {
-                      if (period != null) _selectPeriod(period);
+                      if (period == null) return;
+                      if (period == _SupportPeriod.custom) {
+                        unawaited(_pickCustomRange(state));
+                      } else {
+                        _selectPeriod(period);
+                      }
                     },
                   ),
                 ),
