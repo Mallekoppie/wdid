@@ -501,30 +501,52 @@ async function fillDateField(page, label, value) {
   fail(`could not fill the ${label} field`);
 }
 
-/// Selects the Log's Custom range preset and enters [start]..[end] through the
-/// date-range picker's input mode. Using an explicit range keeps the assertions
-/// on the full seeded window regardless of the anchor's position in the month.
-async function selectLogWindow(page, start, end) {
-  await selectAppDropdown(page, 'This week', 'Custom range', 'Log period');
+/// The shared compact range dialog shows one button per date, labelled with the
+/// app's full date format ("EEE d MMM yyyy"). Match those rather than relying on
+/// widget types, which Flutter web does not expose to Playwright.
+const DIALOG_DATE_BUTTON = /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d{4}$/;
+
+/// Opens one of the shared dialog's date buttons and enters [value] through the
+/// single-date picker's input mode. The dialog stays open; its Apply commits the
+/// range.
+async function pickDialogDate(page, index, value) {
+  const dateButtons = page.getByRole('button', {
+    name: DIALOG_DATE_BUTTON,
+  });
+  const button = dateButtons.nth(index);
+  await button.waitFor({ state: 'attached', timeout: 10000 });
+  await button.click({ timeout: 5000 });
+  await page.waitForTimeout(800);
 
   const switchToInput = page.getByRole('button', {
     name: 'Switch to input',
     exact: true,
   });
-  await switchToInput
-    .first()
-    .waitFor({ state: 'attached', timeout: 10000 })
-    .catch(() => {});
   if (await switchToInput.count()) {
     await switchToInput.first().click();
     await page.waitForTimeout(500);
   }
 
-  await fillDateField(page, 'Start Date', compactDate(start));
-  await fillDateField(page, 'End Date', compactDate(end));
+  await fillDateField(page, 'Enter Date', value);
   const ok = page.getByRole('button', { name: 'OK', exact: true });
   await ok.first().waitFor({ state: 'attached', timeout: 10000 });
   await ok.first().click();
+  await page.waitForTimeout(800);
+}
+
+/// Selects the Log's Custom range preset and sets [start]..[end] through the
+/// shared compact date-range dialog. Using an explicit range keeps the
+/// assertions on the full seeded window regardless of the anchor's position in
+/// the month.
+async function selectLogWindow(page, start, end) {
+  await selectAppDropdown(page, 'This week', 'Custom range', 'Log period');
+
+  await pickDialogDate(page, 0, compactDate(start));
+  await pickDialogDate(page, 1, compactDate(end));
+
+  const apply = page.getByRole('button', { name: 'Apply', exact: true });
+  await apply.first().waitFor({ state: 'attached', timeout: 10000 });
+  await apply.first().click();
   await page.waitForTimeout(1500);
   log(
     `Log period: custom ${isoDate(start)}..${isoDate(end)} ` +
