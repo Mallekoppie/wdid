@@ -37,6 +37,7 @@ func newServiceConfig(t *testing.T, mutate func(*config.Config)) (*auth.Service,
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid-auth.db"),
+		AuthMode:             config.AuthModeServer,
 		BootstrapSecret:      testBootstrapSecret,
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
@@ -59,6 +60,30 @@ func newServiceConfig(t *testing.T, mutate func(*config.Config)) (*auth.Service,
 	})
 
 	return auth.NewService(database, cfg), database, cfg
+}
+
+// newLocalService builds the single-user local-mode service. It has no
+// bootstrap secret: the first local run creates its one account from a username.
+func newLocalService(t *testing.T) (*auth.Service, *store.Store, config.Config) {
+	t.Helper()
+
+	return newServiceConfig(t, func(cfg *config.Config) {
+		cfg.AuthMode = config.AuthModeLocal
+		cfg.BootstrapSecret = ""
+	})
+}
+
+func registerLocal(t *testing.T, service *auth.Service, username, password string) (domain.User, string) {
+	t.Helper()
+
+	user, token, err := service.Register(auth.RegisterRequest{
+		Username: username,
+		Password: password,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("register local account: %v", err)
+	}
+	return user, token
 }
 
 func withZitadel(cfg *config.Config) {
@@ -509,6 +534,93 @@ func TestOIDCMissingEmailIsRejected(t *testing.T) {
 	}))
 	if !errors.Is(err, auth.ErrUnauthenticated) {
 		t.Fatalf("error = %v, want ErrUnauthenticated", err)
+	}
+}
+
+func TestLocalSetupCreatesTheOnlyAccountWithoutEmail(t *testing.T) {
+	service, database, cfg := newLocalService(t)
+
+	user, token := registerLocal(t, service, "malle", "")
+	if user.Username != "malle" {
+		t.Fatalf("username = %q, want malle", user.Username)
+	}
+	if user.Email != "" {
+		t.Fatalf("email = %q, want empty for a local account", user.Email)
+	}
+	if user.Role != domain.RoleAdmin {
+		t.Fatalf("role = %q, want admin for the single local account", user.Role)
+	}
+
+	count, err := database.CountUsers()
+	if err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("users = %d, want 1", count)
+	}
+
+	identity := localIdentity(t, service, cfg, token)
+	if identity.UserID != user.ID || identity.Username != "malle" {
+		t.Fatalf("identity = %+v, want the local account with its username", identity)
+	}
+}
+
+func TestLocalPasswordlessAccountSignsInWithoutAPassword(t *testing.T) {
+	service, _, _ := newLocalService(t)
+	registered, _ := registerLocal(t, service, "malle", "")
+
+	loggedIn, token, err := service.LoginLocal("  MALLE ", "")
+	if err != nil {
+		t.Fatalf("passwordless login: %v", err)
+	}
+	if loggedIn.ID != registered.ID {
+		t.Fatalf("login user = %q, want %q", loggedIn.ID, registered.ID)
+	}
+	if token == "" {
+		t.Fatal("passwordless login returned an empty token")
+	}
+}
+
+func TestLocalPasswordAccountRequiresThePassword(t *testing.T) {
+	service, _, _ := newLocalService(t)
+	registered, _ := registerLocal(t, service, "malle", testPassword)
+
+	if _, _, err := service.LoginLocal("malle", ""); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("empty password error = %v, want ErrInvalidCredentials", err)
+	}
+	if _, _, err := service.LoginLocal("malle", "wrong-password"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("wrong password error = %v, want ErrInvalidCredentials", err)
+	}
+
+	loggedIn, token, err := service.LoginLocal("malle", testPassword)
+	if err != nil {
+		t.Fatalf("password login: %v", err)
+	}
+	if loggedIn.ID != registered.ID || token == "" {
+		t.Fatalf("login = (%q, %q), want the registered account and a token", loggedIn.ID, token)
+	}
+}
+
+func TestLocalModeCannotCreateASecondAccount(t *testing.T) {
+	service, _, _ := newLocalService(t)
+	registerLocal(t, service, "malle", "")
+
+	_, _, err := service.Register(auth.RegisterRequest{
+		Username: "someone-else",
+		Password: testPassword,
+	}, time.Now().UTC())
+	if !errors.Is(err, auth.ErrLocalAccountExists) {
+		t.Fatalf("second account error = %v, want ErrLocalAccountExists", err)
+	}
+}
+
+func TestLocalUsernameIsRequired(t *testing.T) {
+	service, _, _ := newLocalService(t)
+
+	_, _, err := service.Register(auth.RegisterRequest{Password: testPassword}, time.Now().UTC())
+	var validation domain.ValidationError
+	if !errors.As(err, &validation) || validation.Field != "username" {
+		t.Fatalf("error = %v, want a username validation error", err)
 	}
 }
 

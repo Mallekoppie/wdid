@@ -47,6 +47,24 @@ func ValidateRegistration(email, password, displayName string) error {
 	return nil
 }
 
+// ValidateLocalRegistration checks the fields required to create the single
+// local account. A local account has a username and no email; the password is
+// optional, but a password that is set must satisfy the same minimum length as
+// a server password.
+func ValidateLocalRegistration(username, password string) error {
+	trimmed := strings.TrimSpace(username)
+	if trimmed == "" {
+		return invalid("username", "is required")
+	}
+	if len(trimmed) > maxNameLength {
+		return invalid("username", fmt.Sprintf("must be at most %d characters", maxNameLength))
+	}
+	if password != "" && len(password) < minPasswordLength {
+		return invalid("password", fmt.Sprintf("must be at least %d characters", minPasswordLength))
+	}
+	return nil
+}
+
 // ValidateEmail checks for a bare, parseable email address.
 func ValidateEmail(email string) error {
 	trimmed := strings.TrimSpace(email)

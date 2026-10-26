@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -38,6 +39,7 @@ func (s *AuthService) Register(mux *http.ServeMux, options ...connect.HandlerOpt
 // RegisterAccount creates an account after validating the registration secret.
 func (s *AuthService) RegisterAccount(ctx context.Context, request *connect.Request[wdidv1.RegisterAccountRequest]) (*connect.Response[wdidv1.RegisterAccountResponse], error) {
 	user, token, err := s.auth.Register(auth.RegisterRequest{
+		Username:        request.Msg.GetUsername(),
 		Email:           request.Msg.GetEmail(),
 		Password:        request.Msg.GetPassword(),
 		DisplayName:     request.Msg.GetDisplayName(),
@@ -56,7 +58,16 @@ func (s *AuthService) RegisterAccount(ctx context.Context, request *connect.Requ
 
 // Login verifies local credentials and issues a token.
 func (s *AuthService) Login(_ context.Context, request *connect.Request[wdidv1.LoginRequest]) (*connect.Response[wdidv1.LoginResponse], error) {
-	user, token, err := s.auth.Login(request.Msg.GetEmail(), request.Msg.GetPassword())
+	var (
+		user  domain.User
+		token string
+		err   error
+	)
+	if s.cfg.LocalMode() {
+		user, token, err = s.auth.LoginLocal(request.Msg.GetUsername(), request.Msg.GetPassword())
+	} else {
+		user, token, err = s.auth.Login(request.Msg.GetEmail(), request.Msg.GetPassword())
+	}
 	if err != nil {
 		return nil, toConnectError(err)
 	}
@@ -74,16 +85,48 @@ func (s *AuthService) GetAuthConfig(_ context.Context, _ *connect.Request[wdidv1
 		return nil, toConnectError(err)
 	}
 
-	return connect.NewResponse(&wdidv1.GetAuthConfigResponse{
-		LocalLogin:          true,
-		RegistrationEnabled: count > 0,
-		BootstrapRequired:   count == 0,
-		Oidc: &wdidv1.OIDCConfig{
-			Enabled:   s.cfg.Zitadel.Enabled,
-			IssuerUrl: s.cfg.Zitadel.IssuerURL,
-			ClientId:  s.cfg.Zitadel.ClientID,
-		},
-	}), nil
+	response := &wdidv1.GetAuthConfigResponse{
+		LocalLogin: true,
+		Mode:       toProtoAuthMode(s.cfg.EffectiveAuthMode()),
+		Oidc:       &wdidv1.OIDCConfig{},
+	}
+	if s.cfg.LocalMode() {
+		response.SetupRequired = count == 0
+		if count > 0 {
+			user, err := s.store.LocalUser()
+			if err != nil {
+				return nil, toConnectError(err)
+			}
+			response.Username = user.Username
+
+			if _, err := s.store.PasswordHash(user.ID); err == nil {
+				response.PasswordRequired = true
+			} else if !errors.Is(err, store.ErrNotFound) {
+				return nil, toConnectError(err)
+			}
+		}
+		return connect.NewResponse(response), nil
+	}
+
+	response.RegistrationEnabled = count > 0
+	response.BootstrapRequired = count == 0
+	response.Oidc = &wdidv1.OIDCConfig{
+		Enabled:   s.cfg.Zitadel.Enabled,
+		IssuerUrl: s.cfg.Zitadel.IssuerURL,
+		ClientId:  s.cfg.Zitadel.ClientID,
+	}
+	return connect.NewResponse(response), nil
+}
+
+func toProtoAuthMode(mode string) wdidv1.AuthMode {
+	switch mode {
+	case config.AuthModeLocal:
+		return wdidv1.AuthMode_AUTH_MODE_LOCAL
+	case config.AuthModeServer:
+		return wdidv1.AuthMode_AUTH_MODE_SERVER
+	default:
+		return wdidv1.AuthMode_AUTH_MODE_UNSPECIFIED
+	}
 }
 
 // GetCurrentUser resolves the authenticated caller after goslow has validated
@@ -111,6 +154,7 @@ func (s *AuthService) GetCurrentUser(ctx context.Context, _ *connect.Request[wdi
 func toProtoUser(user domain.User) *wdidv1.User {
 	return &wdidv1.User{
 		Id:          user.ID,
+		Username:    user.Username,
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
 		Role:        toProtoRole(user.Role),

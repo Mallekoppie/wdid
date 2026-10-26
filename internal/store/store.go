@@ -22,6 +22,8 @@ var (
 	ErrNotFound = errors.New("record not found")
 	// ErrEmailExists is returned when an account already uses the email address.
 	ErrEmailExists = errors.New("email already registered")
+	// ErrUsernameExists is returned when an account already uses the username.
+	ErrUsernameExists = errors.New("username already registered")
 	// ErrAlreadyBootstrapped is returned when the first account already exists.
 	ErrAlreadyBootstrapped = errors.New("workspace is already bootstrapped")
 	// ErrInviteUsed is returned when an invite code has already been redeemed.
@@ -54,6 +56,7 @@ var (
 const (
 	sysUsersBucket       = "sys:users"
 	sysUserEmailsBucket  = "sys:user_emails"
+	sysUsernamesBucket   = "sys:user_usernames"
 	sysCredentialsBucket = "sys:user_credentials"
 	sysInvitesBucket     = "sys:invites"
 	timerBucket          = "timer"
@@ -148,6 +151,30 @@ func (s *Store) UserByEmail(email string) (domain.User, error) {
 		return domain.User{}, err
 	}
 	return s.UserByID(userID)
+}
+
+// UserByUsername returns a local account by its username. The lookup is
+// case-insensitive; the stored spelling is preserved for display.
+func (s *Store) UserByUsername(username string) (domain.User, error) {
+	var userID string
+	key := strings.ToLower(strings.TrimSpace(username))
+	if err := readObject(sysUsernamesBucket, key, &userID); err != nil {
+		return domain.User{}, err
+	}
+	return s.UserByID(userID)
+}
+
+// LocalUser returns the single local account. Local mode never allows a second
+// account, so the first stored profile is the only one.
+func (s *Store) LocalUser() (domain.User, error) {
+	users, err := readAllRaw(sysUsersBucket)
+	if err != nil {
+		return domain.User{}, err
+	}
+	for id := range users {
+		return s.UserByID(id)
+	}
+	return domain.User{}, ErrNotFound
 }
 
 // CountUsers returns the number of registered accounts.
@@ -259,6 +286,27 @@ func (s *Store) CreateBootstrapUser(user domain.User, passwordHash string) error
 	})
 }
 
+// CreateLocalUser creates the single local-mode account in one transaction. It
+// fails if any account already exists, so local mode can never hold two. An
+// empty passwordHash stores no credential, which makes the account passwordless.
+func (s *Store) CreateLocalUser(user domain.User, passwordHash string) error {
+	return platform.Database.BoltDb.Update(func(tx *bbolt.Tx) error {
+		users, err := tx.CreateBucketIfNotExists([]byte(sysUsersBucket))
+		if err != nil {
+			return fmt.Errorf("create user bucket: %w", err)
+		}
+		if key, _ := users.Cursor().First(); key != nil {
+			return ErrAlreadyBootstrapped
+		}
+
+		var hash *string
+		if passwordHash != "" {
+			hash = &passwordHash
+		}
+		return createUserTx(tx, user, hash)
+	})
+}
+
 // CreateInvitedUser redeems an invite and creates the account in one
 // transaction. Any failure leaves the invite unused.
 func (s *Store) CreateInvitedUser(user domain.User, passwordHash, codeHash string, now time.Time) (domain.Invite, error) {
@@ -355,14 +403,26 @@ func createUserTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
 // createUserRecordTx writes the profile, optional credential and email index in
 // the caller's transaction. It does not create any user-owned seed records.
 func createUserRecordTx(tx *bbolt.Tx, user domain.User, passwordHash *string) error {
+	user.Normalize()
+
 	emails, err := tx.CreateBucketIfNotExists([]byte(sysUserEmailsBucket))
 	if err != nil {
 		return fmt.Errorf("create email bucket: %w", err)
 	}
+	usernames, err := tx.CreateBucketIfNotExists([]byte(sysUsernamesBucket))
+	if err != nil {
+		return fmt.Errorf("create username bucket: %w", err)
+	}
 
-	emailKey := strings.ToLower(strings.TrimSpace(user.Email))
-	if emails.Get([]byte(emailKey)) != nil {
+	// Local accounts have no email and server accounts have no username, so an
+	// empty identity never owns an index entry.
+	emailKey := strings.ToLower(user.Email)
+	if emailKey != "" && emails.Get([]byte(emailKey)) != nil {
 		return ErrEmailExists
+	}
+	usernameKey := strings.ToLower(user.Username)
+	if usernameKey != "" && usernames.Get([]byte(usernameKey)) != nil {
+		return ErrUsernameExists
 	}
 
 	if passwordHash != nil {
@@ -373,8 +433,15 @@ func createUserRecordTx(tx *bbolt.Tx, user domain.User, passwordHash *string) er
 	if err := putJSON(tx, sysUsersBucket, user.ID, user); err != nil {
 		return err
 	}
-	if err := putJSON(tx, sysUserEmailsBucket, emailKey, user.ID); err != nil {
-		return err
+	if emailKey != "" {
+		if err := putJSON(tx, sysUserEmailsBucket, emailKey, user.ID); err != nil {
+			return err
+		}
+	}
+	if usernameKey != "" {
+		if err := putJSON(tx, sysUsernamesBucket, usernameKey, user.ID); err != nil {
+			return err
+		}
 	}
 
 	return nil

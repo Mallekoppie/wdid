@@ -26,7 +26,10 @@ func NewID() string {
 
 // User is an account. Credentials are stored separately from the profile.
 type User struct {
-	ID          string    `json:"id"`
+	ID string `json:"id"`
+	// Username identifies a local single-user account. Server accounts are
+	// addressed by email and leave it empty.
+	Username    string    `json:"username,omitempty"`
 	Email       string    `json:"email"`
 	DisplayName string    `json:"displayName"`
 	Role        Role      `json:"role"`
@@ -50,6 +53,7 @@ func (i *Invite) Normalize() {
 
 // Normalize trims user input into its canonical form.
 func (u *User) Normalize() {
+	u.Username = strings.TrimSpace(u.Username)
 	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 }

@@ -34,6 +34,7 @@ func testConfig(t *testing.T) config.Config {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
 		DBPath:               filepath.Join(t.TempDir(), "wdid-rpc.db"),
+		AuthMode:             config.AuthModeServer,
 		AllowedOrigins:       []string{"http://127.0.0.1:5173"},
 		BootstrapSecret:      testBootstrapSecret,
 		JWTSecret:            strings.Repeat("k", 32),
@@ -70,6 +71,28 @@ func newAuthHandlerWithConfig(t *testing.T, cfg config.Config) (http.Handler, *s
 	}
 
 	return application, database
+}
+
+func localTestConfig(t *testing.T) config.Config {
+	t.Helper()
+
+	cfg := testConfig(t)
+	cfg.AuthMode = config.AuthModeLocal
+	cfg.BootstrapSecret = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("local test config invalid: %v", err)
+	}
+	return cfg
+}
+
+func newLocalAuthServer(t *testing.T) (*httptest.Server, *store.Store) {
+	t.Helper()
+
+	handler, database := newAuthHandlerWithConfig(t, localTestConfig(t))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	return server, database
 }
 
 func newAuthHandler(t *testing.T) (http.Handler, *store.Store) {
@@ -365,6 +388,126 @@ func TestAuthServiceReportsOIDCConfig(t *testing.T) {
 	}
 	if !response.Msg.GetLocalLogin() {
 		t.Fatal("local login must stay available with OIDC")
+	}
+}
+
+func TestAuthServiceAdvertisesServerMode(t *testing.T) {
+	server, _ := newAuthServer(t)
+	client := authClient(server)
+
+	response, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get auth config: %v", err)
+	}
+	if response.Msg.GetMode() != wdidv1.AuthMode_AUTH_MODE_SERVER {
+		t.Fatalf("mode = %v, want server", response.Msg.GetMode())
+	}
+}
+
+func TestAuthServiceLocalSetupAndPasswordlessLogin(t *testing.T) {
+	server, _ := newLocalAuthServer(t)
+	client := authClient(server)
+
+	initial, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get initial auth config: %v", err)
+	}
+	if initial.Msg.GetMode() != wdidv1.AuthMode_AUTH_MODE_LOCAL {
+		t.Fatalf("mode = %v, want local", initial.Msg.GetMode())
+	}
+	if !initial.Msg.GetSetupRequired() {
+		t.Fatal("a fresh local install must require setup")
+	}
+	if initial.Msg.GetBootstrapRequired() || initial.Msg.GetRegistrationEnabled() {
+		t.Fatalf("local setup config = %v, want no bootstrap or invite registration", initial.Msg)
+	}
+	if initial.Msg.GetOidc().GetEnabled() {
+		t.Fatal("local mode must not advertise OIDC")
+	}
+
+	registration, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Username: "malle",
+	}))
+	if err != nil {
+		t.Fatalf("local setup: %v", err)
+	}
+	if registration.Msg.GetUser().GetUsername() != "malle" {
+		t.Fatalf("username = %q, want malle", registration.Msg.GetUser().GetUsername())
+	}
+	if registration.Msg.GetUser().GetEmail() != "" {
+		t.Fatalf("email = %q, want empty for a local account", registration.Msg.GetUser().GetEmail())
+	}
+	if registration.Msg.GetUser().GetRole() != wdidv1.UserRole_USER_ROLE_ADMIN {
+		t.Fatalf("role = %v, want admin", registration.Msg.GetUser().GetRole())
+	}
+	if registration.Msg.GetToken() == "" {
+		t.Fatal("local setup returned an empty token")
+	}
+
+	after, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get auth config after setup: %v", err)
+	}
+	if after.Msg.GetSetupRequired() {
+		t.Fatal("setup must be complete after the first local account")
+	}
+	if after.Msg.GetUsername() != "malle" || after.Msg.GetPasswordRequired() {
+		t.Fatalf("local config = %v, want the username prefilled and no password", after.Msg)
+	}
+
+	login, err := client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
+		Username: "malle",
+	}))
+	if err != nil {
+		t.Fatalf("passwordless local login: %v", err)
+	}
+	if login.Msg.GetUser().GetId() != registration.Msg.GetUser().GetId() {
+		t.Fatalf("login user = %q, want %q", login.Msg.GetUser().GetId(), registration.Msg.GetUser().GetId())
+	}
+
+	_, err = client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Username: "second",
+	}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("second local account = %v, want failed precondition", connect.CodeOf(err))
+	}
+}
+
+func TestAuthServiceLocalPasswordAccountRequiresThePassword(t *testing.T) {
+	server, _ := newLocalAuthServer(t)
+	client := authClient(server)
+
+	if _, err := client.RegisterAccount(context.Background(), connect.NewRequest(&wdidv1.RegisterAccountRequest{
+		Username: "malle",
+		Password: testPassword,
+	})); err != nil {
+		t.Fatalf("local setup with password: %v", err)
+	}
+
+	configResponse, err := client.GetAuthConfig(context.Background(), connect.NewRequest(&wdidv1.GetAuthConfigRequest{}))
+	if err != nil {
+		t.Fatalf("get auth config: %v", err)
+	}
+	if !configResponse.Msg.GetPasswordRequired() {
+		t.Fatal("a password-protected local account must report password_required")
+	}
+
+	_, err = client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
+		Username: "malle",
+	}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("empty password = %v, want unauthenticated", connect.CodeOf(err))
+	}
+
+	login, err := client.Login(context.Background(), connect.NewRequest(&wdidv1.LoginRequest{
+		Username: "malle",
+		Password: testPassword,
+	}))
+	if err != nil {
+		t.Fatalf("local password login: %v", err)
+	}
+	if login.Msg.GetUser().GetUsername() != "malle" {
+		t.Fatalf("login username = %q, want malle", login.Msg.GetUser().GetUsername())
 	}
 }
 
