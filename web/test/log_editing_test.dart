@@ -10,6 +10,8 @@ import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/utils/time_utils.dart';
+import 'package:wdid_web/widgets/forms/date_range_dialog.dart';
+import 'package:wdid_web/widgets/forms/dialog_frame.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -209,6 +211,74 @@ void main() {
     final today = dateOnly(DateTime.now());
     expect(entryApi.lastFromDate, isoDate(today));
     expect(entryApi.lastToDate, isoDate(today));
+  });
+
+  testWidgets('custom range opens a compact dialog and reloads the log', (
+    tester,
+  ) async {
+    final entryApi = await pumpLog(tester);
+
+    await tester.tap(
+      find.byWidgetPredicate((widget) => widget is DropdownButton).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom range').last);
+    await tester.pumpAndSettle();
+
+    // The shared dialog replaces Flutter's full-bleed range picker.
+    expect(find.byType(DateRangeDialog), findsOneWidget);
+    final frame = tester.widget<DialogFrame>(find.byType(DialogFrame));
+    expect(frame.maxWidth, DateRangeDialog.maxWidth);
+    expect(DateRangeDialog.maxWidth, lessThan(600));
+    // Presets and explicit start/end fields live in the same dialog.
+    expect(find.widgetWithText(ChoiceChip, 'Last 7 days'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(DateRangeDialog),
+        matching: find.byIcon(Icons.first_page),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(DateRangeDialog),
+        matching: find.byIcon(Icons.today_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'This month'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.pumpAndSettle();
+
+    final today = dateOnly(DateTime.now());
+    expect(entryApi.lastFromDate, isoDate(DateTime(today.year, today.month)));
+    expect(entryApi.lastToDate, isoDate(today));
+    expect(find.byType(DateRangeDialog), findsNothing);
+  });
+
+  testWidgets('cancelling custom range keeps the current Log range', (
+    tester,
+  ) async {
+    final entryApi = await pumpLog(tester);
+    final from = entryApi.lastFromDate;
+    final to = entryApi.lastToDate;
+
+    await tester.tap(
+      find.byWidgetPredicate((widget) => widget is DropdownButton).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Custom range').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Today'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DateRangeDialog), findsNothing);
+    expect(entryApi.lastFromDate, from);
+    expect(entryApi.lastToDate, to);
   });
 
   testWidgets('edits an entry inline', (tester) async {
