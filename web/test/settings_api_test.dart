@@ -19,6 +19,13 @@ class FakeSettingsRpc implements SettingsRpc {
       generated.UpdateSettingsResponse(settings: generated.Settings());
   generated.UpdateSettingsRequest? updateRequest;
 
+  generated.SetAIApiKeyResponse setAiApiKeyResponse =
+      generated.SetAIApiKeyResponse(settings: generated.Settings());
+  generated.SetAIApiKeyRequest? setAiApiKeyRequest;
+  generated.ClearAIApiKeyResponse clearAiApiKeyResponse =
+      generated.ClearAIApiKeyResponse(settings: generated.Settings());
+  int clearAiApiKeyCalls = 0;
+
   generated.GetBackupStatusResponse backupStatusResponse =
       generated.GetBackupStatusResponse(
         status: generated.BackupStatus(
@@ -50,6 +57,22 @@ class FakeSettingsRpc implements SettingsRpc {
     updateRequest = request;
     _maybeFail();
     return updateResponse;
+  }
+
+  @override
+  Future<generated.SetAIApiKeyResponse> setAiApiKey(
+    generated.SetAIApiKeyRequest request,
+  ) async {
+    setAiApiKeyRequest = request;
+    _maybeFail();
+    return setAiApiKeyResponse;
+  }
+
+  @override
+  Future<generated.ClearAIApiKeyResponse> clearAiApiKey() async {
+    clearAiApiKeyCalls++;
+    _maybeFail();
+    return clearAiApiKeyResponse;
   }
 
   @override
@@ -299,6 +322,73 @@ void main() {
     final snapshot = await GrpcSettingsApi(rpc: rpc).getSettings();
 
     expect(snapshot.settings.supportPeople, ['Priya', 'Sam']);
+  });
+
+  test('getSettings maps the write-only AI key state', () async {
+    final rpc = FakeSettingsRpc()
+      ..getResponse = generated.GetSettingsResponse(
+        settings: generated.Settings(hasAiApiKey: true),
+        about: generated.About(
+          version: '0.1.0',
+          schemaVersion: 1,
+          license: 'MIT',
+        ),
+      );
+
+    final snapshot = await GrpcSettingsApi(rpc: rpc).getSettings();
+
+    expect(snapshot.settings.hasAiApiKey, isTrue);
+  });
+
+  test('setAiApiKey sends the key and maps the stored state', () async {
+    final rpc = FakeSettingsRpc()
+      ..setAiApiKeyResponse = generated.SetAIApiKeyResponse(
+        settings: generated.Settings(hasAiApiKey: true),
+      );
+
+    final saved = await GrpcSettingsApi(rpc: rpc)
+        .setAiApiKey('  sk-ant-test  ');
+
+    expect(rpc.setAiApiKeyRequest!.apiKey, 'sk-ant-test');
+    expect(saved.hasAiApiKey, isTrue);
+  });
+
+  test('clearAiApiKey clears the stored state', () async {
+    final rpc = FakeSettingsRpc()
+      ..clearAiApiKeyResponse = generated.ClearAIApiKeyResponse(
+        settings: generated.Settings(hasAiApiKey: false),
+      );
+
+    final saved = await GrpcSettingsApi(rpc: rpc).clearAiApiKey();
+
+    expect(rpc.clearAiApiKeyCalls, 1);
+    expect(saved.hasAiApiKey, isFalse);
+  });
+
+  test('AI provider presets seed a base URL and an editable model', () {
+    expect(AIProviderPreset.anthropic.baseUrl, 'https://api.anthropic.com');
+    expect(AIProviderPreset.anthropic.model, 'claude-sonnet-5-5');
+    expect(
+      AIProviderPreset.deepSeek.baseUrl,
+      'https://api.deepseek.com/anthropic',
+    );
+    expect(AIProviderPreset.deepSeek.model, 'deepseek-flash');
+    expect(
+      AIProviderPreset.forBaseUrl('https://api.deepseek.com/anthropic'),
+      AIProviderPreset.deepSeek,
+    );
+    expect(
+      AIProviderPreset.forBaseUrl('https://proxy.example'),
+      AIProviderPreset.custom,
+    );
+  });
+
+  test('new settings start with the Anthropic preset', () {
+    const settings = AppSettings();
+
+    expect(settings.aiBaseUrl, 'https://api.anthropic.com');
+    expect(settings.aiModel, 'claude-sonnet-5-5');
+    expect(settings.hasAiApiKey, isFalse);
   });
 
   test('updateSettings sends and returns the support-people roster', () async {

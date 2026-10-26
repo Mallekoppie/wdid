@@ -10,6 +10,7 @@ class FakeAuthRpc implements AuthRpc {
         localLogin: true,
         registrationEnabled: true,
         bootstrapRequired: false,
+        mode: generated.AuthMode.AUTH_MODE_SERVER,
         oidc: generated.OIDCConfig(
           enabled: true,
           issuerUrl: 'http://zitadel.local:8080',
@@ -51,17 +52,19 @@ class FakeAuthRpc implements AuthRpc {
 
   @override
   Future<generated.LoginResponse> login({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
   }) async {
-    lastLogin = {'email': email, 'password': password};
+    lastLogin = {'email': email, 'username': username, 'password': password};
     if (error != null) throw error!;
     return loginResponse;
   }
 
   @override
   Future<generated.RegisterAccountResponse> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -69,6 +72,7 @@ class FakeAuthRpc implements AuthRpc {
   }) async {
     lastRegister = {
       'email': email,
+      'username': username,
       'password': password,
       'displayName': displayName,
       'inviteCode': inviteCode,
@@ -89,8 +93,45 @@ void main() {
     expect(config.registrationEnabled, isTrue);
     expect(config.bootstrapRequired, isFalse);
     expect(config.oidcEnabled, isTrue);
+    expect(config.mode, AuthMode.server);
+    expect(config.setupRequired, isFalse);
+    expect(config.passwordRequired, isFalse);
+    expect(config.username, isEmpty);
     expect(config.oidcIssuerUrl, 'http://zitadel.local:8080');
     expect(config.oidcClientId, 'wdid-client');
+  });
+
+  test('getConfig maps the local setup state', () async {
+    final rpc = FakeAuthRpc()
+      ..configResponse = generated.GetAuthConfigResponse(
+        localLogin: true,
+        mode: generated.AuthMode.AUTH_MODE_LOCAL,
+        setupRequired: true,
+        passwordRequired: false,
+        username: 'malle',
+        oidc: generated.OIDCConfig(),
+      );
+    final api = GrpcAuthApi(rpc: rpc);
+
+    final config = await api.getConfig();
+
+    expect(config.mode, AuthMode.local);
+    expect(config.isLocal, isTrue);
+    expect(config.setupRequired, isTrue);
+    expect(config.username, 'malle');
+    expect(config.passwordRequired, isFalse);
+    expect(config.oidcEnabled, isFalse);
+  });
+
+  test('login sends a local username', () async {
+    final rpc = FakeAuthRpc();
+    final api = GrpcAuthApi(rpc: rpc);
+
+    await api.login(username: 'malle', password: '');
+
+    expect(rpc.lastLogin['username'], 'malle');
+    expect(rpc.lastLogin['email'], '');
+    expect(rpc.lastLogin['password'], '');
   });
 
   test('login sends credentials and returns the session', () async {

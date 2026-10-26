@@ -151,9 +151,10 @@ func newDomainServerWithCheckInClock(t *testing.T, now func() time.Time) (*httpt
 	return server, database
 }
 
-// newDomainServerWithAI injects a fake provider and an in-memory key. No test
-// reaches a real provider endpoint.
-func newDomainServerWithAI(t *testing.T, provider ai.Provider, apiKey string) (*httptest.Server, *store.Store) {
+// newDomainServerWithAI injects a fake provider. The provider key comes from
+// the user's settings record, exactly as in production; no test reaches a real
+// provider endpoint.
+func newDomainServerWithAI(t *testing.T, provider ai.Provider) (*httptest.Server, *store.Store) {
 	t.Helper()
 
 	handler, database := newDomainHandlerWithSummaryOptions(
@@ -163,11 +164,21 @@ func newDomainServerWithAI(t *testing.T, provider ai.Provider, apiKey string) (*
 		nil,
 		nil,
 		rpc.WithSummaryProvider(provider),
-		rpc.WithSummaryAPIKey(apiKey),
 	)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	return server, database
+}
+
+// setAIKey stores the caller's provider key through the public settings RPC.
+func setAIKey(t *testing.T, server *httptest.Server, token, apiKey string) {
+	t.Helper()
+
+	if _, err := settingsClient(server).SetAIApiKey(context.Background(), withBearer(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: apiKey,
+	}, token)); err != nil {
+		t.Fatalf("set AI key: %v", err)
+	}
 }
 
 func categoryClient(server *httptest.Server, options ...connect.ClientOption) wdidv1connect.CategoryServiceClient {

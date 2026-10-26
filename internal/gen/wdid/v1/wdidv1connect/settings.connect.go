@@ -39,6 +39,12 @@ const (
 	// SettingsServiceUpdateSettingsProcedure is the fully-qualified name of the SettingsService's
 	// UpdateSettings RPC.
 	SettingsServiceUpdateSettingsProcedure = "/wdid.v1.SettingsService/UpdateSettings"
+	// SettingsServiceSetAIApiKeyProcedure is the fully-qualified name of the SettingsService's
+	// SetAIApiKey RPC.
+	SettingsServiceSetAIApiKeyProcedure = "/wdid.v1.SettingsService/SetAIApiKey"
+	// SettingsServiceClearAIApiKeyProcedure is the fully-qualified name of the SettingsService's
+	// ClearAIApiKey RPC.
+	SettingsServiceClearAIApiKeyProcedure = "/wdid.v1.SettingsService/ClearAIApiKey"
 	// SettingsServiceBackupNowProcedure is the fully-qualified name of the SettingsService's BackupNow
 	// RPC.
 	SettingsServiceBackupNowProcedure = "/wdid.v1.SettingsService/BackupNow"
@@ -57,6 +63,10 @@ const (
 type SettingsServiceClient interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.GetSettingsResponse], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error)
+	// The AI key is write-only: these RPCs set/replace or clear it. Every other
+	// response only reports has_ai_api_key.
+	SetAIApiKey(context.Context, *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error)
+	ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error)
 	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
 	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
@@ -84,6 +94,18 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+SettingsServiceUpdateSettingsProcedure,
 			connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		setAIApiKey: connect.NewClient[v1.SetAIApiKeyRequest, v1.SetAIApiKeyResponse](
+			httpClient,
+			baseURL+SettingsServiceSetAIApiKeyProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("SetAIApiKey")),
+			connect.WithClientOptions(opts...),
+		),
+		clearAIApiKey: connect.NewClient[v1.ClearAIApiKeyRequest, v1.ClearAIApiKeyResponse](
+			httpClient,
+			baseURL+SettingsServiceClearAIApiKeyProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("ClearAIApiKey")),
 			connect.WithClientOptions(opts...),
 		),
 		backupNow: connect.NewClient[v1.BackupNowRequest, v1.BackupNowResponse](
@@ -117,6 +139,8 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type settingsServiceClient struct {
 	getSettings     *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
 	updateSettings  *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
+	setAIApiKey     *connect.Client[v1.SetAIApiKeyRequest, v1.SetAIApiKeyResponse]
+	clearAIApiKey   *connect.Client[v1.ClearAIApiKeyRequest, v1.ClearAIApiKeyResponse]
 	backupNow       *connect.Client[v1.BackupNowRequest, v1.BackupNowResponse]
 	getBackupStatus *connect.Client[v1.GetBackupStatusRequest, v1.GetBackupStatusResponse]
 	listBackups     *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResponse]
@@ -131,6 +155,16 @@ func (c *settingsServiceClient) GetSettings(ctx context.Context, req *connect.Re
 // UpdateSettings calls wdid.v1.SettingsService.UpdateSettings.
 func (c *settingsServiceClient) UpdateSettings(ctx context.Context, req *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error) {
 	return c.updateSettings.CallUnary(ctx, req)
+}
+
+// SetAIApiKey calls wdid.v1.SettingsService.SetAIApiKey.
+func (c *settingsServiceClient) SetAIApiKey(ctx context.Context, req *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error) {
+	return c.setAIApiKey.CallUnary(ctx, req)
+}
+
+// ClearAIApiKey calls wdid.v1.SettingsService.ClearAIApiKey.
+func (c *settingsServiceClient) ClearAIApiKey(ctx context.Context, req *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error) {
+	return c.clearAIApiKey.CallUnary(ctx, req)
 }
 
 // BackupNow calls wdid.v1.SettingsService.BackupNow.
@@ -157,6 +191,10 @@ func (c *settingsServiceClient) RestoreBackup(ctx context.Context, req *connect.
 type SettingsServiceHandler interface {
 	GetSettings(context.Context, *connect.Request[v1.GetSettingsRequest]) (*connect.Response[v1.GetSettingsResponse], error)
 	UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error)
+	// The AI key is write-only: these RPCs set/replace or clear it. Every other
+	// response only reports has_ai_api_key.
+	SetAIApiKey(context.Context, *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error)
+	ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error)
 	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
 	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
@@ -180,6 +218,18 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 		SettingsServiceUpdateSettingsProcedure,
 		svc.UpdateSettings,
 		connect.WithSchema(settingsServiceMethods.ByName("UpdateSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceSetAIApiKeyHandler := connect.NewUnaryHandler(
+		SettingsServiceSetAIApiKeyProcedure,
+		svc.SetAIApiKey,
+		connect.WithSchema(settingsServiceMethods.ByName("SetAIApiKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceClearAIApiKeyHandler := connect.NewUnaryHandler(
+		SettingsServiceClearAIApiKeyProcedure,
+		svc.ClearAIApiKey,
+		connect.WithSchema(settingsServiceMethods.ByName("ClearAIApiKey")),
 		connect.WithHandlerOptions(opts...),
 	)
 	settingsServiceBackupNowHandler := connect.NewUnaryHandler(
@@ -212,6 +262,10 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 			settingsServiceGetSettingsHandler.ServeHTTP(w, r)
 		case SettingsServiceUpdateSettingsProcedure:
 			settingsServiceUpdateSettingsHandler.ServeHTTP(w, r)
+		case SettingsServiceSetAIApiKeyProcedure:
+			settingsServiceSetAIApiKeyHandler.ServeHTTP(w, r)
+		case SettingsServiceClearAIApiKeyProcedure:
+			settingsServiceClearAIApiKeyHandler.ServeHTTP(w, r)
 		case SettingsServiceBackupNowProcedure:
 			settingsServiceBackupNowHandler.ServeHTTP(w, r)
 		case SettingsServiceGetBackupStatusProcedure:
@@ -235,6 +289,14 @@ func (UnimplementedSettingsServiceHandler) GetSettings(context.Context, *connect
 
 func (UnimplementedSettingsServiceHandler) UpdateSettings(context.Context, *connect.Request[v1.UpdateSettingsRequest]) (*connect.Response[v1.UpdateSettingsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.UpdateSettings is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) SetAIApiKey(context.Context, *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.SetAIApiKey is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.ClearAIApiKey is not implemented"))
 }
 
 func (UnimplementedSettingsServiceHandler) BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error) {

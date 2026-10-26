@@ -45,6 +45,42 @@ func TestValidateRegistration(t *testing.T) {
 	}
 }
 
+func TestValidateLocalRegistration(t *testing.T) {
+	tests := []struct {
+		name      string
+		username  string
+		password  string
+		wantField string
+	}{
+		{name: "username only", username: "malle"},
+		{name: "username and password", username: "malle", password: "longenough1"},
+		{name: "missing username", password: "longenough1", wantField: "username"},
+		{name: "blank username", username: "   ", wantField: "username"},
+		{name: "long username", username: strings.Repeat("a", 200), wantField: "username"},
+		{name: "short password", username: "malle", password: "short", wantField: "password"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := domain.ValidateLocalRegistration(test.username, test.password)
+			if test.wantField == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			var validation domain.ValidationError
+			if !errors.As(err, &validation) {
+				t.Fatalf("expected ValidationError, got %v", err)
+			}
+			if validation.Field != test.wantField {
+				t.Fatalf("field = %q, want %q", validation.Field, test.wantField)
+			}
+		})
+	}
+}
+
 func TestActiveTimerElapsed(t *testing.T) {
 	start := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
 

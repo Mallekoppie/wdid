@@ -96,16 +96,17 @@ class StoppedTimer {
 }
 
 /// The attribution of a timer stopped by an interrupt, kept in memory so the
-/// Today timer card and the stop snackbar can offer a fresh Resume timer.
+/// Resume card can offer a fresh timer.
 ///
 /// This is UI state only: it never changes what the stopped entry stored, and
-/// losing it on a reload is acceptable. Resuming consumes it.
+/// losing it on a reload is acceptable. Resuming or dismissing consumes it.
 class InterruptedTimer {
   const InterruptedTimer({
     required this.categoryId,
     this.subcategoryId = '',
     this.description = '',
     this.people = const [],
+    this.minutes = 0,
   });
 
   final String categoryId;
@@ -115,6 +116,10 @@ class InterruptedTimer {
   /// Carried so resuming an interrupted support timer still satisfies the
   /// support-person requirement.
   final List<String> people;
+
+  /// The minutes the stopped block saved, shown on the Resume card. It is not
+  /// reused when resuming: Resume starts a fresh timer.
+  final int minutes;
 }
 
 /// One Log listing request. The Log screen rebuilds it whenever a filter
@@ -1935,8 +1940,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Whether the connected service can generate a summary. The check-in
-  /// service alone is not enough: generation belongs to the summary contract.
-  bool get canGenerateSummary => summaryApi != null;
+  /// service alone is not enough: generation belongs to the summary contract
+  /// and needs the account's own provider key.
+  bool get canGenerateSummary => summaryApi != null && settings.hasAiApiKey;
 
   /// Streams a generated summary. Text deltas drive the editor; the final
   /// delta carries the persisted check-in with its model and prompt version.
@@ -2293,6 +2299,39 @@ class AppState extends ChangeNotifier {
 
   Future<void> setTheme(ThemePreference theme) {
     return saveSettings(settings.copyWith(theme: theme));
+  }
+
+  /// Stores or replaces the account's provider key. The key is write-only;
+  /// only the resulting has-key state comes back from the service.
+  Future<AppSettings> setAiApiKey(String apiKey) => _saveAiKey(
+    (api) => api.setAiApiKey(apiKey),
+    'Saving an AI key needs the service contract.',
+  );
+
+  /// Removes the account's provider key, which disables AI generation.
+  Future<AppSettings> clearAiApiKey() => _saveAiKey(
+    (api) => api.clearAiApiKey(),
+    'Clearing an AI key needs the service contract.',
+  );
+
+  /// Runs one write-only key mutation and folds the service's authoritative
+  /// has-key state back into the client settings.
+  Future<AppSettings> _saveAiKey(
+    Future<AppSettings> Function(SettingsApi api) action,
+    String missingServiceMessage,
+  ) async {
+    final api = settingsApi;
+    if (api == null) {
+      throw ServicePendingException('SettingsService', missingServiceMessage);
+    }
+    final saved = await action(api);
+    settings = saved.copyWith(
+      version: about?.version,
+      schemaVersion: about?.schemaVersion,
+      license: about?.license,
+    );
+    _notify();
+    return settings;
   }
 
   Future<void> setDensity(DensityPreference density) {

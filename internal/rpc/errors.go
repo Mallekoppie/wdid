@@ -46,7 +46,8 @@ func toConnectError(err error) error {
 		errors.Is(err, store.ErrSubcategoryReparent),
 		errors.Is(err, store.ErrFinalCheckInReadOnly):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
-	case errors.Is(err, store.ErrEmailExists):
+	case errors.Is(err, store.ErrEmailExists),
+		errors.Is(err, store.ErrUsernameExists):
 		return connect.NewError(connect.CodeAlreadyExists, err)
 	case errors.Is(err, ErrBackupsAdminOnly):
 		return connect.NewError(connect.CodePermissionDenied, err)
@@ -61,7 +62,8 @@ func toConnectError(err error) error {
 		errors.Is(err, auth.ErrInviteUsed),
 		errors.Is(err, auth.ErrInviteEmailMismatch):
 		return connect.NewError(connect.CodePermissionDenied, err)
-	case errors.Is(err, auth.ErrBootstrapComplete):
+	case errors.Is(err, auth.ErrBootstrapComplete),
+		errors.Is(err, auth.ErrLocalAccountExists):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case errors.Is(err, auth.ErrInviteRequired):
 		return connect.NewError(connect.CodeInvalidArgument, err)

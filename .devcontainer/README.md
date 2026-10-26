@@ -136,10 +136,11 @@ make fmt                       # format the Go and Dart sources
 make docker-build              # build the image via the host engine
 ```
 
-Forwarded port: 8080 is the single application origin for native gRPC,
-gRPC-Web, and the embedded web UI. If you change the listen address in the
-platform config or the Makefile, update `forwardPorts` in `devcontainer.json`
-too.
+Forwarded ports: 8080 is the config default for `go run`, 9300 is the `make run`
+app origin for native gRPC, gRPC-Web, and the embedded web UI. 5173 is the
+`make serveweb` hot-reload server, and 9201 is `make run-demo`. If you change the
+listen address in either the config or the Makefile, update `forwardPorts` in
+`devcontainer.json` too.
 
 ## Regenerating the image
 

@@ -30,12 +30,19 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  Future<bool> login({required String email, required String password}) {
-    return _submit(() => api.login(email: email, password: password));
+  Future<bool> login({
+    String email = '',
+    String username = '',
+    required String password,
+  }) {
+    return _submit(
+      () => api.login(email: email, username: username, password: password),
+    );
   }
 
   Future<bool> register({
-    required String email,
+    String email = '',
+    String username = '',
     required String password,
     required String displayName,
     String inviteCode = '',
@@ -44,6 +51,7 @@ class AuthState extends ChangeNotifier {
     return _submit(
       () => api.register(
         email: email,
+        username: username,
         password: password,
         displayName: displayName,
         inviteCode: inviteCode,

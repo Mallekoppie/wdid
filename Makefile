@@ -28,13 +28,13 @@ CMD     := ./cmd/wdid
 WEB_DIR   := web
 WEB_BUILD := $(WEB_DIR)/build/web
 DIST_DIR  := cmd/wdid/dist
-API_BASE_URL ?= http://127.0.0.1:8080
+API_BASE_URL ?= http://127.0.0.1:9300
 
 IMAGE ?= wdid:dev
 
 # Local-only defaults. internal/config requires a bootstrap secret of at least
 # 16 characters and a JWT secret of at least 32 characters.
-WDID_HTTP_ADDR            ?= 127.0.0.1:9200
+WDID_HTTP_ADDR            ?= 127.0.0.1:9300
 WDID_DB_PATH              ?= ./data/wdid.db
 WDID_BOOTSTRAP_SECRET     ?= local-dev-bootstrap-secret
 WDID_JWT_SECRET           ?= local-dev-jwt-secret-change-me-32chars
@@ -43,14 +43,15 @@ WDID_DEV_MODE             ?= true
 
 # Browser smoke credentials. The bootstrap secret must match the one the
 # running service was started with, so it defaults to the development default
-# above and makes `make run` + `make smoke-web` work against a fresh database.
+# above and makes `make run-dev` + `make smoke-web` work against a fresh
+# database.
 WDID_SMOKE_EMAIL             ?= smoke@example.com
 WDID_SMOKE_PASSWORD          ?= smoke-password-123
 WDID_SMOKE_BOOTSTRAP_SECRET  ?= $(WDID_BOOTSTRAP_SECRET)
 
 # Demo loop. The demo database is separate from the default ./data/wdid.db, so
 # seeding and resetting it never touches normal development data. Port 9201
-# keeps it clear of `make run` (127.0.0.1:9200).
+# keeps it clear of `make run` (127.0.0.1:9300, the forwarded app origin).
 DEMO_DB       ?= ./data/wdid-demo.db
 DEMO_ADDR     ?= 127.0.0.1:9201
 DEMO_SCENARIO ?= demo
@@ -87,9 +88,9 @@ export WDID_HTTP_ADDR WDID_DB_PATH WDID_BOOTSTRAP_SECRET WDID_JWT_SECRET
 export WDID_ALLOWED_ORIGINS WDID_DEV_MODE
 export WDID_SMOKE_EMAIL WDID_SMOKE_PASSWORD WDID_SMOKE_BOOTSTRAP_SECRET
 
-.PHONY: help all build run test test-go test-web web-deps buildweb serveweb \
-        lint fmt tidy proto proto-check docker-build clean check smoke-web \
-        smoke-seeded seed-demo run-demo
+.PHONY: help all build run run-dev test test-go test-web web-deps buildweb \
+        web-ready serveweb lint fmt tidy proto proto-check docker-build clean \
+        check smoke-web smoke-seeded seed-demo run-demo
 
 help: ## Show this help
 	@printf 'wdid targets:\n\n'
@@ -102,14 +103,26 @@ build: ## Compile cmd/wdid into bin/wdid
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -trimpath -o $(BIN_DIR)/$(BINARY) $(CMD)
 
-run: ## Run the service locally using the development defaults above
-	$(GO) run $(CMD)
+# The embedded UI lives in cmd/wdid/dist, which is gitignored and removed by
+# `make clean`. Build it on demand so `make run` never serves an API-only
+# server that answers 404 at the app origin.
+web-ready:
+	@test -f $(DIST_DIR)/index.html || { \
+		echo "Building the web UI (missing $(DIST_DIR)/index.html)..."; \
+		$(MAKE) buildweb; \
+	}
+
+run: web-ready ## Run locally in single-user local mode (username, optional password)
+	WDID_DEV_MODE=false WDID_AUTH_MODE=local $(GO) run $(CMD)
+
+run-dev: web-ready ## Run the server/development flow (bootstrap admin, invites, reflection)
+	WDID_DEV_MODE=true WDID_AUTH_MODE=server $(GO) run $(CMD)
 
 seed-demo: ## Seed data/wdid-demo.db with the demo scenario (dev-only; resets by default)
 	WDID_DEV_MODE=true WDID_DB_PATH=$(DEMO_DB) \
 	$(GO) run $(CMD) seed $(SEED_ARGS) $(if $(DEMO_ANCHOR),--anchor $(DEMO_ANCHOR)) $(DEMO_SCENARIO)
 
-run-demo: ## Serve data/wdid-demo.db on 127.0.0.1:9201 (seeds it first if missing)
+run-demo: web-ready ## Serve data/wdid-demo.db on 127.0.0.1:9201 (seeds it first if missing)
 	@test -f $(DEMO_DB) || $(MAKE) seed-demo
 	WDID_DEV_MODE=true WDID_DB_PATH=$(DEMO_DB) WDID_HTTP_ADDR=$(DEMO_ADDR) \
 	$(GO) run $(CMD)

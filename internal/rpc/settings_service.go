@@ -136,19 +136,19 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	settings.UserID = userID
 	settings.UpdatedAt = time.Now().UTC()
 	// Seed before replacing the roster, so an administrator whose first settings
-	// call is an update still records the seeded marker exactly once.
-	if _, err := s.store.EnsureSupportPeople(userID); err != nil {
+	// call is an update still records the seeded marker exactly once. The
+	// current record also supplies the stored AI key, which is write-only and
+	// therefore not part of the settings message.
+	current, err := s.settingsForUser(userID)
+	if err != nil {
 		return nil, toConnectError(err)
 	}
+	settings.AIAPIKey = current.AIAPIKey
 	// An explicit save replaces the roster and marks it as seeded; otherwise the
 	// next load would resurrect names the client deliberately removed.
 	settings.SupportPeopleSeeded = true
 
 	if !isAdmin {
-		current, err := s.settingsForUser(userID)
-		if err != nil {
-			return nil, toConnectError(err)
-		}
 		if backupSettingsChanged(settings, current) {
 			return nil, toConnectError(ErrBackupsAdminOnly)
 		}
@@ -172,6 +172,60 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	}
 
 	return connect.NewResponse(&wdidv1.UpdateSettingsResponse{Settings: toProtoSettings(settings)}), nil
+}
+
+// saveAIApiKey applies one write-only key change: load, replace the key, stamp
+// the update and save. It is shared by set and clear so the two paths cannot
+// drift.
+func (s *SettingsService) saveAIApiKey(userID, apiKey string) (domain.Settings, error) {
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	settings.AIAPIKey = apiKey
+	settings.UpdatedAt = time.Now().UTC()
+	settings.Normalize()
+	if err := s.store.SaveSettings(settings); err != nil {
+		return domain.Settings{}, err
+	}
+	return settings, nil
+}
+
+// SetAIApiKey stores or replaces the caller's own provider key. The key is
+// write-only: neither this response nor GetSettings ever carries it back.
+func (s *SettingsService) SetAIApiKey(ctx context.Context, request *connect.Request[wdidv1.SetAIApiKeyRequest]) (*connect.Response[wdidv1.SetAIApiKeyResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	apiKey := strings.TrimSpace(request.Msg.GetApiKey())
+	if apiKey == "" {
+		return nil, toConnectError(domain.ValidationError{Field: "apiKey", Message: "is required"})
+	}
+
+	settings, err := s.saveAIApiKey(userID, apiKey)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.SetAIApiKeyResponse{Settings: toProtoSettings(settings)}), nil
+}
+
+// ClearAIApiKey removes the stored provider key. AI generation stays disabled
+// until the caller sets a new one.
+func (s *SettingsService) ClearAIApiKey(ctx context.Context, _ *connect.Request[wdidv1.ClearAIApiKeyRequest]) (*connect.Response[wdidv1.ClearAIApiKeyResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	settings, err := s.saveAIApiKey(userID, "")
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.ClearAIApiKeyResponse{Settings: toProtoSettings(settings)}), nil
 }
 
 // BackupNow takes a manual snapshot. Manual snapshots are never removed by
@@ -319,6 +373,7 @@ func toProtoSettings(settings domain.Settings) *wdidv1.Settings {
 		JournalStartDate:     settings.JournalStartDate,
 		UpdatedAt:            updatedAt,
 		SupportPeople:        settings.SupportPeople,
+		HasAiApiKey:          settings.HasAIKey(),
 	}
 }
 

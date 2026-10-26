@@ -106,6 +106,13 @@ abstract class SettingsApi {
 
   Future<AppSettings> updateSettings(AppSettings settings);
 
+  /// Stores or replaces the account's provider key. The key is write-only:
+  /// responses only report whether one is stored.
+  Future<AppSettings> setAiApiKey(String apiKey);
+
+  /// Removes the stored provider key and disables AI generation.
+  Future<AppSettings> clearAiApiKey();
+
   /// Backups are instance-wide and admin-only. Non-admins receive a
   /// permission-denied [SettingsFailure].
   Future<BackupStatusInfo> getBackupStatus();
@@ -125,6 +132,12 @@ abstract class SettingsRpc {
   Future<generated.UpdateSettingsResponse> updateSettings(
     generated.UpdateSettingsRequest request,
   );
+
+  Future<generated.SetAIApiKeyResponse> setAiApiKey(
+    generated.SetAIApiKeyRequest request,
+  );
+
+  Future<generated.ClearAIApiKeyResponse> clearAiApiKey();
 
   Future<generated.GetBackupStatusResponse> getBackupStatus();
 
@@ -159,6 +172,15 @@ class GrpcSettingsRpc implements SettingsRpc {
   Future<generated.UpdateSettingsResponse> updateSettings(
     generated.UpdateSettingsRequest request,
   ) => _client.updateSettings(request);
+
+  @override
+  Future<generated.SetAIApiKeyResponse> setAiApiKey(
+    generated.SetAIApiKeyRequest request,
+  ) => _client.setAIApiKey(request);
+
+  @override
+  Future<generated.ClearAIApiKeyResponse> clearAiApiKey() =>
+      _client.clearAIApiKey(generated.ClearAIApiKeyRequest());
 
   @override
   Future<generated.GetBackupStatusResponse> getBackupStatus() =>
@@ -208,6 +230,28 @@ class GrpcSettingsApi implements SettingsApi {
         generated.UpdateSettingsRequest(settings: _toProto(settings)),
       );
       return _fromProto(response.settings, settings);
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<AppSettings> setAiApiKey(String apiKey) async {
+    try {
+      final response = await _rpc.setAiApiKey(
+        generated.SetAIApiKeyRequest(apiKey: apiKey.trim()),
+      );
+      return _fromProto(response.settings, const AppSettings());
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<AppSettings> clearAiApiKey() async {
+    try {
+      final response = await _rpc.clearAiApiKey();
+      return _fromProto(response.settings, const AppSettings());
     } on GrpcError catch (error) {
       throw _failure(error);
     }
@@ -279,6 +323,7 @@ class GrpcSettingsApi implements SettingsApi {
         aiBaseUrl: settings.aiBaseUrl,
         aiModel: settings.aiModel,
         redactUrls: settings.aiRedact,
+        hasAiApiKey: settings.hasAiApiKey,
         journalStartDate: settings.journalStartDate,
         supportPeople: settings.supportPeople.toList(),
       );

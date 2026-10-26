@@ -30,8 +30,15 @@ var (
 	ErrInviteUsed = errors.New("invite code has already been used")
 	// ErrInviteEmailMismatch is returned when a code is used for another email.
 	ErrInviteEmailMismatch = errors.New("invite code is for a different email")
-	// ErrInvalidCredentials is returned for an unknown email or wrong password.
-	ErrInvalidCredentials = errors.New("invalid email or password")
+	// ErrInvalidCredentials is returned for an unknown account or wrong password.
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	// ErrLocalAccountExists is returned when local mode already has its single
+	// account. Local mode can never create a second one.
+	ErrLocalAccountExists = errors.New("local mode has exactly one account")
+	// ErrLegacyServerDatabase is returned when a local-mode service opens a
+	// database that still holds server-mode accounts. The operator must choose
+	// server mode explicitly; the service never switches modes by itself.
+	ErrLegacyServerDatabase = errors.New("database contains accounts from a server-mode deployment")
 	// ErrUnauthenticated is returned when a token cannot be verified.
 	ErrUnauthenticated = errors.New("unauthenticated")
 )
@@ -48,6 +55,8 @@ const (
 // first account uses the deployment bootstrap secret; every later account needs
 // a single-use invite code.
 type RegisterRequest struct {
+	// Username creates a local-mode account. Server-mode accounts use Email.
+	Username        string
 	Email           string
 	Password        string
 	DisplayName     string
@@ -58,6 +67,7 @@ type RegisterRequest struct {
 // Identity is the authenticated caller attached to a request context.
 type Identity struct {
 	UserID      string
+	Username    string
 	Email       string
 	DisplayName string
 	Roles       []string
@@ -86,10 +96,68 @@ func NewService(database *store.Store, cfg config.Config) *Service {
 	return &Service{store: database, cfg: cfg}
 }
 
-// Register creates an account. The first account needs the deployment
-// bootstrap secret and becomes the administrator; every later account needs a
-// single-use invite code.
+// Register creates an account in the mode the service runs in. Local mode
+// creates the single username account; server mode uses the bootstrap secret
+// for the first account and an invite for every later one.
 func (s *Service) Register(request RegisterRequest, now time.Time) (domain.User, string, error) {
+	if s.cfg.LocalMode() {
+		return s.registerLocal(request, now)
+	}
+	return s.registerServer(request, now)
+}
+
+// registerLocal creates the one local account. It requires a username and
+// accepts an optional password; there is no email, bootstrap secret or invite.
+// The account becomes the administrator so instance-wide backups stay usable.
+func (s *Service) registerLocal(request RegisterRequest, now time.Time) (domain.User, string, error) {
+	request.Username = strings.TrimSpace(request.Username)
+	request.DisplayName = strings.TrimSpace(request.DisplayName)
+
+	if err := domain.ValidateLocalRegistration(request.Username, request.Password); err != nil {
+		return domain.User{}, "", err
+	}
+
+	var hash string
+	if request.Password != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return domain.User{}, "", fmt.Errorf("hash password: %w", err)
+		}
+		hash = string(hashed)
+	}
+
+	displayName := request.DisplayName
+	if displayName == "" {
+		displayName = request.Username
+	}
+
+	user := domain.User{
+		ID:          domain.NewID(),
+		Username:    request.Username,
+		DisplayName: displayName,
+		Role:        domain.RoleAdmin,
+		CreatedAt:   now.UTC(),
+	}
+
+	if err := s.store.CreateLocalUser(user, hash); err != nil {
+		if errors.Is(err, store.ErrAlreadyBootstrapped) {
+			return domain.User{}, "", ErrLocalAccountExists
+		}
+		return domain.User{}, "", err
+	}
+
+	token, err := s.issueToken(user)
+	if err != nil {
+		return domain.User{}, "", err
+	}
+
+	return user, token, nil
+}
+
+// registerServer creates an account in the multi-user deployment: the first
+// account needs the deployment bootstrap secret and becomes the administrator,
+// and every later account needs a single-use invite code.
+func (s *Service) registerServer(request RegisterRequest, now time.Time) (domain.User, string, error) {
 	request.Email = strings.ToLower(strings.TrimSpace(request.Email))
 	request.DisplayName = strings.TrimSpace(request.DisplayName)
 
@@ -206,14 +274,116 @@ func (s *Service) Login(email, password string) (domain.User, string, error) {
 	return user, token, nil
 }
 
+// LoginLocal signs in the single local account by username. An account without
+// a stored password signs in without one; an account with a password verifies
+// it exactly like a server login.
+func (s *Service) LoginLocal(username, password string) (domain.User, string, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return domain.User{}, "", ErrInvalidCredentials
+	}
+
+	user, err := s.store.UserByUsername(username)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return domain.User{}, "", ErrInvalidCredentials
+		}
+		return domain.User{}, "", err
+	}
+
+	hash, err := s.store.PasswordHash(user.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		// Passwordless local account: any supplied password is ignored.
+	case err != nil:
+		return domain.User{}, "", err
+	default:
+		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+			return domain.User{}, "", ErrInvalidCredentials
+		}
+	}
+
+	token, err := s.issueToken(user)
+	if err != nil {
+		return domain.User{}, "", err
+	}
+
+	return user, token, nil
+}
+
+// LocalAccount describes the single local-mode account's login hints.
+type LocalAccount struct {
+	Username         string
+	PasswordRequired bool
+}
+
+// LocalAccount returns the local account's username and whether it has a
+// password. found is false for a fresh installation that still needs its
+// first-run setup. It is the only place the login screen's local hints are
+// resolved, so the RPC layer never reaches into the store itself.
+func (s *Service) LocalAccount() (LocalAccount, bool, error) {
+	user, err := s.store.LocalUser()
+	if errors.Is(err, store.ErrNotFound) {
+		return LocalAccount{}, false, nil
+	}
+	if err != nil {
+		return LocalAccount{}, false, err
+	}
+
+	account := LocalAccount{Username: user.Username}
+	_, err = s.store.PasswordHash(user.ID)
+	switch {
+	case err == nil:
+		account.PasswordRequired = true
+	case errors.Is(err, store.ErrNotFound):
+		// Passwordless local account.
+	default:
+		return LocalAccount{}, false, err
+	}
+
+	return account, true, nil
+}
+
+// EnsureLocalModeCompatible fails fast when a local-mode service would attach
+// to accounts created by a server-mode deployment. Local mode has exactly one
+// username account, so silently choosing an arbitrary legacy email account
+// would lose the operator's data. It never switches modes itself; the error
+// tells the operator how to opt into server mode. Development mode resolves to
+// server mode, so make run, seeding and tests are not blocked.
+func EnsureLocalModeCompatible(database *store.Store, cfg config.Config) error {
+	if !cfg.LocalMode() {
+		return nil
+	}
+
+	count, err := database.LegacyServerAccountCount()
+	if err != nil {
+		return fmt.Errorf("inspect existing accounts: %w", err)
+	}
+	if count == 0 {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"%w: %d account(s) have no username identity; set WDID_AUTH_MODE=server to keep using this database",
+		ErrLegacyServerDatabase,
+		count,
+	)
+}
+
 func (s *Service) issueToken(user domain.User) (string, error) {
-	return platform.LocalJwt.NewLocalJwtToken(map[string]interface{}{
+	claims := map[string]interface{}{
 		"sub":                user.ID,
-		"email":              user.Email,
 		"preferred_username": user.DisplayName,
 		"roles":              []string{string(user.Role)},
 		"iss":                localIssuer,
-	})
+	}
+	if user.Email != "" {
+		claims["email"] = user.Email
+	}
+	if user.Username != "" {
+		claims["username"] = user.Username
+	}
+	return platform.LocalJwt.NewLocalJwtToken(claims)
 }
 
 // IdentityFromRequestContext resolves the wdid identity after goslow has
@@ -232,6 +402,12 @@ func (s *Service) IdentityFromRequestContext(ctx context.Context) (Identity, err
 func (s *Service) identityFromPlatform(platformIdentity platform.Identity) (Identity, error) {
 	if platformIdentity.Issuer == localIssuer {
 		return s.identityFromLocalClaims(platformIdentity)
+	}
+
+	// Local installs have no OIDC configuration and never accept an external
+	// identity provider's token.
+	if s.cfg.LocalMode() {
+		return Identity{}, ErrUnauthenticated
 	}
 
 	if !s.cfg.Zitadel.Enabled {
@@ -260,6 +436,7 @@ func (s *Service) identityFromLocalClaims(platformIdentity platform.Identity) (I
 
 	return Identity{
 		UserID:      user.ID,
+		Username:    user.Username,
 		Email:       user.Email,
 		DisplayName: user.DisplayName,
 		Roles:       rolesFor(platformIdentity.Roles),

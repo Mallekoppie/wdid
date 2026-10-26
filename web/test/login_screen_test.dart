@@ -13,12 +13,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      WdidApp(
-        authApi: auth,
-        initialRoute: '/login',
-      ),
-    );
+    await tester.pumpWidget(WdidApp(authApi: auth, initialRoute: '/login'));
     await tester.pumpAndSettle();
   }
 
@@ -103,6 +98,96 @@ void main() {
     expect(registration['email'], 'new@example.com');
     expect(registration['inviteCode'], 'wdid-ABCD-EFGH-IJKL-MNOP');
     expect(registration['bootstrapSecret'], '');
+    expect(find.text('Start a timer'), findsOneWidget);
+  });
+
+  testWidgets('local setup creates the account without an email', (
+    tester,
+  ) async {
+    final auth = FakeAuthApi(
+      config: const AuthConfig(
+        localLogin: true,
+        registrationEnabled: false,
+        bootstrapRequired: false,
+        oidcEnabled: false,
+        mode: AuthMode.local,
+        setupRequired: true,
+      ),
+    );
+    await pumpLogin(tester, auth);
+
+    expect(find.text('Set up wdid'), findsOneWidget);
+    expect(find.byKey(const Key('bootstrap-secret')), findsNothing);
+    expect(find.text('Continue with Zitadel'), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const Key('local-setup-username')),
+      'malle',
+    );
+    await tester.tap(find.byKey(const Key('local-setup-submit')));
+    await tester.pumpAndSettle();
+
+    final registration = auth.registrations.single;
+    expect(registration['username'], 'malle');
+    expect(registration['email'], '');
+    expect(registration['password'], '');
+    expect(registration['bootstrapSecret'], '');
+    expect(registration['inviteCode'], '');
+    expect(find.text('Start a timer'), findsOneWidget);
+  });
+
+  testWidgets('a passwordless local account signs in automatically', (
+    tester,
+  ) async {
+    final auth = FakeAuthApi(
+      config: const AuthConfig(
+        localLogin: true,
+        registrationEnabled: false,
+        bootstrapRequired: false,
+        oidcEnabled: false,
+        mode: AuthMode.local,
+        username: 'malle',
+      ),
+    );
+    await pumpLogin(tester, auth);
+
+    expect(auth.logins.single['username'], 'malle');
+    expect(auth.logins.single['password'], '');
+    expect(find.byKey(const Key('local-login-password')), findsNothing);
+    expect(find.text('Start a timer'), findsOneWidget);
+  });
+
+  testWidgets('a password-protected local account prefills the username', (
+    tester,
+  ) async {
+    final auth = FakeAuthApi(
+      config: const AuthConfig(
+        localLogin: true,
+        registrationEnabled: false,
+        bootstrapRequired: false,
+        oidcEnabled: false,
+        mode: AuthMode.local,
+        passwordRequired: true,
+        username: 'malle',
+      ),
+    );
+    await pumpLogin(tester, auth);
+
+    expect(auth.logins, isEmpty);
+    final usernameField = tester.widget<TextField>(
+      find.byKey(const Key('local-login-username')),
+    );
+    expect(usernameField.controller!.text, 'malle');
+
+    await tester.enterText(
+      find.byKey(const Key('local-login-password')),
+      'longenough1',
+    );
+    await tester.tap(find.byKey(const Key('local-login-submit')));
+    await tester.pumpAndSettle();
+
+    expect(auth.logins.single['username'], 'malle');
+    expect(auth.logins.single['password'], 'longenough1');
     expect(find.text('Start a timer'), findsOneWidget);
   });
 

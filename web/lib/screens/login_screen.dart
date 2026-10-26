@@ -21,6 +21,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _loginEmail = TextEditingController();
   final _loginPassword = TextEditingController();
+  final _localUsername = TextEditingController();
+  final _localPassword = TextEditingController();
   final _registerName = TextEditingController();
   final _registerEmail = TextEditingController();
   final _registerPassword = TextEditingController();
@@ -28,23 +30,97 @@ class _LoginScreenState extends State<LoginScreen> {
   final _bootstrapSecret = TextEditingController();
 
   String? _formError;
+  bool _autoSignInStarted = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(widget.auth.loadConfig());
+    unawaited(_startAuth());
+  }
+
+  Future<void> _startAuth() async {
+    if (widget.auth.config == null) {
+      await widget.auth.loadConfig();
+    }
+    if (!mounted) return;
+    _prefillLocalUsername();
+    _maybeAutoSignIn();
+  }
+
+  /// A later local launch prefills the one account's username.
+  void _prefillLocalUsername() {
+    final username = widget.auth.config?.username ?? '';
+    if (username.isNotEmpty && _localUsername.text.isEmpty) {
+      _localUsername.text = username;
+    }
+  }
+
+  /// A local account without a password signs in without a prompt.
+  void _maybeAutoSignIn() {
+    final config = widget.auth.config;
+    if (config == null ||
+        !config.isLocal ||
+        config.setupRequired ||
+        config.passwordRequired ||
+        widget.auth.signedIn ||
+        _autoSignInStarted) {
+      return;
+    }
+    _autoSignInStarted = true;
+    unawaited(_signInAutomatically(config.username));
+  }
+
+  Future<void> _signInAutomatically(String username) async {
+    final ok = await widget.auth.login(username: username, password: '');
+    _enterApp(ok);
   }
 
   @override
   void dispose() {
     _loginEmail.dispose();
     _loginPassword.dispose();
+    _localUsername.dispose();
+    _localPassword.dispose();
     _registerName.dispose();
     _registerEmail.dispose();
     _registerPassword.dispose();
     _inviteCode.dispose();
     _bootstrapSecret.dispose();
     super.dispose();
+  }
+
+  Future<void> _setupLocal() async {
+    final username = _localUsername.text.trim();
+    if (username.isEmpty) {
+      setState(() => _formError = 'Enter a username.');
+      return;
+    }
+    setState(() => _formError = null);
+    final ok = await widget.auth.register(
+      username: username,
+      password: _localPassword.text,
+      displayName: username,
+    );
+    _enterApp(ok);
+  }
+
+  Future<void> _signInLocal() async {
+    final username = _localUsername.text.trim();
+    final passwordRequired = widget.auth.config?.passwordRequired ?? false;
+    if (username.isEmpty || (passwordRequired && _localPassword.text.isEmpty)) {
+      setState(
+        () => _formError = passwordRequired
+            ? 'Enter your username and password.'
+            : 'Enter your username.',
+      );
+      return;
+    }
+    setState(() => _formError = null);
+    final ok = await widget.auth.login(
+      username: username,
+      password: _localPassword.text,
+    );
+    _enterApp(ok);
   }
 
   Future<void> _signIn() async {
@@ -125,189 +201,284 @@ class _LoginScreenState extends State<LoginScreen> {
     final scheme = theme.colorScheme;
 
     return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 900;
-          final brand = Container(
-            width: wide ? constraints.maxWidth * 0.48 : null,
-            color: Color.alphaBlend(
-              scheme.primaryContainer.withValues(alpha: 0.30),
-              scheme.surface,
-            ),
-            padding: const EdgeInsets.all(48),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
+      body: ListenableBuilder(
+        listenable: widget.auth,
+        builder: (context, _) {
+          final auth = widget.auth;
+          final config = auth.config;
+          final localMode = config?.isLocal ?? false;
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              final brand = Container(
+                width: wide ? constraints.maxWidth * 0.48 : null,
+                color: Color.alphaBlend(
+                  scheme.primaryContainer.withValues(alpha: 0.30),
+                  scheme.surface,
+                ),
+                padding: const EdgeInsets.all(48),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: scheme.primary,
-                        borderRadius: BorderRadius.circular(9),
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: scheme.primary,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Text(
+                            'w',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              color: scheme.onPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'wdid',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        StatusBadge(
+                          label: 'Preview',
+                          color: scheme.secondary,
+                          icon: Icons.visibility_outlined,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    Text(
+                      'What did you do?',
+                      style: theme.textTheme.displaySmall?.copyWith(
+                        color: scheme.onSurface,
+                        height: 1.1,
                       ),
-                      child: Text(
-                        'w',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.w700,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'A private work ledger for time, initiatives, support, and '
+                      'review-ready outcomes. Capture in seconds; export when it counts.',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    for (final line in const [
+                      'Local-first, portable data',
+                      'Initiative and support attribution',
+                      'AI-ready check-in summaries',
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Icon(Icons.check, size: 15, color: scheme.primary),
+                            const SizedBox(width: 8),
+                            Text(line, style: theme.textTheme.bodySmall),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
+                    const SizedBox(height: AppSpacing.xl),
                     Text(
-                      'wdid',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                      localMode
+                          ? 'This is a private single-user ledger. Set a '
+                                'username and add a password only if you want one.'
+                          : 'The first account is created with the deployment '
+                                'bootstrap secret. Later accounts need a single-use invite code.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    StatusBadge(
-                      label: 'Preview',
-                      color: scheme.secondary,
-                      icon: Icons.visibility_outlined,
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xl),
-                Text(
-                  'What did you do?',
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    color: scheme.onSurface,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'A private work ledger for time, initiatives, support, and '
-                  'review-ready outcomes. Capture in seconds; export when it counts.',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                for (final line in const [
-                  'Local-first, portable data',
-                  'Initiative and support attribution',
-                  'AI-ready check-in summaries',
-                ])
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Icon(Icons.check, size: 15, color: scheme.primary),
-                        const SizedBox(width: 8),
-                        Text(line, style: theme.textTheme.bodySmall),
-                      ],
+              );
+
+              final form = Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Panel(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: _authForm(theme, scheme, auth, localMode),
                     ),
                   ),
-                const SizedBox(height: AppSpacing.xl),
-                Text(
-                  'The first account is created with the deployment bootstrap '
-                  'secret. Later accounts need a single-use invite code.',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
                 ),
-              ],
-            ),
-          );
+              );
 
-          final form = Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Panel(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: ListenableBuilder(
-                    listenable: widget.auth,
-                    builder: (context, _) {
-                      final auth = widget.auth;
-                      if (auth.config == null && auth.loading) {
-                        return const Padding(
-                          padding: EdgeInsets.all(AppSpacing.xl),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      final bootstrap = auth.config?.bootstrapRequired ?? false;
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            bootstrap ? 'Set up the first account' : 'Sign in',
-                            style: theme.textTheme.headlineSmall,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            bootstrap
-                                ? 'Use the deployment bootstrap secret to create the admin account.'
-                                : 'Use your email and password, or register with an invite code.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          if (bootstrap)
-                            ..._bootstrapFields(theme, auth.loading)
-                          else
-                            ..._loginFields(theme, auth.loading),
-                          if (_activeError != null) ...[
-                            const SizedBox(height: AppSpacing.md),
-                            Text(
-                              _activeError!,
-                              key: const Key('auth-error'),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.error,
-                              ),
-                            ),
-                          ],
-                          if (auth.config == null) ...[
-                            const SizedBox(height: AppSpacing.md),
-                            TextButton(
-                              onPressed: auth.loadConfig,
-                              child: const Text('Retry connection'),
-                            ),
-                          ],
-                          if (auth.config?.oidcEnabled == true) ...[
-                            const SizedBox(height: AppSpacing.md),
-                            OutlinedButton.icon(
-                              onPressed: _oidcPending,
-                              icon: const Icon(Icons.login, size: 17),
-                              label: const Text('Continue with Zitadel'),
-                            ),
-                          ],
-                        ],
-                      );
-                    },
+              if (!wide) {
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [brand, form],
                   ),
-                ),
-              ),
-            ),
-          );
-
-          if (!wide) {
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [brand, form],
-              ),
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: brand),
-              Expanded(child: form),
-            ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: brand),
+                  Expanded(child: form),
+                ],
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  Widget _authForm(
+    ThemeData theme,
+    ColorScheme scheme,
+    AuthState auth,
+    bool localMode,
+  ) {
+    final config = auth.config;
+    if (config == null && auth.loading) {
+      return const Padding(
+        padding: EdgeInsets.all(AppSpacing.xl),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final setup = localMode && (config?.setupRequired ?? false);
+    final bootstrap = !localMode && (config?.bootstrapRequired ?? false);
+    final passwordRequired = localMode && (config?.passwordRequired ?? false);
+
+    final String title;
+    final String subtitle;
+    if (setup) {
+      title = 'Set up wdid';
+      subtitle =
+          'Choose a username. Add a password only if you want one; leave it '
+          'blank to sign in automatically.';
+    } else if (bootstrap) {
+      title = 'Set up the first account';
+      subtitle =
+          'Use the deployment bootstrap secret to create the admin account.';
+    } else if (localMode) {
+      title = 'Sign in';
+      subtitle = passwordRequired
+          ? 'Enter the password for this account.'
+          : 'No password is set, so this account signs in automatically.';
+    } else {
+      title = 'Sign in';
+      subtitle =
+          'Use your email and password, or register with an invite code.';
+    }
+
+    final List<Widget> fields;
+    if (setup) {
+      fields = _localSetupFields(auth.loading);
+    } else if (bootstrap) {
+      fields = _bootstrapFields(theme, auth.loading);
+    } else if (localMode) {
+      fields = _localLoginFields(auth.loading, passwordRequired);
+    } else {
+      fields = _loginFields(theme, auth.loading);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(title, style: theme.textTheme.headlineSmall),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        ...fields,
+        if (_activeError != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            _activeError!,
+            key: const Key('auth-error'),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+          ),
+        ],
+        if (config == null) ...[
+          const SizedBox(height: AppSpacing.md),
+          TextButton(
+            onPressed: auth.loadConfig,
+            child: const Text('Retry connection'),
+          ),
+        ],
+        if (!localMode && config?.oidcEnabled == true) ...[
+          const SizedBox(height: AppSpacing.md),
+          OutlinedButton.icon(
+            onPressed: _oidcPending,
+            icon: const Icon(Icons.login, size: 17),
+            label: const Text('Continue with Zitadel'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _localSetupFields(bool busy) {
+    return [
+      _field(
+        key: const Key('local-setup-username'),
+        controller: _localUsername,
+        label: 'Username',
+        onSubmitted: (_) => _setupLocal(),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      _field(
+        key: const Key('local-setup-password'),
+        controller: _localPassword,
+        label: 'Password (optional)',
+        hint: 'Leave blank to sign in automatically',
+        obscure: true,
+        onSubmitted: (_) => _setupLocal(),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      FilledButton(
+        key: const Key('local-setup-submit'),
+        onPressed: busy ? null : _setupLocal,
+        child: const Text('Create account'),
+      ),
+    ];
+  }
+
+  List<Widget> _localLoginFields(bool busy, bool passwordRequired) {
+    return [
+      _field(
+        key: const Key('local-login-username'),
+        controller: _localUsername,
+        label: 'Username',
+        onSubmitted: passwordRequired ? (_) => _signInLocal() : null,
+      ),
+      if (passwordRequired) ...[
+        const SizedBox(height: AppSpacing.sm),
+        _field(
+          key: const Key('local-login-password'),
+          controller: _localPassword,
+          label: 'Password',
+          obscure: true,
+          onSubmitted: (_) => _signInLocal(),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.md),
+      FilledButton(
+        key: const Key('local-login-submit'),
+        onPressed: busy ? null : _signInLocal,
+        child: const Text('Sign in'),
+      ),
+    ];
   }
 
   List<Widget> _loginFields(ThemeData theme, bool busy) {

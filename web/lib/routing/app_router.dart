@@ -103,7 +103,7 @@ GoRouter buildRouter(
           ),
           GoRoute(
             path: '/settings',
-            builder: (context, routerState) => const SettingsScreen(),
+            builder: (context, routerState) => SettingsScreen(auth: auth),
           ),
         ],
       ),

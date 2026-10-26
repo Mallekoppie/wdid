@@ -16,6 +16,9 @@ import (
 
 // runInvite dispatches the `wdid invite` subcommands.
 func runInvite(args []string, out io.Writer) error {
+	if config.LoadStorage().LocalMode() {
+		return errors.New("invites are not available in local auth mode; use server mode or WDID_DEV_MODE=true")
+	}
 	if len(args) == 0 {
 		return errors.New("usage: wdid invite create --email <address> | list | revoke <id>")
 	}

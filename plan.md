@@ -124,8 +124,22 @@ by a **subcategory**. There is no third level.
 
 ## 4. Identity, access, and tenancy
 
-wdid is multi-user from day one. The local-first deployment is simply the
+wdid runs in one of two deployment modes. The domain model is multi-user in
+both: every account owns its records, and local mode is simply the
 single-account case of the same architecture.
+
+**Deployment modes**
+
+| Mode | Selected by | Accounts |
+| --- | --- | --- |
+| **Local** (default) | `WDID_AUTH_MODE` unset or `local` | Exactly one account, created on first run from a **username** and an optional password. It becomes `admin` so instance-wide backups stay usable. There is no email, bootstrap secret, invite or OIDC. |
+| **Server** (opt-in) | `WDID_AUTH_MODE=server` | The multi-user flow below: a bootstrap admin, email/password accounts, single-use invites, and optional Zitadel OIDC. |
+
+`WDID_DEV_MODE=true` always resolves to server mode so the existing bootstrap
+and invite paths stay available to `make run`, seeding and tests. Local mode
+rejects Zitadel configuration. A local-mode service refuses to start when the
+database already contains accounts without a username (a legacy server
+database); the operator must opt into `WDID_AUTH_MODE=server` explicitly.
 
 **Roles**
 
@@ -134,7 +148,7 @@ single-account case of the same architecture.
 | `admin` | Own workspace, plus instance-level backups, invite issuance, and identity configuration. |
 | `user` | Own workspace only. No access to another user's categories, entries, notes, or check-ins. |
 
-**Account creation**
+**Account creation — server mode**
 
 1. The first account is created from a deployment-provided bootstrap secret and
    becomes `admin`.
@@ -145,11 +159,15 @@ single-account case of the same architecture.
 
 **Authentication**
 
-- Local email + password, stored as a bcrypt hash separate from the profile, and
-  a locally issued HS256 JWT.
-- Optional Zitadel OIDC. When enabled, the same protected RPCs accept a Zitadel
-  ID token. The first OIDC login provisions a local account by email; a
-  configured role claim maps to `admin`.
+- **Local mode:** a username plus an optional password. An account without a
+  stored password signs in with its username alone. Login issues a locally
+  issued HS256 JWT; there is no email, invite or OIDC path, and local mode can
+  never create a second account.
+- **Server mode:** local email + password, stored as a bcrypt hash separate from
+  the profile, and a locally issued HS256 JWT.
+- Optional Zitadel OIDC in server mode. When enabled, the same protected RPCs
+  accept a Zitadel ID token. The first OIDC login provisions a local account by
+  email; a configured role claim maps to `admin`.
 - Local password login is the break-glass path. WebAuthn/passkeys are deferred.
 
 **Tenancy**
@@ -423,9 +441,9 @@ Grouped cards, no tabs:
 - **Time** — timezone, week start, daily target hours, long-running timer prompt
   threshold, default entry duration, personal-review cadence
   (`Weekly` / `Monthly` / `Off`). There is no rounding setting.
-- **AI** — provider (`OpenAI-compatible`), base URL, model name, key source
-  (environment variable only), redaction of URLs and notes, prompt template
-  preview and reset.
+- **AI** — provider preset (`Anthropic`, `DeepSeek`, `Custom URL`), base URL,
+  model (always editable), the account's own write-only API key
+  (set/replace/clear), redaction of URLs and notes, prompt template preview.
 - **Appearance** — theme (`System`, `Light`, `Dark`, `High Contrast`), density
   (`Comfortable` / `Compact`), preview swatches.
 - **About** — version, schema version, license.
@@ -484,6 +502,25 @@ Storage uses BoltDB through the goslow platform helpers, with JSON values. One
 bucket per entity, plus index buckets maintained by the repository layer.
 
 ### 8.1 Entities
+
+**User**
+
+```json
+{
+  "id": "018f20…",
+  "username": "malle",
+  "email": "person@example.com",
+  "displayName": "Malle",
+  "role": "admin",
+  "createdAt": "2026-10-23T08:00:00Z"
+}
+```
+
+`username` identifies the single local-mode account. Server-mode accounts are
+addressed by `email` and leave `username` empty. At least one of the two
+identity fields is present. Usernames are compared case-insensitively but the
+stored spelling is preserved for display. The profile is separate from the
+password credential.
 
 **Category**
 
@@ -628,8 +665,9 @@ A note has a `date`, a `subcategoryId`, or both.
 
 One object per user: timezone, week start, daily target minutes, review cadence,
 long-timer threshold, default duration, backup directory/interval/retention, AI
-base URL/model/redaction flag, theme, density, and journal start date. The AI key
-is never stored.
+base URL/model/redaction flag, the account's AI key, theme, density, and journal
+start date. The key is stored in cleartext for now (encryption is backlog), is
+write-only over the RPC surface, and never appears in an export.
 
 ### 8.2 Buckets
 
@@ -638,6 +676,7 @@ is never stored.
 | `sys:meta` | `schema_version`, `instance_id` | scalar |
 | `sys:users` | user id | user profile |
 | `sys:user_emails` | lower-cased email | user id |
+| `sys:user_usernames` | lower-cased username | user id |
 | `sys:user_credentials` | user id | bcrypt hash |
 | `sys:invites` | invite code hash | invite record |
 | `user_<id>:categories` | category id | Category JSON |
@@ -656,6 +695,13 @@ is never stored.
 Indexes are written in the same operation as the entity and rebuilt on startup
 when the index version changes. Date-range and per-person queries use the
 indexes; small buckets may be scanned directly.
+
+The identity indexes (`sys:user_emails`, `sys:user_usernames`) are unique and
+case-insensitive, and are written in the same transaction as the account. Local
+mode requires its one account to have a username identity. A local-mode service
+that finds accounts without one refuses to start rather than treating the
+database as fresh or choosing an account; the operator must set
+`WDID_AUTH_MODE=server`.
 
 ### 8.3 Invariants
 
@@ -780,10 +826,14 @@ one versioned place in the service and is surfaced in Settings for preview.
 
 ### 9.4 Built-in AI generation
 
-- One provider abstraction: OpenAI-compatible `POST {baseURL}/chat/completions`,
-  streaming.
-- The API key is read from the environment only. It is never stored in the
-  database, exported, or logged.
+- One provider abstraction: Anthropic Messages `POST {baseURL}/v1/messages` with
+  `x-api-key` and `anthropic-version`, streaming SSE. Presets seed Anthropic
+  (`https://api.anthropic.com`, `claude-sonnet-5-5`) and DeepSeek
+  (`https://api.deepseek.com/anthropic`, `deepseek-flash`); the base URL and
+  model stay editable.
+- Each account stores its own API key in its settings record (cleartext for now;
+  encryption is backlog). The key is write-only: no RPC returns it, exports omit
+  it, and generation is disabled until one is set.
 - Only the selected period is sent. A settings toggle can strip URLs and notes.
 - The response streams into the editable summary box, then persists with the model
   name and prompt version.
@@ -935,7 +985,7 @@ moving.
 
 ## 14. Decisions, deferred scope, and open questions
 
-### 14.1 Decisions taken (2026-10-23)
+### 14.1 Decisions taken (2026-10-23, revised 2026-10-26)
 
 - The taxonomy is two levels: category → subcategory.
 - Categories are per user, seeded with `Initiatives`, `Support`, and `Other`.
@@ -960,10 +1010,19 @@ moving.
   UI-builder export.
 - Minutes are authoritative; no rounding. Overlapping manual entries are allowed
   and flagged.
-- The AI key is environment-only.
+- The AI key is per user, stored write-only in that account's settings; a missing
+  key disables generation and points the user at Settings → AI.
 - Backups are local and unencrypted in v1.
 - Multi-user authentication and per-user isolation are in v1; admin UI, offsite
   push, WebAuthn, webhooks, and the review-readiness score are deferred.
+- Deployment modes (2026-10-26): **local** is the default — one username account
+  with an optional password and first-run setup, and no email, bootstrap
+  secret, invite or OIDC. **Server** mode (`WDID_AUTH_MODE=server`, also forced
+  by development mode) keeps the bootstrap-admin, invite and OIDC multi-user
+  flow. A local-mode service refuses to start on a database that still holds
+  server-mode accounts (accounts without a username) and tells the operator to
+  set `WDID_AUTH_MODE=server`; it never switches modes or picks an account
+  silently.
 - The project is **wdid**; no earlier working name is part of its vocabulary.
 - The service is RPC-only through Connect. The legacy REST surface is removed in
   M1, and `/healthz` remains the only non-RPC route.

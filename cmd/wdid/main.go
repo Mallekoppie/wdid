@@ -77,6 +77,13 @@ func run() error {
 	}
 	defer database.Close()
 
+	// Local mode is the default. Refuse to attach it to a database that still
+	// holds server-mode accounts instead of silently ignoring them or picking
+	// one; the operator must opt into server mode explicitly.
+	if err := auth.EnsureLocalModeCompatible(database, cfg); err != nil {
+		return err
+	}
+
 	authService := auth.NewService(database, cfg)
 
 	assets, err := fs.Sub(webAssets, "dist")
@@ -109,7 +116,7 @@ func run() error {
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService),
 			rpc.NewSettingsService(database, authService, rpc.WithBackupManager(backupManager)),
-			rpc.NewSummaryService(database, authService, rpc.WithSummaryAPIKey(cfg.OpenAIAPIKey)),
+			rpc.NewSummaryService(database, authService),
 			rpc.NewNoteService(database, authService),
 			rpc.NewMilestoneService(database, authService),
 			rpc.NewCheckInService(database, authService),

@@ -13,7 +13,6 @@ import (
 
 	"github.com/Mallekoppie/wdid/internal/ai"
 	"github.com/Mallekoppie/wdid/internal/auth"
-	"github.com/Mallekoppie/wdid/internal/config"
 	"github.com/Mallekoppie/wdid/internal/domain"
 	wdidv1 "github.com/Mallekoppie/wdid/internal/gen/wdid/v1"
 	"github.com/Mallekoppie/wdid/internal/gen/wdid/v1/wdidv1connect"
@@ -28,7 +27,6 @@ type SummaryService struct {
 	auth     *auth.Service
 	now      func() time.Time
 	provider ai.Provider
-	apiKey   string
 }
 
 // SummaryServiceOption adjusts the service, which lets tests control the clock
@@ -54,22 +52,13 @@ func WithSummaryProvider(provider ai.Provider) SummaryServiceOption {
 	}
 }
 
-// WithSummaryAPIKey supplies the provider key read from the environment. The
-// key is held in memory only and is never stored in the database, exported or
-// logged.
-func WithSummaryAPIKey(key string) SummaryServiceOption {
-	return func(service *SummaryService) {
-		service.apiKey = strings.TrimSpace(key)
-	}
-}
-
 // NewSummaryService builds the SummaryService implementation.
 func NewSummaryService(database *store.Store, authService *auth.Service, options ...SummaryServiceOption) *SummaryService {
 	service := &SummaryService{
 		store:    database,
 		auth:     authService,
 		now:      time.Now,
-		provider: ai.NewOpenAIProvider(nil),
+		provider: ai.NewAnthropicProvider(nil),
 	}
 	for _, option := range options {
 		option(service)
@@ -218,7 +207,7 @@ func (s *SummaryService) GetPromptTemplate(ctx context.Context, request *connect
 	}), nil
 }
 
-// GenerateSummary streams an OpenAI-compatible provider's response into a
+// GenerateSummary streams an Anthropic Messages provider's response into a
 // check-in's summary. Deltas reach the client as they arrive; the stored
 // summary, model name and prompt version are written only after the provider
 // finishes successfully. A failure therefore leaves the existing summary
@@ -241,16 +230,17 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.R
 		!request.Msg.GetOverwriteManualEdits() {
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the summary was edited by hand; confirm overwriting it"))
 	}
-	if s.apiKey == "" {
-		return connect.NewError(
-			connect.CodeFailedPrecondition,
-			fmt.Errorf("no AI API key is configured; set %s", config.OpenAIAPIKeyEnv),
-		)
-	}
 
 	input, err := s.exportInput(userID, checkIn.PeriodStart, checkIn.PeriodEnd, &checkIn)
 	if err != nil {
 		return toConnectError(err)
+	}
+	apiKey := strings.TrimSpace(input.Settings.AIAPIKey)
+	if apiKey == "" {
+		return connect.NewError(
+			connect.CodeFailedPrecondition,
+			errors.New("no AI API key is configured; add your key in Settings → AI"),
+		)
 	}
 	if input.Settings.AIRedact {
 		input = domain.RedactExportInput(input)
@@ -265,7 +255,7 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.R
 	var generated strings.Builder
 	response, err := s.provider.Stream(ctx, ai.Request{
 		BaseURL: baseURL,
-		APIKey:  s.apiKey,
+		APIKey:  apiKey,
 		Model:   modelName,
 		Prompt:  domain.BuildPrompt(promptCheckIn),
 	}, func(delta string) error {

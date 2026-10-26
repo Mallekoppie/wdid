@@ -11,14 +11,17 @@ import (
 
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
+	t.Setenv("WDID_AUTH_MODE", config.AuthModeServer)
 	t.Setenv("WDID_BOOTSTRAP_SECRET", "test-registration-secret")
 	t.Setenv("WDID_JWT_SECRET", strings.Repeat("k", 32))
+	t.Setenv("WDID_DEV_MODE", "false")
 }
 
 func TestValidateRejectsMissingSecrets(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:8080",
 		DBPath:               "./data/wdid.db",
+		AuthMode:             config.AuthModeServer,
 		JWTSigningMethod:     "HS256",
 		JWTExpirationMinutes: 60,
 		MaxBlockMinutes:      240,
@@ -33,6 +36,7 @@ func TestValidateAcceptsCompleteConfig(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:8080",
 		DBPath:               "./data/wdid.db",
+		AuthMode:             config.AuthModeServer,
 		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),
 		JWTSigningMethod:     "HS256",
@@ -42,6 +46,102 @@ func TestValidateAcceptsCompleteConfig(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadDefaultsToLocalAuthModeWithoutABootstrapSecret(t *testing.T) {
+	t.Setenv("WDID_AUTH_MODE", "")
+	t.Setenv("WDID_BOOTSTRAP_SECRET", "")
+	t.Setenv("WDID_JWT_SECRET", strings.Repeat("k", 32))
+	t.Setenv("WDID_DEV_MODE", "false")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("load local config: %v", err)
+	}
+
+	if cfg.AuthMode != config.AuthModeLocal {
+		t.Fatalf("auth mode = %q, want %q", cfg.AuthMode, config.AuthModeLocal)
+	}
+	if !cfg.LocalMode() {
+		t.Fatal("local mode should be enabled")
+	}
+	if cfg.ResolvedAuthMode() != config.AuthModeLocal {
+		t.Fatalf("effective mode = %q, want local", cfg.ResolvedAuthMode())
+	}
+}
+
+func TestLoadServerModeRequiresBootstrapSecret(t *testing.T) {
+	t.Setenv("WDID_AUTH_MODE", config.AuthModeServer)
+	t.Setenv("WDID_BOOTSTRAP_SECRET", "")
+	t.Setenv("WDID_JWT_SECRET", strings.Repeat("k", 32))
+	t.Setenv("WDID_DEV_MODE", "false")
+
+	_, err := config.Load()
+	if err == nil || !strings.Contains(err.Error(), "WDID_BOOTSTRAP_SECRET") {
+		t.Fatalf("error = %v, want a bootstrap secret requirement", err)
+	}
+}
+
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		AuthMode:             "gateway",
+		JWTSecret:            strings.Repeat("k", 32),
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected an unknown auth mode to be rejected")
+	}
+}
+
+func TestValidateRejectsZitadelInLocalMode(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		AuthMode:             config.AuthModeLocal,
+		JWTSecret:            strings.Repeat("k", 32),
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+		Zitadel: config.Zitadel{
+			Enabled:           true,
+			IssuerURL:         "http://zitadel.local:8080",
+			ClientID:          "wdid-client",
+			AllowedAlgorithms: []string{"RS256"},
+		},
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected Zitadel to be rejected in local mode")
+	}
+}
+
+func TestDevModeKeepsTheMultiUserAuthPaths(t *testing.T) {
+	cfg := config.Config{
+		HTTPAddr:             "127.0.0.1:8080",
+		DBPath:               "./data/wdid.db",
+		AuthMode:             config.AuthModeLocal,
+		DevMode:              true,
+		BootstrapSecret:      "test-registration-secret",
+		JWTSecret:            strings.Repeat("k", 32),
+		JWTSigningMethod:     "HS256",
+		JWTExpirationMinutes: 60,
+		MaxBlockMinutes:      240,
+	}
+
+	if cfg.LocalMode() {
+		t.Fatal("dev mode must keep the multi-user paths even with a local base mode")
+	}
+	if cfg.ResolvedAuthMode() != config.AuthModeServer {
+		t.Fatalf("effective mode = %q, want server", cfg.ResolvedAuthMode())
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("dev mode validation: %v", err)
 	}
 }
 
@@ -104,16 +204,15 @@ func TestLoadFromEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadReadsTheOpenAIKeyFromTheEnvironmentOnly(t *testing.T) {
+func TestLoadIgnoresTheRetiredEnvironmentAIKey(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv(config.OpenAIAPIKeyEnv, "  sk-test-key  ")
+	// The AI key is per user and stored in Settings. A leftover deployment
+	// variable must neither configure generation nor fail startup.
+	t.Setenv("WDID_OPENAI_API_KEY", "sk-test-key")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
-	}
-	if cfg.OpenAIAPIKey != "sk-test-key" {
-		t.Fatalf("AI key = %q, want the trimmed environment value", cfg.OpenAIAPIKey)
 	}
 
 	// The platform configuration has no field for the key, so it cannot leak
@@ -154,6 +253,7 @@ func TestValidateRejectsWildcardOrigin(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:8080",
 		DBPath:               "./data/wdid.db",
+		AuthMode:             config.AuthModeServer,
 		AllowedOrigins:       []string{"*"},
 		BootstrapSecret:      "test-registration-secret",
 		JWTSecret:            strings.Repeat("k", 32),

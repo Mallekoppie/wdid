@@ -699,6 +699,10 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                       message: state.canGenerateSummary
                           ? 'Generate one from the captured entries, or copy the '
                                 'prompt into your own model.'
+                          : state.hasSummaryService
+                          ? 'Add your AI provider key in Settings → AI to '
+                                'generate a summary, or copy the prompt into your '
+                                'own model.'
                           : 'Add a summary for this period, or copy the focus notes into your own review.',
                       action: readOnly || !state.canGenerateSummary
                           ? null
@@ -712,6 +716,46 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     )
                   else
                     SimpleMarkdown(checkIn.summaryMarkdown),
+                  // A missing key hides the Regenerate action. Keep the reason
+                  // visible next to an existing summary too, instead of leaving
+                  // the user to wonder why the action disappeared.
+                  if (!_editing &&
+                      checkIn.summaryMarkdown.isNotEmpty &&
+                      state.hasSummaryService &&
+                      !state.settings.hasAiApiKey) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(AppRadius.input),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.key_outlined,
+                            size: 17,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              'Add your AI provider key in Settings → AI to '
+                              'generate a summary, or copy the prompt into '
+                              'your own model.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

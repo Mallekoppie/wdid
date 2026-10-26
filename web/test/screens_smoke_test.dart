@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
+import 'package:wdid_web/data/auth_api.dart';
 import 'package:wdid_web/models/check_in.dart';
 import 'package:wdid_web/models/enums.dart';
 import 'package:wdid_web/models/taxonomy.dart';
@@ -51,6 +52,7 @@ void main() {
     WidgetTester tester,
     String route, {
     Size size = const Size(1440, 1000),
+    AuthConfig? authConfig,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
@@ -59,7 +61,7 @@ void main() {
 
     await tester.pumpWidget(
       WdidApp(
-        authApi: FakeAuthApi(),
+        authApi: FakeAuthApi(config: authConfig ?? defaultAuthConfig),
         initialSession: route == '/login' ? null : signedInSession(),
         initialRoute: route,
         categoryApiBuilder: (_) => FakeCategoryApi(
@@ -107,5 +109,29 @@ void main() {
     await pumpRoute(tester, '/today', size: const Size(820, 760));
     expect(find.text('Start a timer'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('About names the local single-user mode', (tester) async {
+    await pumpRoute(
+      tester,
+      '/settings',
+      authConfig: const AuthConfig(
+        localLogin: true,
+        registrationEnabled: false,
+        bootstrapRequired: false,
+        oidcEnabled: false,
+        mode: AuthMode.local,
+      ),
+    );
+
+    await tester.dragUntilVisible(
+      find.text('Auth'),
+      find.byType(ListView),
+      const Offset(0, -400),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local single-user · optional password'), findsOneWidget);
+    expect(find.text('Zitadel OIDC · invite-gated registration'), findsNothing);
   });
 }
