@@ -555,67 +555,103 @@ void main() {
     expect(tester.widget<SnackBar>(snackBars).action, isNull);
   });
 
-  testWidgets('the interrupt entry is flagged No mode and re-files on a tap', (
-    tester,
-  ) async {
-    final timerApi = FakeTimerApi();
-    seedRunningTimer(timerApi);
-    final entryApi = FakeEntryApi();
-    final state = await pumpApp(
-      tester,
-      timerApi: timerApi,
-      entryApi: entryApi,
-      categories: [
-        category('cat-1', 'Initiatives'),
-        category('cat-support', 'Support', role: CategoryRole.support),
-        category('cat-mentoring', 'Mentoring', role: CategoryRole.support),
-      ],
-      subcategories: [
-        subcategory('sub-1', 'cat-1', 'Billing migration'),
-        subcategory('mode-s', 'cat-support', 'Unblock'),
-        subcategory('mode-m', 'cat-mentoring', 'Pairing'),
-      ],
-    );
+  testWidgets(
+    'the interrupt entry gets a mode selector that re-files and clears',
+    (tester) async {
+      final timerApi = FakeTimerApi();
+      seedRunningTimer(timerApi);
+      final entryApi = FakeEntryApi();
+      final state = await pumpApp(
+        tester,
+        timerApi: timerApi,
+        entryApi: entryApi,
+        categories: [
+          category('cat-1', 'Initiatives'),
+          category('cat-support', 'Support', role: CategoryRole.support),
+          category('cat-mentoring', 'Mentoring', role: CategoryRole.support),
+        ],
+        subcategories: [
+          subcategory('sub-1', 'cat-1', 'Billing migration'),
+          subcategory('mode-s', 'cat-support', 'Unblock'),
+          subcategory('mode-m', 'cat-mentoring', 'Pairing'),
+        ],
+      );
 
-    // Interrupt the initiative and start the support timer.
-    await tester.tap(find.text('Interrupt'));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byType(MenuAnchor),
-        matching: find.widgetWithText(ChoiceChip, 'Priya'),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+      // Interrupt the initiative and start the support timer.
+      await tester.tap(find.text('Interrupt'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(MenuAnchor),
+          matching: find.widgetWithText(ChoiceChip, 'Priya'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    // Stop the interrupt timer so the support entry lands on Today.
-    await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+      // Stop the interrupt timer so the support entry lands on Today.
+      await tester.tap(find.widgetWithText(FilledButton, 'Stop & save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('No mode'), findsOneWidget);
-    expect(find.text('Set mode'), findsOneWidget);
+      expect(find.text('Mode'), findsOneWidget);
+      expect(find.text('Not set'), findsOneWidget);
+      expect(find.byTooltip('Change support mode'), findsOneWidget);
+      // The menu anchor must be the visible control, not the width of the
+      // cell, or the highlight and the opened menu land to its left.
+      expect(
+        tester.getSize(find.byTooltip('Change support mode')).width,
+        lessThan(240),
+      );
 
-    await tester.tap(find.text('Set mode'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Pairing').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.byTooltip('Change support mode'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pairing').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(entryApi.updateCalls, 1);
-    final updated = entryApi.entries.singleWhere(
-      (entry) => entry.categoryId == 'cat-mentoring',
-    );
-    expect(updated.subcategoryId, 'mode-m');
-    expect(find.textContaining('Mentoring · Pairing'), findsOneWidget);
-    expect(find.text('No mode'), findsNothing);
-    expect(find.text('Set mode'), findsNothing);
-    expect(
-      state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
-      isTrue,
-    );
-  });
+      expect(entryApi.updateCalls, 1);
+      final reFiled = entryApi.entries.singleWhere(
+        (entry) => entry.categoryId == 'cat-mentoring',
+      );
+      expect(reFiled.subcategoryId, 'mode-m');
+      expect(find.textContaining('Mentoring · Pairing'), findsOneWidget);
+      expect(find.text('Not set'), findsNothing);
+      expect(
+        state.entries.any((entry) => entry.categoryId == 'cat-mentoring'),
+        isTrue,
+      );
+
+      // The selector stays available after a mode exists, so it can be changed.
+      await tester.tap(find.byTooltip('Change support mode'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Unblock').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(entryApi.updateCalls, 2);
+      final changed = entryApi.entries.singleWhere(
+        (entry) => entry.id == reFiled.id,
+      );
+      expect(changed.categoryId, 'cat-support');
+      expect(changed.subcategoryId, 'mode-s');
+      expect(find.textContaining('Support · Unblock'), findsOneWidget);
+
+      // Clearing removes the mode but keeps the entry on Today.
+      await tester.tap(find.widgetWithText(TextButton, 'Clear'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(entryApi.updateCalls, 3);
+      final cleared = entryApi.entries.singleWhere(
+        (entry) => entry.id == reFiled.id,
+      );
+      expect(cleared.categoryId, 'cat-support');
+      expect(cleared.subcategoryId, isEmpty);
+      expect(find.text('Not set'), findsOneWidget);
+      expect(find.textContaining('Support · Priya'), findsOneWidget);
+    },
+  );
 
   testWidgets('header Start opens the person picker for a support default', (
     tester,

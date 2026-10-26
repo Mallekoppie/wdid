@@ -159,7 +159,7 @@ class _TimerPillState extends State<TimerPill> {
     final timer = state.activeTimer;
     final body = timer == null
         ? _startButton(context)
-        : _runningPill(context, state, timer);
+        : _runningControls(context, state, timer);
     final picking = _pickingCategory;
 
     return MenuAnchor(
@@ -180,7 +180,8 @@ class _TimerPillState extends State<TimerPill> {
       message: 'Start timer (T)',
       child: OutlinedButton.icon(
         onPressed: _start,
-        icon: Icon(Icons.play_arrow, size: 17, color: scheme.primary),
+        style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+        icon: Icon(Icons.play_arrow, size: 18, color: scheme.primary),
         label: Text(
           'Start timer',
           style: theme.textTheme.labelMedium?.copyWith(color: scheme.primary),
@@ -223,140 +224,208 @@ class _TimerPillState extends State<TimerPill> {
     );
   }
 
-  Widget _interruptButton(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final icon = _interrupting
-        ? const SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.swap_horiz, size: 15);
-    final enabled = !_interrupting && !_stopping;
-
-    // The running pill is already wide. Fall back to an icon-only affordance
-    // on narrow viewports so the header stays usable.
-    if (MediaQuery.sizeOf(context).width < 900) {
-      return IconButton(
-        tooltip: 'Interrupt',
-        onPressed: enabled ? _interrupt : null,
-        icon: icon,
-        visualDensity: VisualDensity.compact,
-      );
-    }
-
-    return Tooltip(
-      message: 'Interrupt the running timer and start support',
-      child: TextButton.icon(
-        onPressed: enabled ? _interrupt : null,
-        style: TextButton.styleFrom(
-          foregroundColor: scheme.tertiary,
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          minimumSize: const Size(0, 28),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        icon: icon,
-        label: Text('Interrupt', style: theme.textTheme.labelMedium),
-      ),
+  Widget _runningControls(
+    BuildContext context,
+    AppState state,
+    ActiveTimer timer,
+  ) {
+    final labels = MediaQuery.sizeOf(context).width >= 900;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _timerSummary(context, state, timer),
+        const SizedBox(width: 14),
+        _segmentedActions(context, timer, labels: labels),
+      ],
     );
   }
 
-  Widget _runningPill(BuildContext context, AppState state, ActiveTimer timer) {
+  Widget _timerSummary(
+    BuildContext context,
+    AppState state,
+    ActiveTimer timer,
+  ) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final elapsed = timer.elapsedAt(DateTime.now());
     final projectId = state.timerInitiativeId(timer);
+    final width = MediaQuery.sizeOf(context).width;
+    final labelMaxWidth = width < 600 ? 120.0 : 200.0;
 
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.only(left: 10, right: 4),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(
-          scheme.primaryContainer.withValues(
-            alpha: timer.isPaused ? 0.18 : 0.5,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          timer.isPaused ? Icons.pause_circle_outline : Icons.timer_outlined,
+          size: 20,
+          color: timer.isPaused ? scheme.onSurfaceVariant : scheme.primary,
+        ),
+        const SizedBox(width: 8),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: labelMaxWidth),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: projectId == null
+                    ? null
+                    : () => context.go('/initiatives/$projectId'),
+                borderRadius: BorderRadius.circular(4),
+                child: Text(
+                  state.timerLabel(timer),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    formatClock(elapsed),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontFeatures: tabularFigures,
+                      color: timer.isPaused
+                          ? scheme.onSurfaceVariant
+                          : scheme.primary,
+                    ),
+                  ),
+                  if (timer.isPaused) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      'Paused',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ),
-          scheme.surface,
         ),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(
-          color: timer.isPaused
-              ? scheme.outlineVariant
-              : scheme.primary.withValues(alpha: 0.45),
-        ),
+      ],
+    );
+  }
+
+  Widget _segmentedActions(
+    BuildContext context,
+    ActiveTimer timer, {
+    required bool labels,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final disabled = _stopping || _interrupting;
+    return Container(
+      height: 48,
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: scheme.outlineVariant),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            timer.isPaused ? Icons.pause_circle_outline : Icons.timer_outlined,
-            size: 16,
-            color: timer.isPaused ? scheme.onSurfaceVariant : scheme.primary,
+          _segment(
+            context,
+            icon: Icons.swap_horiz,
+            label: 'Interrupt',
+            tooltip: 'Interrupt the running timer and start support',
+            color: scheme.tertiary,
+            labels: labels,
+            spinner: _interrupting,
+            onTap: disabled ? null : () => unawaited(_interrupt()),
           ),
-          const SizedBox(width: 7),
-          ConstrainedBox(
-            // Leave room for the Interrupt affordance at narrow widths.
-            constraints: const BoxConstraints(maxWidth: 180),
-            child: InkWell(
-              onTap: projectId == null
-                  ? null
-                  : () => context.go('/initiatives/$projectId'),
-              borderRadius: BorderRadius.circular(4),
-              child: Text(
-                state.timerLabel(timer),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            formatClock(elapsed),
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontFeatures: tabularFigures,
-              fontWeight: FontWeight.w600,
-              color: scheme.primary,
-            ),
-          ),
-          if (timer.isPaused) ...[
-            const SizedBox(width: 6),
-            Text(
-              'Paused',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-          const SizedBox(width: 4),
-          _interruptButton(context),
-          IconButton(
+          _segmentDivider(scheme.outlineVariant),
+          _segment(
+            context,
+            icon: timer.isPaused ? Icons.play_arrow : Icons.pause,
+            label: timer.isPaused ? 'Resume' : 'Pause',
             tooltip: timer.isPaused ? 'Resume' : 'Pause',
-            onPressed: () => unawaited(_togglePause(timer.isPaused)),
-            icon: Icon(
-              timer.isPaused ? Icons.play_arrow : Icons.pause,
-              size: 16,
-            ),
+            color: scheme.onPrimary,
+            background: scheme.primary,
+            labels: labels,
+            onTap: disabled
+                ? null
+                : () => unawaited(_togglePause(timer.isPaused)),
           ),
-          Tooltip(
-            message: 'Stop & save',
-            child: IconButton(
-              onPressed: _stopping ? null : _stop,
-              icon: _stopping
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(Icons.stop, size: 16, color: scheme.error),
-            ),
+          _segmentDivider(scheme.outlineVariant),
+          _segment(
+            context,
+            icon: Icons.stop,
+            label: 'Stop',
+            tooltip: 'Stop & save',
+            color: scheme.error,
+            labels: labels,
+            spinner: _stopping,
+            onTap: disabled ? null : () => unawaited(_stop()),
           ),
         ],
       ),
     );
+  }
+
+  Widget _segment(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String tooltip,
+    required Color color,
+    required bool labels,
+    Color? background,
+    bool spinner = false,
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    final iconWidget = spinner
+        ? SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          )
+        : Icon(icon, size: 18, color: color);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: background ?? Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 48,
+            width: labels ? null : 48,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: labels ? 14 : 0),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    iconWidget,
+                    if (labels) ...[
+                      const SizedBox(width: 7),
+                      Text(
+                        label,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _segmentDivider(Color color) {
+    return Container(width: 1, height: 24, color: color);
   }
 }

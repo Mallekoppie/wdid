@@ -24,22 +24,20 @@ class WorkEntryRow extends StatelessWidget {
   final Subcategory? subcategory;
   final ValueChanged<WorkEntry> onEditOutcome;
 
-  /// The support modes offered when an interrupt entry has no mode yet. Both
-  /// this and [onSetMode] must be supplied for the control to render, so
-  /// existing direct constructions keep compiling unchanged.
+  /// The support modes offered on a support row. Both this and [onSetMode]
+  /// must be supplied for the selector to render.
   final List<Subcategory> supportModes;
-  final ValueChanged<Subcategory>? onSetMode;
+
+  /// Selects a support mode, or clears it when null.
+  final ValueChanged<Subcategory?>? onSetMode;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final support = category?.role == CategoryRole.support;
-    final needsMode =
-        support &&
-        entry.subcategoryId.isEmpty &&
-        onSetMode != null &&
-        supportModes.isNotEmpty;
+    final showModeSelector =
+        support && onSetMode != null && supportModes.isNotEmpty;
     final accent = support ? scheme.tertiary : scheme.primary;
     final verticalPadding = AppTheme.isCompact(context) ? 6.0 : 10.0;
 
@@ -136,47 +134,36 @@ class WorkEntryRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 2),
-          if (needsMode)
+          if (showModeSelector)
             Padding(
-              padding: const EdgeInsets.only(left: 104, bottom: 2),
+              padding: EdgeInsets.only(
+                left: MediaQuery.sizeOf(context).width < 700
+                    ? AppSpacing.sm
+                    : 104,
+                top: 6,
+                bottom: 2,
+              ),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: PopupMenuButton<Subcategory>(
-                  tooltip: 'Set support mode',
-                  onSelected: onSetMode,
-                  itemBuilder: (context) => [
-                    for (final mode in supportModes)
-                      PopupMenuItem<Subcategory>(
-                        value: mode,
-                        child: Text(mode.name),
+                child: Wrap(
+                  spacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _SupportModeControl(
+                      current: subcategory,
+                      modes: supportModes,
+                      onChanged: onSetMode!,
+                    ),
+                    if (subcategory != null)
+                      TextButton(
+                        onPressed: () => onSetMode!(null),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        child: const Text('Clear'),
                       ),
                   ],
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.label_outline,
-                        size: 13,
-                        color: scheme.tertiary,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'No mode',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: scheme.tertiary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Set mode',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ),
@@ -220,6 +207,119 @@ class WorkEntryRow extends StatelessWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+const _clearModeValue = '__clear_mode__';
+
+/// The always-visible support-mode selector on a Today row. It shows the
+/// current mode, changes it from a menu, and clears it when [onChanged] gets
+/// null.
+class _SupportModeControl extends StatelessWidget {
+  const _SupportModeControl({
+    required this.current,
+    required this.modes,
+    required this.onChanged,
+  });
+
+  final Subcategory? current;
+  final List<Subcategory> modes;
+  final ValueChanged<Subcategory?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final hasMode = current != null;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 280),
+      child: PopupMenuButton<String>(
+        tooltip: 'Change support mode',
+        onSelected: (value) {
+          if (value == _clearModeValue) {
+            onChanged(null);
+            return;
+          }
+          for (final mode in modes) {
+            if (mode.id == value) {
+              onChanged(mode);
+              return;
+            }
+          }
+        },
+        itemBuilder: (context) => [
+          for (final mode in modes)
+            PopupMenuItem<String>(
+              value: mode.id,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 22,
+                    child: current?.id == mode.id
+                        ? const Icon(Icons.check, size: 16)
+                        : null,
+                  ),
+                  Flexible(child: Text(mode.name)),
+                ],
+              ),
+            ),
+          const PopupMenuItem<String>(
+            value: _clearModeValue,
+            child: Text('Clear mode'),
+          ),
+        ],
+        child: SizedBox(
+          height: 48,
+          child: Center(
+            widthFactor: 1,
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: hasMode
+                    ? scheme.surface
+                    : scheme.tertiaryContainer.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(AppRadius.input),
+                border: Border.all(
+                  color: hasMode
+                      ? scheme.outlineVariant
+                      : scheme.tertiary.withValues(alpha: 0.55),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Mode',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      current?.name ?? 'Not set',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: hasMode ? scheme.onSurface : scheme.tertiary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

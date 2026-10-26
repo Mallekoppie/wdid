@@ -17,7 +17,7 @@ abstract final class AppRadius {
 
 abstract final class AppSizes {
   static const double navWidth = 208;
-  static const double headerHeight = 56;
+  static const double headerHeight = 64;
   static const double contentMaxWidth = 1180;
   static const double rowComfortable = 48;
   static const double rowCompact = 36;

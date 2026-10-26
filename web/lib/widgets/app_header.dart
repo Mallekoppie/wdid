@@ -43,41 +43,49 @@ class AppHeader extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth > 1080;
+          final showQuickActions = constraints.maxWidth >= 700;
+          final showHelp = constraints.maxWidth >= 520;
+          final showWordmark = constraints.maxWidth >= 560;
+          final showBrandLogo = constraints.maxWidth >= 480;
           return Row(
             children: [
-              Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  'w',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: scheme.onPrimary,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
+              if (showBrandLogo) ...[
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    'w',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: scheme.onPrimary,
+                      fontWeight: FontWeight.w700,
+                      height: 1,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 9),
-              Text(
-                'wdid',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.4,
-                ),
-              ),
-              if (wide) ...[
-                const SizedBox(width: 8),
-                Text(
-                  'what did you do',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                if (showWordmark) ...[
+                  const SizedBox(width: 9),
+                  Text(
+                    'wdid',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                    ),
                   ),
-                ),
+                  if (wide) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      'what did you do',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ],
               ],
               const Spacer(),
               const TimerPill(),
@@ -86,34 +94,52 @@ class AppHeader extends StatelessWidget {
                 const CheckInPill(),
                 const SizedBox(width: AppSpacing.sm),
               ],
-              IconButton(
-                tooltip: 'New entry (N)',
-                onPressed: () => _newEntry(context),
-                icon: const Icon(Icons.add_circle_outline, size: 18),
-              ),
-              IconButton(
-                tooltip: 'Log support (S)',
-                onPressed: () => _logSupport(context),
-                icon: const Icon(Icons.volunteer_activism_outlined, size: 18),
-              ),
-              PopupMenuButton<String>(
-                tooltip: 'Help and account',
-                icon: const Icon(Icons.more_horiz, size: 18),
-                onSelected: (value) {
-                  if (value == 'shortcuts') {
-                    showShortcutsDialog(context);
-                  } else if (value == 'login') {
-                    context.go('/login');
-                  }
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'shortcuts',
-                    child: Text('Keyboard shortcuts'),
+              if (showQuickActions) ...[
+                IconButton(
+                  tooltip: 'New entry (N)',
+                  onPressed: () => _newEntry(context),
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: EdgeInsets.zero,
                   ),
-                  PopupMenuItem(value: 'login', child: Text('Sign-in screen')),
-                ],
-              ),
+                ),
+                IconButton(
+                  tooltip: 'Log support (S)',
+                  onPressed: () => _logSupport(context),
+                  icon: const Icon(Icons.volunteer_activism_outlined, size: 20),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+              if (showHelp)
+                PopupMenuButton<String>(
+                  tooltip: 'Help and account',
+                  onSelected: (value) {
+                    if (value == 'shortcuts') {
+                      showShortcutsDialog(context);
+                    } else if (value == 'login') {
+                      context.go('/login');
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'shortcuts',
+                      child: Text('Keyboard shortcuts'),
+                    ),
+                    PopupMenuItem(
+                      value: 'login',
+                      child: Text('Sign-in screen'),
+                    ),
+                  ],
+                  child: const SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(Icons.more_horiz, size: 20),
+                  ),
+                ),
             ],
           );
         },
