@@ -555,8 +555,14 @@ type PeriodReport struct {
 	Weeks             []*WeekRhythm              `protobuf:"bytes,9,rep,name=weeks,proto3" json:"weeks,omitempty"`
 	Notes             []*PeriodNote              `protobuf:"bytes,10,rep,name=notes,proto3" json:"notes,omitempty"`
 	MilestoneProgress []*MilestoneProgress       `protobuf:"bytes,11,rep,name=milestone_progress,json=milestoneProgress,proto3" json:"milestone_progress,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Authoritative support totals: the minutes of every support-role entry and
+	// the number of support entries. Each named person in support_people is
+	// credited the entry's full minutes, so those rows may add up to more than
+	// support_minutes; clients must show these totals, never a sum of the rows.
+	SupportMinutes      int32 `protobuf:"varint,12,opt,name=support_minutes,json=supportMinutes,proto3" json:"support_minutes,omitempty"`
+	SupportInteractions int32 `protobuf:"varint,13,opt,name=support_interactions,json=supportInteractions,proto3" json:"support_interactions,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *PeriodReport) Reset() {
@@ -664,6 +670,20 @@ func (x *PeriodReport) GetMilestoneProgress() []*MilestoneProgress {
 		return x.MilestoneProgress
 	}
 	return nil
+}
+
+func (x *PeriodReport) GetSupportMinutes() int32 {
+	if x != nil {
+		return x.SupportMinutes
+	}
+	return 0
+}
+
+func (x *PeriodReport) GetSupportInteractions() int32 {
+	if x != nil {
+		return x.SupportInteractions
+	}
+	return 0
 }
 
 type GetPeriodReportRequest struct {
@@ -1366,7 +1386,7 @@ const file_summaries_proto_rawDesc = "" +
 	"\x11MilestoneProgress\x12%\n" +
 	"\x0esubcategory_id\x18\x01 \x01(\tR\rsubcategoryId\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
-	"\x04done\x18\x03 \x01(\x05R\x04done\"\xc8\x04\n" +
+	"\x04done\x18\x03 \x01(\x05R\x04done\"\xa4\x05\n" +
 	"\fPeriodReport\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
 	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12/\n" +
@@ -1382,7 +1402,9 @@ const file_summaries_proto_rawDesc = "" +
 	"\x05weeks\x18\t \x03(\v2\x13.wdid.v1.WeekRhythmR\x05weeks\x12)\n" +
 	"\x05notes\x18\n" +
 	" \x03(\v2\x13.wdid.v1.PeriodNoteR\x05notes\x12I\n" +
-	"\x12milestone_progress\x18\v \x03(\v2\x1a.wdid.v1.MilestoneProgressR\x11milestoneProgress\"q\n" +
+	"\x12milestone_progress\x18\v \x03(\v2\x1a.wdid.v1.MilestoneProgressR\x11milestoneProgress\x12'\n" +
+	"\x0fsupport_minutes\x18\f \x01(\x05R\x0esupportMinutes\x121\n" +
+	"\x14support_interactions\x18\r \x01(\x05R\x13supportInteractions\"q\n" +
 	"\x16GetPeriodReportRequest\x12\x1b\n" +
 	"\tfrom_date\x18\x01 \x01(\tR\bfromDate\x12\x17\n" +
 	"\ato_date\x18\x02 \x01(\tR\x06toDate\x12!\n" +

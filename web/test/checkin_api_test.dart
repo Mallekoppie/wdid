@@ -34,6 +34,8 @@ generated.CheckIn wireCheckIn() => generated.CheckIn(
     supportByPerson: [
       generated.CheckInTotal(key: 'Priya', duration: minutes(30)),
     ],
+    supportMinutes: 30,
+    supportInteractions: 1,
   ),
   createdAt: Timestamp.fromDateTime(DateTime.utc(2026, 10, 20, 12)),
   updatedAt: Timestamp.fromDateTime(DateTime.utc(2026, 10, 21, 9)),
@@ -172,6 +174,8 @@ void main() {
     expect(managers.single.totals.byCategory['cat-1'], 60);
     expect(managers.single.totals.bySubcategory['sub-1'], 60);
     expect(managers.single.totals.supportByPerson['Priya'], 30);
+    expect(managers.single.totals.supportMinutes, 30);
+    expect(managers.single.totals.supportInteractions, 1);
   });
 
   test('follows list pagination until the token is empty', () async {

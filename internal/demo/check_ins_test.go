@@ -202,13 +202,17 @@ func TestSeedDemoCheckInTotalsSnapshotThePeriodReports(t *testing.T) {
 			subcategoryIDs["1:1"]:               30,
 		},
 		SupportByPerson: map[string]int{
-			"Alex":   90,
+			// Alex also names the 45-minute pairing entry, so the per-person
+			// rows add up to 315m while the authoritative total stays 270m.
+			"Alex":   135,
 			"Sam":    45,
 			"Noor":   60,
 			"Mei":    30,
 			"Jordan": 30,
 			"Priya":  15,
 		},
+		SupportMinutes:      270,
+		SupportInteractions: 6,
 	}
 	assertCheckInTotals(t, "personal", personal.Totals, wantPersonal)
 
@@ -236,7 +240,11 @@ func assertCheckInTotals(t *testing.T, label string, got, want domain.CheckInTot
 // domain.CheckInTotalsFromReport: ID keys for categories and subcategories,
 // display spelling for support people.
 func expectedTotalsFromReport(report domain.PeriodReport) domain.CheckInTotals {
-	totals := domain.CheckInTotals{Minutes: report.TotalMinutes}
+	totals := domain.CheckInTotals{
+		Minutes:             report.TotalMinutes,
+		SupportMinutes:      report.SupportMinutes,
+		SupportInteractions: report.SupportInteractions,
+	}
 	// The totals maps are omitempty, so an empty report section is stored and
 	// read back as nil rather than an allocated empty map.
 	if len(report.Categories) > 0 {

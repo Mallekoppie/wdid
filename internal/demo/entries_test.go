@@ -334,15 +334,28 @@ func TestSeedDemoEntriesFeedThePeriodReportAndAnchorDay(t *testing.T) {
 	for _, person := range settings.SupportPeople {
 		roster[strings.ToLower(person)] = struct{}{}
 	}
-	interactions := 0
+	interactions, personMinutes := 0, 0
 	for _, person := range report.SupportPeople {
 		if _, ok := roster[strings.ToLower(person.Person)]; !ok {
 			t.Fatalf("report support person %q is not on the roster", person.Person)
 		}
 		interactions += person.Interactions
+		personMinutes += person.Minutes
 	}
-	if interactions != supportEntries {
-		t.Fatalf("report support interactions = %d, want %d", interactions, supportEntries)
+	// The authoritative totals count entries once.
+	if report.SupportInteractions != supportEntries {
+		t.Fatalf("report support interactions = %d, want %d support entries",
+			report.SupportInteractions, supportEntries)
+	}
+	// The seeded on-call pairing entry names two people, so the per-person rows
+	// carry one extra interaction and the pairing entry's minutes a second time.
+	// The totals never do.
+	if interactions != supportEntries+1 {
+		t.Fatalf("per-person interactions = %d, want one per named person (%d)", interactions, supportEntries+1)
+	}
+	if personMinutes != report.SupportMinutes+45 {
+		t.Fatalf("per-person minutes = %d, want the authoritative %d plus the 45m pairing entry",
+			personMinutes, report.SupportMinutes)
 	}
 
 	inRange, err := database.WorkEntriesInDateRange(user.ID, fromDate, toDate)

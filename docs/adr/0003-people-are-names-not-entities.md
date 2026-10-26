@@ -25,10 +25,20 @@ common people could not be chosen in one tap); deriving the roster from existing
 entries at read time (rejected: a deliberately emptied roster would be
 resurrected, so the roster is persisted with an internal seeded marker).
 
+**Attribution:** because the names are not entities, a multi-person support
+entry is credited in full to every name it lists: each named person receives the
+entry's minutes and one interaction. Per-person rollups may therefore add up to
+more than the total support time. All total-support figures — the Support
+header, Review, check-in detail, export totals and check-in snapshots — come
+from the authoritative entry total and entry count, never from summing the
+per-person rows. `support.csv` stays one row per entry with the names joined by
+`;`.
+
 **Consequences:** the roster lives in the per-account settings record and its
 internal `supportPeopleSeeded` marker is never exposed on the wire. It is seeded
 once from every name on existing support-role entries and then replaced wholesale
 by `UpdateSettings`. Removing a name changes only the roster. Reports may show a
 person's spelling differently from the roster because report aggregation picks
 its own display spelling; that is acceptable while people are names rather than
-entities.
+entities. Clients must render the authoritative support totals rather than
+deriving them from the per-person allocation list.

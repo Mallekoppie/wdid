@@ -35,6 +35,9 @@ _Avoid_: epic, goal, objective
 Work in a category whose reporting role is `support`: time spent helping another
 person succeed. A support entry holds an ordered list of people and requires at
 least one name; its mode is its subcategory and its impact is its outcome.
+Reporting credits each named person the entry's **full minutes and one
+interaction**. The support totals (minutes and interactions) count each entry
+once, so per-person rollups may add up to more than the total support time.
 _Avoid_: assistance, help, mentoring (that is a mode)
 
 **Person roster**:

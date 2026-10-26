@@ -354,8 +354,13 @@ type CheckInTotals struct {
 	ByCategory      []*CheckInTotal        `protobuf:"bytes,2,rep,name=by_category,json=byCategory,proto3" json:"by_category,omitempty"`
 	BySubcategory   []*CheckInTotal        `protobuf:"bytes,3,rep,name=by_subcategory,json=bySubcategory,proto3" json:"by_subcategory,omitempty"`
 	SupportByPerson []*CheckInTotal        `protobuf:"bytes,4,rep,name=support_by_person,json=supportByPerson,proto3" json:"support_by_person,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Authoritative support totals captured from the report at creation time.
+	// support_by_person rows credit each name the entry's full minutes, so their
+	// sum may exceed support_minutes.
+	SupportMinutes      int32 `protobuf:"varint,5,opt,name=support_minutes,json=supportMinutes,proto3" json:"support_minutes,omitempty"`
+	SupportInteractions int32 `protobuf:"varint,6,opt,name=support_interactions,json=supportInteractions,proto3" json:"support_interactions,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CheckInTotals) Reset() {
@@ -414,6 +419,20 @@ func (x *CheckInTotals) GetSupportByPerson() []*CheckInTotal {
 		return x.SupportByPerson
 	}
 	return nil
+}
+
+func (x *CheckInTotals) GetSupportMinutes() int32 {
+	if x != nil {
+		return x.SupportMinutes
+	}
+	return 0
+}
+
+func (x *CheckInTotals) GetSupportInteractions() int32 {
+	if x != nil {
+		return x.SupportInteractions
+	}
+	return 0
 }
 
 // CheckIn is a saved artifact covering a period, with focus notes, aggregates
@@ -1454,13 +1473,15 @@ const file_check_ins_proto_rawDesc = "" +
 	"\x0fcheck_ins.proto\x12\awdid.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"W\n" +
 	"\fCheckInTotal\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x125\n" +
-	"\bduration\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\bduration\"\xf9\x01\n" +
+	"\bduration\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\bduration\"\xd5\x02\n" +
 	"\rCheckInTotals\x12/\n" +
 	"\x05total\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x05total\x126\n" +
 	"\vby_category\x18\x02 \x03(\v2\x15.wdid.v1.CheckInTotalR\n" +
 	"byCategory\x12<\n" +
 	"\x0eby_subcategory\x18\x03 \x03(\v2\x15.wdid.v1.CheckInTotalR\rbySubcategory\x12A\n" +
-	"\x11support_by_person\x18\x04 \x03(\v2\x15.wdid.v1.CheckInTotalR\x0fsupportByPerson\"\xa6\x04\n" +
+	"\x11support_by_person\x18\x04 \x03(\v2\x15.wdid.v1.CheckInTotalR\x0fsupportByPerson\x12'\n" +
+	"\x0fsupport_minutes\x18\x05 \x01(\x05R\x0esupportMinutes\x121\n" +
+	"\x14support_interactions\x18\x06 \x01(\x05R\x13supportInteractions\"\xa6\x04\n" +
 	"\aCheckIn\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x14.wdid.v1.CheckInKindR\x04kind\x12!\n" +

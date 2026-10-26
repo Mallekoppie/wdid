@@ -65,6 +65,10 @@ const report = PeriodReport(
   toDate: '2026-10-20',
   totalMinutes: 240,
   entryCount: 3,
+  // Deliberately different from the 60m/2 per-person row so the detail stats
+  // prove they read the authoritative totals.
+  supportMinutes: 45,
+  supportInteractions: 1,
   categories: [
     CategoryAllocation(
       categoryId: 'cat-projects',
@@ -310,6 +314,8 @@ void main() {
     expect(find.text('Week of 5 Oct'), findsOneWidget);
     // The report's total, not the stored snapshot or a local sum.
     expect(find.text('4h'), findsWidgets);
+    // The support stat reads the authoritative 45m, not the per-person 60m.
+    expect(find.text('45m'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsWidgets);
   });
 

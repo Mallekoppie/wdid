@@ -308,6 +308,9 @@ func ValidateCheckIn(checkIn CheckIn) error {
 			return invalid("totals", "minutes must not be negative")
 		}
 	}
+	if checkIn.Totals.SupportMinutes < 0 || checkIn.Totals.SupportInteractions < 0 {
+		return invalid("totals", "support totals must not be negative")
+	}
 	return nil
 }
 
