@@ -1,6 +1,6 @@
 // Package ai contains the one provider abstraction used for AI summaries. It
-// speaks the OpenAI-compatible chat completions streaming protocol and never
-// stores or logs the API key it is given.
+// speaks the Anthropic Messages streaming protocol and never stores or logs the
+// API key it is given.
 package ai
 
 import (
@@ -16,8 +16,16 @@ import (
 	"strings"
 )
 
-// Request is one streaming generation request. The key comes from the
-// environment and is passed in memory only.
+const (
+	// anthropicVersion is the Messages API version sent with every request.
+	anthropicVersion = "2023-06-01"
+	// maxOutputTokens bounds one generated summary. It is deliberately generous
+	// so a long report is never cut off mid-sentence.
+	maxOutputTokens = 4096
+)
+
+// Request is one streaming generation request. The key comes from the user's
+// settings and is passed in memory only.
 type Request struct {
 	BaseURL string
 	APIKey  string
@@ -31,7 +39,7 @@ type Response struct {
 	Model string
 }
 
-// Provider is the single seam between the service and an OpenAI-compatible
+// Provider is the single seam between the service and an Anthropic-compatible
 // endpoint. Tests supply a fake implementation; the service never reaches the
 // network without one.
 type Provider interface {
@@ -41,24 +49,26 @@ type Provider interface {
 	Stream(ctx context.Context, request Request, onDelta func(string) error) (Response, error)
 }
 
-// OpenAIProvider posts to {baseURL}/chat/completions with streaming enabled.
-type OpenAIProvider struct {
+// AnthropicProvider posts to {baseURL}/v1/messages with streaming enabled. It
+// also serves Anthropic-compatible endpoints such as DeepSeek's
+// https://api.deepseek.com/anthropic base.
+type AnthropicProvider struct {
 	client *http.Client
 }
 
-// NewOpenAIProvider builds the provider. A nil client uses http.DefaultClient
+// NewAnthropicProvider builds the provider. A nil client uses http.DefaultClient
 // semantics without a total timeout, because a stream can legitimately run for
 // minutes.
-func NewOpenAIProvider(client *http.Client) *OpenAIProvider {
+func NewAnthropicProvider(client *http.Client) *AnthropicProvider {
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &OpenAIProvider{client: client}
+	return &AnthropicProvider{client: client}
 }
 
 // Stream implements Provider.
-func (p *OpenAIProvider) Stream(ctx context.Context, request Request, onDelta func(string) error) (Response, error) {
-	endpoint, err := chatCompletionsURL(request.BaseURL)
+func (p *AnthropicProvider) Stream(ctx context.Context, request Request, onDelta func(string) error) (Response, error) {
+	endpoint, err := messagesURL(request.BaseURL)
 	if err != nil {
 		return Response{}, err
 	}
@@ -69,10 +79,11 @@ func (p *OpenAIProvider) Stream(ctx context.Context, request Request, onDelta fu
 		return Response{}, errors.New("AI API key is not configured")
 	}
 
-	payload, err := json.Marshal(chatRequest{
-		Model:  request.Model,
-		Stream: true,
-		Messages: []chatMessage{
+	payload, err := json.Marshal(messagesRequest{
+		Model:     request.Model,
+		MaxTokens: maxOutputTokens,
+		Stream:    true,
+		Messages: []message{
 			{Role: "user", Content: request.Prompt},
 		},
 	})
@@ -84,7 +95,8 @@ func (p *OpenAIProvider) Stream(ctx context.Context, request Request, onDelta fu
 	if err != nil {
 		return Response{}, fmt.Errorf("build AI request: %w", err)
 	}
-	httpRequest.Header.Set("Authorization", "Bearer "+request.APIKey)
+	httpRequest.Header.Set("x-api-key", request.APIKey)
+	httpRequest.Header.Set("anthropic-version", anthropicVersion)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Accept", "text/event-stream")
 
@@ -103,49 +115,61 @@ func (p *OpenAIProvider) Stream(ctx context.Context, request Request, onDelta fu
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, ":") {
+		if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") {
 			continue
 		}
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "[DONE]" {
-			break
+		if data == "" || data == "[DONE]" {
+			continue
 		}
 
-		var chunk chatChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		var event streamEvent
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			return Response{}, fmt.Errorf("decode AI stream: %w", err)
 		}
-		if chunk.Model != "" {
-			model = chunk.Model
-		}
-		if chunk.Error != nil && chunk.Error.Message != "" {
-			return Response{}, errors.New(chunk.Error.Message)
-		}
-		for _, choice := range chunk.Choices {
-			if choice.Delta.Content == "" {
+		switch event.Type {
+		case "message_start":
+			if event.Message.Model != "" {
+				model = event.Message.Model
+			}
+		case "content_block_delta":
+			if event.Delta.Text == "" {
 				continue
 			}
-			if err := onDelta(choice.Delta.Content); err != nil {
+			if err := onDelta(event.Delta.Text); err != nil {
 				return Response{}, err
 			}
+		case "error":
+			if event.Error != nil && event.Error.Message != "" {
+				return Response{}, errors.New(event.Error.Message)
+			}
+			return Response{}, errors.New("the AI provider reported an error")
+		case "message_stop":
+			model = responseModel(model, request.Model)
+			return Response{Model: model}, nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return Response{}, fmt.Errorf("read the AI stream: %w", err)
 	}
-	if model == "" {
-		model = request.Model
-	}
-	return Response{Model: model}, nil
+	return Response{Model: responseModel(model, request.Model)}, nil
 }
 
-// chatCompletionsURL accepts a base URL such as https://api.openai.com/v1 and
-// appends the documented path. A URL that already names the endpoint is left
-// alone, which keeps proxy-style configurations working.
-func chatCompletionsURL(baseURL string) (string, error) {
+func responseModel(reported, requested string) string {
+	if reported != "" {
+		return reported
+	}
+	return requested
+}
+
+// messagesURL accepts a base URL such as https://api.anthropic.com,
+// https://api.deepseek.com/anthropic or a custom proxy, and appends the
+// documented path. A URL that already names the endpoint is left alone, which
+// keeps proxy-style configurations working.
+func messagesURL(baseURL string) (string, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if trimmed == "" {
 		return "", errors.New("AI base URL is not configured")
@@ -160,10 +184,14 @@ func chatCompletionsURL(baseURL string) (string, error) {
 	if parsed.Host == "" {
 		return "", errors.New("AI base URL must include a host")
 	}
-	if strings.HasSuffix(trimmed, "/chat/completions") {
+	switch {
+	case strings.HasSuffix(trimmed, "/v1/messages"):
 		return trimmed, nil
+	case strings.HasSuffix(trimmed, "/v1"):
+		return trimmed + "/messages", nil
+	default:
+		return trimmed + "/v1/messages", nil
 	}
-	return trimmed + "/chat/completions", nil
 }
 
 func providerStatusError(response *http.Response) error {
@@ -172,27 +200,38 @@ func providerStatusError(response *http.Response) error {
 	if detail == "" {
 		return fmt.Errorf("AI provider returned %s", response.Status)
 	}
+	var providerError struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(detail), &providerError); err == nil &&
+		providerError.Error.Message != "" {
+		detail = providerError.Error.Message
+	}
 	return fmt.Errorf("AI provider returned %s: %s", response.Status, detail)
 }
 
-type chatRequest struct {
-	Model    string        `json:"model"`
-	Stream   bool          `json:"stream"`
-	Messages []chatMessage `json:"messages"`
+type messagesRequest struct {
+	Model     string    `json:"model"`
+	MaxTokens int       `json:"max_tokens"`
+	Stream    bool      `json:"stream"`
+	Messages  []message `json:"messages"`
 }
 
-type chatMessage struct {
+type message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type chatChunk struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Delta struct {
-			Content string `json:"content"`
-		} `json:"delta"`
-	} `json:"choices"`
+type streamEvent struct {
+	Type    string `json:"type"`
+	Message struct {
+		Model string `json:"model"`
+	} `json:"message"`
+	Delta struct {
+		Text string `json:"text"`
+	} `json:"delta"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`

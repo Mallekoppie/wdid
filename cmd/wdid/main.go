@@ -109,7 +109,7 @@ func run() error {
 			rpc.NewEntryService(database, authService),
 			rpc.NewTimerService(database, authService),
 			rpc.NewSettingsService(database, authService, rpc.WithBackupManager(backupManager)),
-			rpc.NewSummaryService(database, authService, rpc.WithSummaryAPIKey(cfg.OpenAIAPIKey)),
+			rpc.NewSummaryService(database, authService),
 			rpc.NewNoteService(database, authService),
 			rpc.NewMilestoneService(database, authService),
 			rpc.NewCheckInService(database, authService),

@@ -2,6 +2,7 @@ package rpc_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,5 +152,146 @@ func TestSettingsRosterRejectsUnauthenticatedAccess(t *testing.T) {
 	_, err := client.GetSettings(context.Background(), connect.NewRequest(&wdidv1.GetSettingsRequest{}))
 	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+}
+
+func TestSettingsAIKeyIsWriteOnlyAndSurvivesUnrelatedUpdates(t *testing.T) {
+	const apiKey = "sk-ant-very-secret-key"
+	server, _ := newDomainServer(t)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	initial, err := client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, token))
+	if err != nil {
+		t.Fatalf("get initial settings: %v", err)
+	}
+	if initial.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("a new account must not report a stored AI key")
+	}
+
+	set, err := client.SetAIApiKey(context.Background(), withBearer(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: "  " + apiKey + "  ",
+	}, token))
+	if err != nil {
+		t.Fatalf("set AI key: %v", err)
+	}
+	if !set.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("the set response must report that a key is stored")
+	}
+	if strings.Contains(set.Msg.String(), apiKey) {
+		t.Fatal("the set response must not echo the key")
+	}
+
+	loaded, err := client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, token))
+	if err != nil {
+		t.Fatalf("get settings after set: %v", err)
+	}
+	if !loaded.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("GetSettings must report the stored key")
+	}
+	if strings.Contains(loaded.Msg.String(), apiKey) {
+		t.Fatal("GetSettings must never return the key")
+	}
+
+	// An ordinary settings save must neither return nor erase the key. The
+	// client cannot resend it because it never received it.
+	update := backupTestSettings()
+	update.BackupInterval = minutes(360)
+	update.BackupRetention = 30
+	update.AiBaseUrl = "https://api.deepseek.com/anthropic"
+	update.AiModel = "deepseek-flash"
+	updated, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{
+		Settings: update,
+	}, token))
+	if err != nil {
+		t.Fatalf("update settings with a stored key: %v", err)
+	}
+	if !updated.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("UpdateSettings must preserve the stored key")
+	}
+	if strings.Contains(updated.Msg.String(), apiKey) {
+		t.Fatal("UpdateSettings must never return the key")
+	}
+
+	cleared, err := client.ClearAIApiKey(context.Background(), withBearer(&wdidv1.ClearAIApiKeyRequest{}, token))
+	if err != nil {
+		t.Fatalf("clear AI key: %v", err)
+	}
+	if cleared.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("the clear response must report that no key is stored")
+	}
+	after, err := client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, token))
+	if err != nil {
+		t.Fatalf("get settings after clear: %v", err)
+	}
+	if after.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("a cleared key must stay cleared")
+	}
+	if strings.Contains(after.Msg.String(), apiKey) {
+		t.Fatal("GetSettings must never return a cleared key")
+	}
+}
+
+func TestSettingsAIKeysArePerUser(t *testing.T) {
+	server, database := newDomainServer(t)
+	adminToken := bootstrapToken(t, server)
+	memberToken := registeredUserToken(t, server, database, "ai-member@example.com")
+	client := settingsClient(server)
+
+	if _, err := client.SetAIApiKey(context.Background(), withBearer(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: "sk-ant-admin",
+	}, adminToken)); err != nil {
+		t.Fatalf("set admin key: %v", err)
+	}
+
+	member, err := client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, memberToken))
+	if err != nil {
+		t.Fatalf("get member settings: %v", err)
+	}
+	if member.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("the member must not see the administrator's key")
+	}
+
+	if _, err := client.SetAIApiKey(context.Background(), withBearer(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: "sk-ant-member",
+	}, memberToken)); err != nil {
+		t.Fatalf("set member key: %v", err)
+	}
+	if _, err := client.ClearAIApiKey(context.Background(), withBearer(&wdidv1.ClearAIApiKeyRequest{}, adminToken)); err != nil {
+		t.Fatalf("clear admin key: %v", err)
+	}
+
+	member, err = client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, memberToken))
+	if err != nil {
+		t.Fatalf("get member settings after admin clear: %v", err)
+	}
+	if !member.Msg.GetSettings().GetHasAiApiKey() {
+		t.Fatal("clearing one account's key must not clear another's")
+	}
+}
+
+func TestSettingsAIKeyRejectsAnEmptyKey(t *testing.T) {
+	server, _ := newDomainServer(t)
+	token := bootstrapToken(t, server)
+
+	_, err := settingsClient(server).SetAIApiKey(context.Background(), withBearer(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: "   ",
+	}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+}
+
+func TestSettingsAIKeyRequiresAuthentication(t *testing.T) {
+	server, _ := newDomainServer(t)
+	client := settingsClient(server)
+
+	if _, err := client.SetAIApiKey(context.Background(), connect.NewRequest(&wdidv1.SetAIApiKeyRequest{
+		ApiKey: "sk-ant-test",
+	})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("set code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+	if _, err := client.ClearAIApiKey(context.Background(), connect.NewRequest(&wdidv1.ClearAIApiKeyRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("clear code = %v, want unauthenticated", connect.CodeOf(err))
 	}
 }

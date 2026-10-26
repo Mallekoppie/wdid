@@ -54,6 +54,29 @@ enum ReviewCadence {
   };
 }
 
+/// Selects the provider endpoint and a starting model. The model always stays
+/// editable, so a new model never requires a new preset.
+enum AIProviderPreset {
+  anthropic('Anthropic', 'https://api.anthropic.com', 'claude-sonnet-5-5'),
+  deepSeek('DeepSeek', 'https://api.deepseek.com/anthropic', 'deepseek-flash'),
+  custom('Custom URL', '', '');
+
+  const AIProviderPreset(this.label, this.baseUrl, this.model);
+
+  final String label;
+  final String baseUrl;
+  final String model;
+
+  /// The preset a stored base URL belongs to, or [custom] for any other URL.
+  static AIProviderPreset forBaseUrl(String baseUrl) {
+    final trimmed = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+    for (final preset in [anthropic, deepSeek]) {
+      if (preset.baseUrl == trimmed) return preset;
+    }
+    return custom;
+  }
+}
+
 class AppSettings {
   const AppSettings({
     this.timezone = 'UTC',
@@ -70,9 +93,10 @@ class AppSettings {
     this.backupDir = '/var/lib/wdid/backups',
     this.backupIntervalHours = 6,
     this.retentionCount = 30,
-    this.aiBaseUrl = 'https://api.openai.com/v1',
-    this.aiModel = 'gpt-4.1-mini',
+    this.aiBaseUrl = 'https://api.anthropic.com',
+    this.aiModel = 'claude-sonnet-5-5',
     this.redactUrls = false,
+    this.hasAiApiKey = false,
     this.lastBackupAt,
     this.lastBackupBytes = 0,
     this.version = '0.1.0',
@@ -103,6 +127,10 @@ class AppSettings {
   final String aiModel;
   final bool redactUrls;
 
+  /// Whether the account has an AI provider key stored. The key itself is
+  /// write-only and never reaches the client.
+  final bool hasAiApiKey;
+
   final DateTime? lastBackupAt;
   final int lastBackupBytes;
 
@@ -132,6 +160,7 @@ class AppSettings {
     String? aiBaseUrl,
     String? aiModel,
     bool? redactUrls,
+    bool? hasAiApiKey,
     DateTime? lastBackupAt,
     int? lastBackupBytes,
     String? version,
@@ -158,6 +187,7 @@ class AppSettings {
       aiBaseUrl: aiBaseUrl ?? this.aiBaseUrl,
       aiModel: aiModel ?? this.aiModel,
       redactUrls: redactUrls ?? this.redactUrls,
+      hasAiApiKey: hasAiApiKey ?? this.hasAiApiKey,
       lastBackupAt: lastBackupAt ?? this.lastBackupAt,
       lastBackupBytes: lastBackupBytes ?? this.lastBackupBytes,
       version: version ?? this.version,
@@ -183,9 +213,10 @@ class AppSettings {
     backupDir: json['backupDir']?.toString() ?? '/var/lib/wdid/backups',
     backupIntervalHours: (json['backupIntervalHours'] as num?)?.round() ?? 6,
     retentionCount: (json['retentionCount'] as num?)?.round() ?? 30,
-    aiBaseUrl: json['aiBaseUrl']?.toString() ?? 'https://api.openai.com/v1',
-    aiModel: json['aiModel']?.toString() ?? 'gpt-4.1-mini',
+    aiBaseUrl: json['aiBaseUrl']?.toString() ?? 'https://api.anthropic.com',
+    aiModel: json['aiModel']?.toString() ?? 'claude-sonnet-5-5',
     redactUrls: json['redactUrls'] == true,
+    hasAiApiKey: json['hasAiApiKey'] == true,
     lastBackupAt: DateTime.tryParse(json['lastBackupAt']?.toString() ?? ''),
     lastBackupBytes: (json['lastBackupBytes'] as num?)?.round() ?? 0,
     version: json['version']?.toString() ?? '0.1.0',
@@ -215,6 +246,7 @@ class AppSettings {
     'aiBaseUrl': aiBaseUrl,
     'aiModel': aiModel,
     'redactUrls': redactUrls,
+    'hasAiApiKey': hasAiApiKey,
     'lastBackupAt': lastBackupAt?.toUtc().toIso8601String(),
     'lastBackupBytes': lastBackupBytes,
     'version': version,

@@ -33,3 +33,28 @@ func TestNormalizeSupportPeopleDropsAnEmptyRoster(t *testing.T) {
 		t.Fatalf("support people = %#v, want nil", settings.SupportPeople)
 	}
 }
+
+func TestDefaultSettingsUseTheAnthropicPreset(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+
+	if settings.AIBaseURL != "https://api.anthropic.com" {
+		t.Fatalf("ai base url = %q, want the Anthropic preset", settings.AIBaseURL)
+	}
+	if settings.AIModel != "claude-sonnet-5-5" {
+		t.Fatalf("ai model = %q, want the Anthropic preset model", settings.AIModel)
+	}
+	if settings.AIAPIKey != "" {
+		t.Fatalf("ai key = %q, want no key on a new account", settings.AIAPIKey)
+	}
+}
+
+func TestNormalizeTrimsTheAIKey(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.AIAPIKey = "  sk-ant-test  "
+
+	settings.Normalize()
+
+	if settings.AIAPIKey != "sk-ant-test" {
+		t.Fatalf("ai key = %q, want the trimmed key", settings.AIAPIKey)
+	}
+}

@@ -190,7 +190,7 @@ can be saved or discarded.
 
 - [ ] Add streaming `GenerateSummary` and prompt variants (manager 1:1, manager
       performance review, personal review).
-- [ ] OpenAI-compatible provider; environment-only key; URL and note redaction.
+- [x] Anthropic Messages provider; per-user write-only key; URL and note redaction.
 - [ ] Stream into the editable summary; failures leave the existing summary
       untouched.
 - [ ] Wire Settings → AI and the check-in summary actions.

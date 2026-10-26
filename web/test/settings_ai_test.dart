@@ -16,13 +16,14 @@ void main() {
   Future<FakeSettingsApi> pumpSettings(
     WidgetTester tester, {
     FakeSummaryApi? summaryApi,
+    FakeSettingsApi? settingsApi,
   }) async {
     tester.view.physicalSize = const Size(1400, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final settings = FakeSettingsApi();
+    final settings = settingsApi ?? FakeSettingsApi();
     await tester.pumpWidget(
       WdidApp(
         authApi: FakeAuthApi(),
@@ -36,35 +37,86 @@ void main() {
     return settings;
   }
 
-  testWidgets('AI settings save the base URL, model and redaction only', (
+  String fieldText(WidgetTester tester, String label) => tester
+      .widget<TextField>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField && widget.decoration?.labelText == label,
+        ),
+      )
+      .controller!
+      .text;
+
+  testWidgets('AI settings save the preset, base URL, model and redaction', (
     tester,
   ) async {
     final settings = await pumpSettings(tester);
 
-    expect(find.textContaining('WDID_OPENAI_API_KEY'), findsOneWidget);
-    expect(find.text('Stored setting'), findsNothing);
-    expect(
-      find.textContaining('never stored, exported or logged'),
-      findsOneWidget,
-    );
+    expect(find.text('No API key stored'), findsOneWidget);
+    expect(find.textContaining('never returned'), findsOneWidget);
+    expect(find.textContaining('WDID_OPENAI_API_KEY'), findsNothing);
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Base URL'),
-      'https://provider.example/v1',
-    );
+    // Choosing a preset fills the endpoint and a starting model.
+    await tester.tap(find.byType(DropdownButton<AIProviderPreset>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DeepSeek').last);
+    await tester.pumpAndSettle();
+
+    expect(fieldText(tester, 'Base URL'), AIProviderPreset.deepSeek.baseUrl);
+    expect(fieldText(tester, 'Model'), AIProviderPreset.deepSeek.model);
+
+    // The model is always editable.
     await tester.enterText(
       find.widgetWithText(TextField, 'Model'),
-      'provider-model',
+      'custom-model',
     );
     await tester.tap(find.byType(SwitchListTile));
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save AI settings'),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Save AI settings'));
     await tester.pumpAndSettle();
 
     expect(settings.updateCalls, 1);
-    expect(settings.settings.aiBaseUrl, 'https://provider.example/v1');
-    expect(settings.settings.aiModel, 'provider-model');
+    expect(settings.settings.aiBaseUrl, AIProviderPreset.deepSeek.baseUrl);
+    expect(settings.settings.aiModel, 'custom-model');
     expect(settings.settings.redactUrls, isTrue);
   });
+
+  testWidgets(
+    'the API key is write-only and can be set, replaced and cleared',
+    (tester) async {
+      final settings = await pumpSettings(tester);
+
+      expect(settings.settings.hasAiApiKey, isFalse);
+      expect(find.text('No API key stored'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Clear key'), findsNothing);
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'API key'),
+        '  sk-ant-user-key  ',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Save key'));
+      await tester.pumpAndSettle();
+
+      expect(settings.setKeyCalls, 1);
+      expect(settings.lastApiKey, 'sk-ant-user-key');
+      expect(settings.settings.hasAiApiKey, isTrue);
+      expect(find.text('API key stored'), findsOneWidget);
+      // The editor never holds the stored key after saving.
+      expect(fieldText(tester, 'API key'), isEmpty);
+      expect(find.widgetWithText(TextButton, 'Clear key'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Clear key'));
+      await tester.pumpAndSettle();
+
+      expect(settings.clearKeyCalls, 1);
+      expect(settings.settings.hasAiApiKey, isFalse);
+      expect(find.text('No API key stored'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Clear key'), findsNothing);
+    },
+  );
 
   testWidgets('a delayed preferences load is not overwritten by editors', (
     tester,
@@ -76,14 +128,15 @@ void main() {
 
     final gate = Completer<void>();
     final settingsApi = FakeSettingsApi(
-      settings: const AppSettings(
+      settings: AppSettings(
         timezone: 'Europe/Amsterdam',
         weekStart: 1,
         dailyTargetHours: 6.5,
         longTimerMinutes: 180,
         defaultDurationMinutes: 45,
-        aiBaseUrl: 'https://stored.example/v1',
+        aiBaseUrl: AIProviderPreset.deepSeek.baseUrl,
         aiModel: 'stored-model',
+        hasAiApiKey: true,
         redactUrls: true,
       ),
     )..gate = gate;
@@ -104,20 +157,13 @@ void main() {
     gate.complete();
     await tester.pumpAndSettle();
 
-    String fieldText(String label) => tester
-        .widget<TextField>(
-          find.byWidgetPredicate(
-            (widget) =>
-                widget is TextField && widget.decoration?.labelText == label,
-          ),
-        )
-        .controller!
-        .text;
-
-    expect(fieldText('Timezone'), 'Europe/Amsterdam');
-    expect(fieldText('Daily target'), '6.5');
-    expect(fieldText('Long timer prompt'), '180');
-    expect(fieldText('Default duration'), '45');
+    expect(fieldText(tester, 'Timezone'), 'Europe/Amsterdam');
+    expect(fieldText(tester, 'Daily target'), '6.5');
+    expect(fieldText(tester, 'Long timer prompt'), '180');
+    expect(fieldText(tester, 'Default duration'), '45');
+    expect(fieldText(tester, 'Base URL'), AIProviderPreset.deepSeek.baseUrl);
+    expect(fieldText(tester, 'Model'), 'stored-model');
+    expect(find.text('API key stored'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Save time settings'));
     await tester.pumpAndSettle();
@@ -128,13 +174,18 @@ void main() {
     expect(settingsApi.settings.longTimerMinutes, 180);
     expect(settingsApi.settings.defaultDurationMinutes, 45);
 
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save AI settings'),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Save AI settings'));
     await tester.pumpAndSettle();
 
     expect(settingsApi.updateCalls, 2);
-    expect(settingsApi.settings.aiBaseUrl, 'https://stored.example/v1');
+    expect(settingsApi.settings.aiBaseUrl, AIProviderPreset.deepSeek.baseUrl);
     expect(settingsApi.settings.aiModel, 'stored-model');
     expect(settingsApi.settings.redactUrls, isTrue);
+    expect(settingsApi.settings.hasAiApiKey, isTrue);
   });
 
   testWidgets('the prompt preview comes from the service template', (

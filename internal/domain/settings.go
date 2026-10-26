@@ -62,8 +62,18 @@ func (d Density) Valid() bool {
 	}
 }
 
+// AI provider presets. The model is always editable; these values only seed a
+// new account or a newly chosen preset.
+const (
+	AIProviderAnthropicBaseURL = "https://api.anthropic.com"
+	AIProviderAnthropicModel   = "claude-sonnet-5-5"
+	AIProviderDeepSeekBaseURL  = "https://api.deepseek.com/anthropic"
+	AIProviderDeepSeekModel    = "deepseek-flash"
+)
+
 // Settings is the single per-user behaviour and appearance record. The AI key
-// is never stored here; it comes from the environment.
+// is stored in this record in cleartext for now; encryption is backlog. It is
+// write-only over the RPC surface and never exported.
 type Settings struct {
 	UserID                 string        `json:"userId"`
 	Timezone               string        `json:"timezone"`
@@ -78,10 +88,13 @@ type Settings struct {
 	AIBaseURL              string        `json:"aiBaseUrl,omitempty"`
 	AIModel                string        `json:"aiModel,omitempty"`
 	AIRedact               bool          `json:"aiRedact"`
-	Theme                  Theme         `json:"theme"`
-	Density                Density       `json:"density"`
-	JournalStartDate       string        `json:"journalStartDate,omitempty"`
-	UpdatedAt              time.Time     `json:"updatedAt"`
+	// AIAPIKey is the caller's own provider key. It is write-only over RPC and
+	// never leaves the service except as the provider request header.
+	AIAPIKey         string    `json:"aiApiKey,omitempty"`
+	Theme            Theme     `json:"theme"`
+	Density          Density   `json:"density"`
+	JournalStartDate string    `json:"journalStartDate,omitempty"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 
 	// SupportPeople is the per-user roster of names offered wherever a support
 	// person is entered. It is a list of names, not references to a Person
@@ -91,6 +104,12 @@ type Settings struct {
 	// account's existing support entries. It is an internal marker and is never
 	// sent over the wire: once set, a deliberately emptied roster stays empty.
 	SupportPeopleSeeded bool `json:"supportPeopleSeeded,omitempty"`
+}
+
+// HasAIKey reports whether the account has stored a provider key. The key
+// itself is never exposed to clients.
+func (s Settings) HasAIKey() bool {
+	return strings.TrimSpace(s.AIAPIKey) != ""
 }
 
 // DefaultSettings returns the settings every new account starts with.
@@ -105,8 +124,8 @@ func DefaultSettings(userID string) Settings {
 		DefaultDurationMinutes: 30,
 		BackupIntervalHours:    6,
 		BackupRetention:        30,
-		AIBaseURL:              "https://api.openai.com/v1",
-		AIModel:                "gpt-4.1-mini",
+		AIBaseURL:              AIProviderAnthropicBaseURL,
+		AIModel:                AIProviderAnthropicModel,
 		Theme:                  ThemeSystem,
 		Density:                DensityComfortable,
 	}
@@ -118,6 +137,7 @@ func (s *Settings) Normalize() {
 	s.BackupDirectory = strings.TrimSpace(s.BackupDirectory)
 	s.AIBaseURL = strings.TrimSpace(s.AIBaseURL)
 	s.AIModel = strings.TrimSpace(s.AIModel)
+	s.AIAPIKey = strings.TrimSpace(s.AIAPIKey)
 	s.JournalStartDate = strings.TrimSpace(s.JournalStartDate)
 	s.SupportPeople = NormalizeList(s.SupportPeople)
 	s.UpdatedAt = utc(s.UpdatedAt)

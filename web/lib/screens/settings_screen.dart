@@ -44,14 +44,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _defaultDuration;
   late final TextEditingController _baseUrl;
   late final TextEditingController _model;
+  late final TextEditingController _apiKey;
   late int _weekStart;
   late ReviewCadence _reviewCadence;
   late bool _redactUrls;
+  late AIProviderPreset _aiPreset;
   bool _initialized = false;
   bool _savingTime = false;
   bool _savingAi = false;
+  bool _savingKey = false;
+  bool _clearingKey = false;
   String? _timeError;
   String? _timeField;
+  String? _keyError;
 
   // An editor only resyncs from the service while the user has not changed it,
   // so a delayed preferences load cannot overwrite a draft.
@@ -109,6 +114,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       _baseUrl = TextEditingController(text: state.settings.aiBaseUrl);
       _model = TextEditingController(text: state.settings.aiModel);
+      _apiKey = TextEditingController();
       for (final controller in [
         _timezone,
         _dailyTarget,
@@ -123,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _weekStart = state.settings.weekStart;
       _reviewCadence = state.settings.reviewCadence;
       _redactUrls = state.settings.redactUrls;
+      _aiPreset = AIProviderPreset.forBaseUrl(state.settings.aiBaseUrl);
       if (state.hasSummaryService) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_loadPromptTemplate());
@@ -160,6 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _setText(_baseUrl, settings.aiBaseUrl);
         _setText(_model, settings.aiModel);
         _redactUrls = settings.redactUrls;
+        _aiPreset = AIProviderPreset.forBaseUrl(settings.aiBaseUrl);
       }
     } finally {
       _syncing = false;
@@ -179,6 +187,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _defaultDuration.dispose();
     _baseUrl.dispose();
     _model.dispose();
+    _apiKey.dispose();
     super.dispose();
   }
 
@@ -256,8 +265,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     setState(() => _savingAi = true);
     try {
-      // The key is deliberately absent: it comes from the server environment
-      // and the settings contract has no field for it.
+      // The key has its own write-only actions; the settings message has no
+      // field for it.
       final saved = await state.saveSettings(
         state.settings.copyWith(
           aiBaseUrl: _baseUrl.text.trim(),
@@ -279,6 +288,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save AI settings: $error')),
       );
+    }
+  }
+
+  Future<void> _saveKey() async {
+    final state = AppStateScope.read(context);
+    final apiKey = _apiKey.text.trim();
+    if (apiKey.isEmpty) {
+      setState(() => _keyError = 'Enter an API key first.');
+      return;
+    }
+    setState(() {
+      _savingKey = true;
+      _keyError = null;
+    });
+    try {
+      await state.setAiApiKey(apiKey);
+      if (!mounted) return;
+      _apiKey.clear();
+      setState(() => _savingKey = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API key saved for this account')),
+      );
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _savingKey = false;
+        _keyError = failure.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _savingKey = false;
+        _keyError = '$error';
+      });
+    }
+  }
+
+  Future<void> _clearKey() async {
+    final state = AppStateScope.read(context);
+    setState(() {
+      _clearingKey = true;
+      _keyError = null;
+    });
+    try {
+      await state.clearAiApiKey();
+      if (!mounted) return;
+      _apiKey.clear();
+      setState(() => _clearingKey = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('API key cleared')));
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _clearingKey = false;
+        _keyError = failure.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _clearingKey = false;
+        _keyError = '$error';
+      });
     }
   }
 
@@ -533,10 +604,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const PanelHeader(
                     title: 'AI',
                     subtitle:
-                        'OpenAI-compatible provider for check-in synthesis',
+                        'Anthropic Messages provider for check-in synthesis',
                     icon: Icons.auto_awesome_outlined,
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  AppDropdown<AIProviderPreset>(
+                    value: _aiPreset,
+                    label: 'Provider',
+                    items: [
+                      for (final preset in AIProviderPreset.values)
+                        DropdownMenuItem(
+                          value: preset,
+                          child: Text(preset.label),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _aiPreset = value;
+                        if (value != AIProviderPreset.custom) {
+                          _setText(_baseUrl, value.baseUrl);
+                          _setText(_model, value.model);
+                        }
+                        _aiDirty = true;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   Row(
                     children: [
                       Expanded(
@@ -545,7 +639,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           controller: _baseUrl,
                           decoration: const InputDecoration(
                             labelText: 'Base URL',
-                            helperText: 'Provider: OpenAI-compatible',
+                            helperText: 'Endpoint for the chosen provider',
                           ),
                         ),
                       ),
@@ -553,7 +647,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Expanded(
                         child: TextField(
                           controller: _model,
-                          decoration: const InputDecoration(labelText: 'Model'),
+                          decoration: const InputDecoration(
+                            labelText: 'Model',
+                            helperText: 'Always editable',
+                          ),
                         ),
                       ),
                     ],
@@ -575,32 +672,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                      vertical: AppSpacing.sm,
-                    ),
+                    padding: const EdgeInsets.all(AppSpacing.md),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerLow,
                       borderRadius: BorderRadius.circular(AppRadius.input),
                       border: Border.all(color: scheme.outlineVariant),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(
-                          Icons.key_outlined,
-                          size: 16,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            'API key: set WDID_OPENAI_API_KEY on the server. It is '
-                            'never stored, exported or logged.',
-                            style: theme.textTheme.bodySmall?.copyWith(
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.key_outlined,
+                              size: 16,
                               color: scheme.onSurfaceVariant,
                             ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                settings.hasAiApiKey
+                                    ? 'API key stored'
+                                    : 'No API key stored',
+                                style: theme.textTheme.labelMedium,
+                              ),
+                            ),
+                            if (settings.hasAiApiKey)
+                              TextButton(
+                                onPressed: _savingKey || _clearingKey
+                                    ? null
+                                    : () => unawaited(_clearKey()),
+                                child: _clearingKey
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Clear key'),
+                              ),
+                          ],
+                        ),
+                        Text(
+                          'Stored for this account. The key is write-only: it is '
+                          'never returned by the service or included in an export.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _apiKey,
+                                obscureText: true,
+                                decoration: InputDecoration(
+                                  labelText: 'API key',
+                                  hintText: settings.hasAiApiKey
+                                      ? 'Enter a new key to replace the stored one'
+                                      : 'sk-ant-…',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                            FilledButton(
+                              onPressed: _savingKey || !canSavePreferences
+                                  ? null
+                                  : () => unawaited(_saveKey()),
+                              child: _savingKey
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Save key'),
+                            ),
+                          ],
+                        ),
+                        if (_keyError != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            _keyError!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.error,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -187,6 +187,9 @@ class FakeSettingsApi implements SettingsApi {
   AboutInfo about;
   SettingsFailure? failure;
   int updateCalls = 0;
+  int setKeyCalls = 0;
+  int clearKeyCalls = 0;
+  String? lastApiKey;
 
   /// When set, the next `getSettings` waits for it so tests can observe the
   /// screen before the preferences arrive.
@@ -226,6 +229,23 @@ class FakeSettingsApi implements SettingsApi {
       schemaVersion: about.schemaVersion,
       license: about.license,
     );
+    return settings;
+  }
+
+  @override
+  Future<AppSettings> setAiApiKey(String apiKey) async {
+    setKeyCalls++;
+    if (failure != null) throw failure!;
+    lastApiKey = apiKey.trim();
+    settings = settings.copyWith(hasAiApiKey: true);
+    return settings;
+  }
+
+  @override
+  Future<AppSettings> clearAiApiKey() async {
+    clearKeyCalls++;
+    if (failure != null) throw failure!;
+    settings = settings.copyWith(hasAiApiKey: false);
     return settings;
   }
 

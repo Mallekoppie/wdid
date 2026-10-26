@@ -65,10 +65,6 @@ const (
 	AuthConfigProcedure = "/wdid.v1.AuthService/GetAuthConfig"
 	// AuthCurrentUserProcedure is protected and derives identity from the token.
 	AuthCurrentUserProcedure = "/wdid.v1.AuthService/GetCurrentUser"
-
-	// OpenAIAPIKeyEnv names the only source of the AI provider key. The key is
-	// never stored in the database, exported or logged.
-	OpenAIAPIKeyEnv = "WDID_OPENAI_API_KEY"
 )
 
 // Zitadel holds the OIDC settings for the initial local Zitadel deployment.
@@ -103,9 +99,6 @@ type Config struct {
 	JWTExpirationMinutes int64
 	MaxBlockMinutes      int
 	Zitadel              Zitadel
-	// OpenAIAPIKey is read from WDID_OPENAI_API_KEY and kept in memory only.
-	// It is never persisted, exported or logged.
-	OpenAIAPIKey string
 	// StorageOnly marks commands that open the database without serving
 	// requests, so no transport or health configuration is required.
 	StorageOnly bool
@@ -128,7 +121,6 @@ func Load() (Config, error) {
 		JWTSigningMethod:     envString("WDID_JWT_SIGNING_METHOD", defaultJWTSigningMethod),
 		JWTExpirationMinutes: int64(envInt("WDID_JWT_EXPIRATION_MINUTES", defaultJWTExpirationMinute)),
 		MaxBlockMinutes:      envInt("WDID_MAX_BLOCK_MINUTES", defaultMaxBlockMinutes),
-		OpenAIAPIKey:         envString(OpenAIAPIKeyEnv, ""),
 		Zitadel: Zitadel{
 			Enabled:           envBool("WDID_ZITADEL_ENABLED", false),
 			IssuerURL:         strings.TrimRight(envString("WDID_ZITADEL_ISSUER_URL", ""), "/"),

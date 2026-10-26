@@ -1940,8 +1940,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Whether the connected service can generate a summary. The check-in
-  /// service alone is not enough: generation belongs to the summary contract.
-  bool get canGenerateSummary => summaryApi != null;
+  /// service alone is not enough: generation belongs to the summary contract
+  /// and needs the account's own provider key.
+  bool get canGenerateSummary => summaryApi != null && settings.hasAiApiKey;
 
   /// Streams a generated summary. Text deltas drive the editor; the final
   /// delta carries the persisted check-in with its model and prompt version.
@@ -2298,6 +2299,45 @@ class AppState extends ChangeNotifier {
 
   Future<void> setTheme(ThemePreference theme) {
     return saveSettings(settings.copyWith(theme: theme));
+  }
+
+  /// Stores or replaces the account's provider key. The key is write-only;
+  /// only the resulting has-key state comes back from the service.
+  Future<AppSettings> setAiApiKey(String apiKey) async {
+    final api = settingsApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SettingsService',
+        'Saving an AI key needs the service contract.',
+      );
+    }
+    final saved = await api.setAiApiKey(apiKey);
+    settings = saved.copyWith(
+      version: about?.version,
+      schemaVersion: about?.schemaVersion,
+      license: about?.license,
+    );
+    _notify();
+    return settings;
+  }
+
+  /// Removes the account's provider key, which disables AI generation.
+  Future<AppSettings> clearAiApiKey() async {
+    final api = settingsApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SettingsService',
+        'Clearing an AI key needs the service contract.',
+      );
+    }
+    final saved = await api.clearAiApiKey();
+    settings = saved.copyWith(
+      version: about?.version,
+      schemaVersion: about?.schemaVersion,
+      license: about?.license,
+    );
+    _notify();
+    return settings;
   }
 
   Future<void> setDensity(DensityPreference density) {

@@ -204,16 +204,15 @@ func TestLoadFromEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadReadsTheOpenAIKeyFromTheEnvironmentOnly(t *testing.T) {
+func TestLoadIgnoresTheRetiredEnvironmentAIKey(t *testing.T) {
 	setRequiredEnv(t)
-	t.Setenv(config.OpenAIAPIKeyEnv, "  sk-test-key  ")
+	// The AI key is per user and stored in Settings. A leftover deployment
+	// variable must neither configure generation nor fail startup.
+	t.Setenv("WDID_OPENAI_API_KEY", "sk-test-key")
 
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
-	}
-	if cfg.OpenAIAPIKey != "sk-test-key" {
-		t.Fatalf("AI key = %q, want the trimmed environment value", cfg.OpenAIAPIKey)
 	}
 
 	// The platform configuration has no field for the key, so it cannot leak

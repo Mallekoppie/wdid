@@ -1206,8 +1206,9 @@ func TestSummaryServiceGenerateSummaryStreamsAndPersistsMetadata(t *testing.T) {
 			deltas:   []string{"## Highlights\n", "- Shipped the backfill"},
 			response: ai.Response{Model: "provider-model"},
 		}
-		server, database := newDomainServerWithAI(t, provider, "sk-test-key")
+		server, database := newDomainServerWithAI(t, provider)
 		token := bootstrapToken(t, server)
+		setAIKey(t, server, token, "sk-test-key")
 		buildSummaryExportFixture(t, server, database, token)
 		checkInID := createSummaryCheckIn(t, server, token,
 			wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
@@ -1257,8 +1258,9 @@ func TestSummaryServiceGenerateSummaryStreamsAndPersistsMetadata(t *testing.T) {
 
 func TestSummaryServiceGenerateSummarySelectsThePromptVariant(t *testing.T) {
 	provider := &fakeAIProvider{deltas: []string{"summary"}, response: ai.Response{Model: "m"}}
-	server, database := newDomainServerWithAI(t, provider, "sk-test-key")
+	server, database := newDomainServerWithAI(t, provider)
 	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
 	buildSummaryExportFixture(t, server, database, token)
 
 	performanceID := createSummaryCheckIn(t, server, token,
@@ -1286,8 +1288,9 @@ func TestSummaryServiceGenerateSummarySelectsThePromptVariant(t *testing.T) {
 
 func TestSummaryServiceGenerateSummaryRedactionStripsURLsAndNotes(t *testing.T) {
 	provider := &fakeAIProvider{deltas: []string{"summary"}, response: ai.Response{Model: "m"}}
-	server, database := newDomainServerWithAI(t, provider, "sk-test-key")
+	server, database := newDomainServerWithAI(t, provider)
 	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
 	categoryID, projectID := buildSummaryExportFixture(t, server, database, token)
 	createReportEntry(t, server, token, &wdidv1.CreateEntryRequest{
 		CategoryId:    categoryID,
@@ -1344,8 +1347,9 @@ func TestSummaryServiceGenerateSummaryFailureIsNonDestructiveAndRetryable(t *tes
 		err:       errors.New("provider stream failed"),
 		failAfter: 1,
 	}
-	server, database := newDomainServerWithAI(t, provider, "sk-test-key")
+	server, database := newDomainServerWithAI(t, provider)
 	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
 	buildSummaryExportFixture(t, server, database, token)
 	checkInID := createSummaryCheckIn(t, server, token,
 		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
@@ -1395,8 +1399,9 @@ func TestSummaryServiceGenerateSummaryFailureIsNonDestructiveAndRetryable(t *tes
 
 func TestSummaryServiceGenerateSummaryRequiresConfirmationForManualEdits(t *testing.T) {
 	provider := &fakeAIProvider{deltas: []string{"generated"}, response: ai.Response{Model: "m"}}
-	server, database := newDomainServerWithAI(t, provider, "sk-test-key")
+	server, database := newDomainServerWithAI(t, provider)
 	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
 	buildSummaryExportFixture(t, server, database, token)
 	checkInID := createSummaryCheckIn(t, server, token,
 		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
@@ -1420,9 +1425,9 @@ func TestSummaryServiceGenerateSummaryRequiresConfirmationForManualEdits(t *test
 	}
 }
 
-func TestSummaryServiceGenerateSummaryRequiresAnEnvironmentKey(t *testing.T) {
+func TestSummaryServiceGenerateSummaryRequiresAPerUserKey(t *testing.T) {
 	provider := &fakeAIProvider{deltas: []string{"generated"}, response: ai.Response{Model: "m"}}
-	server, _ := newDomainServerWithAI(t, provider, "")
+	server, _ := newDomainServerWithAI(t, provider)
 	token := bootstrapToken(t, server)
 	checkInID := createSummaryCheckIn(t, server, token,
 		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
@@ -1433,11 +1438,41 @@ func TestSummaryServiceGenerateSummaryRequiresAnEnvironmentKey(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("missing key code = %v, want failed precondition", connect.CodeOf(err))
 	}
-	if !strings.Contains(err.Error(), "WDID_OPENAI_API_KEY") {
-		t.Fatalf("missing key error = %v, want the environment variable name", err)
+	if !strings.Contains(err.Error(), "Settings") || !strings.Contains(err.Error(), "key") {
+		t.Fatalf("missing key error = %v, want a prompt to add a key in Settings", err)
 	}
 	if len(provider.requests) != 0 {
 		t.Fatalf("provider calls = %d, want none without a key", len(provider.requests))
+	}
+}
+
+func TestSummaryServiceGenerateSummaryUsesTheCallersOwnKey(t *testing.T) {
+	provider := &fakeAIProvider{deltas: []string{"generated"}, response: ai.Response{Model: "m"}}
+	server, database := newDomainServerWithAI(t, provider)
+	adminToken := bootstrapToken(t, server)
+	memberToken := registeredUserToken(t, server, database, "summary-member@example.com")
+	setAIKey(t, server, memberToken, "sk-ant-member")
+
+	memberCheckIn := createSummaryCheckIn(t, server, memberToken,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	if _, err := collectGeneration(t, server, memberToken, memberCheckIn, false); err != nil {
+		t.Fatalf("generate with the member's own key: %v", err)
+	}
+	if key := provider.lastRequest().APIKey; key != "sk-ant-member" {
+		t.Fatalf("provider key = %q, want the member's own key", key)
+	}
+
+	// The administrator has no key, so their generation is disabled even
+	// though the member's key is stored.
+	adminCheckIn := createSummaryCheckIn(t, server, adminToken,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	_, err := collectGeneration(t, server, adminToken, adminCheckIn, false)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("admin missing key code = %v, want failed precondition", connect.CodeOf(err))
 	}
 }
 
@@ -1478,12 +1513,13 @@ func TestSummaryServiceGetPromptTemplate(t *testing.T) {
 	}
 }
 
-// TestSummaryServiceExportNeverContainsTheAIKey proves the environment key is
-// absent from every generated artifact the caller can download.
+// TestSummaryServiceExportNeverContainsTheAIKey proves the stored per-user key
+// is absent from every generated artifact the caller can download.
 func TestSummaryServiceExportNeverContainsTheAIKey(t *testing.T) {
 	const apiKey = "sk-very-secret-key"
-	server, database := newDomainServerWithAI(t, &fakeAIProvider{}, apiKey)
+	server, database := newDomainServerWithAI(t, &fakeAIProvider{})
 	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, apiKey)
 	buildSummaryExportFixture(t, server, database, token)
 
 	response, err := summaryClient(server).BuildExport(context.Background(), withBearer(&wdidv1.BuildExportRequest{
