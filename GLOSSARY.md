@@ -113,8 +113,9 @@ _Avoid_: comment, memo, annotation
 **Prompt template**:
 A per-user, per-variant instruction body for check-in generation, stored in the
 caller's settings. An absent or blank template means that variant's built-in
-body. The server resolves the template and appends the prompt rules, so the
-client never composes a prompt.
+body. The server always resolves the prompt and appends the prompt rules, so a
+client never composes prompt text for generation; the Settings editor may
+assemble a display-only preview of the body plus the locked rules.
 _Avoid_: system prompt, custom prompt (when meaning the whole instruction)
 
 **Prompt rules**:

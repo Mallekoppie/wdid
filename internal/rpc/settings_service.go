@@ -279,13 +279,7 @@ var promptTemplateVariants = []domain.PromptVariant{
 // the stored override body when customised, otherwise the built-in body, plus
 // the locked rules.
 func toProtoPromptTemplate(variant domain.PromptVariant, settings domain.Settings) *wdidv1.PromptTemplate {
-	body := strings.TrimSpace(settings.PromptTemplates[variant])
-	customised := body != ""
-	if !customised {
-		if builtIn, ok := domain.BuiltInPromptBody(variant); ok {
-			body = builtIn
-		}
-	}
+	body, customised := domain.ResolvedPromptBody(variant, settings)
 	return &wdidv1.PromptTemplate{
 		Variant:    toProtoPromptVariant(variant),
 		Body:       body,

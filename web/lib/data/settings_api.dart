@@ -6,10 +6,10 @@ import 'package:protobuf/well_known_types/google/protobuf/duration.pb.dart'
 import '../models/app_settings.dart';
 import '../models/check_in.dart';
 import '../models/enums.dart';
-import '../src/generated/check_ins.pb.dart' as check_ins;
 import '../src/generated/settings.pbgrpc.dart' as generated;
 import 'grpc_channel.dart';
 import 'grpc_errors.dart';
+import 'prompt_variant_mapping.dart';
 
 /// Build and schema information shown in Settings → About.
 class AboutInfo {
@@ -318,7 +318,7 @@ class GrpcSettingsApi implements SettingsApi {
     try {
       final response = await _rpc.updatePromptTemplate(
         generated.UpdatePromptTemplateRequest(
-          variant: _promptVariantToProto(variant),
+          variant: promptVariantToProto(variant),
           body: body.trim(),
         ),
       );
@@ -335,7 +335,7 @@ class GrpcSettingsApi implements SettingsApi {
     try {
       final response = await _rpc.resetPromptTemplate(
         generated.ResetPromptTemplateRequest(
-          variant: _promptVariantToProto(variant),
+          variant: promptVariantToProto(variant),
         ),
       );
       return _promptTemplateFromProto(response.template);
@@ -478,39 +478,12 @@ duration.Duration _minutesDuration(int minutes) =>
 
 PromptTemplate _promptTemplateFromProto(generated.PromptTemplate template) =>
     PromptTemplate(
-      template: template.body,
       body: template.body,
       customised: template.customised,
       rules: template.rules,
-      variant: _promptVariantFromProto(template.variant),
+      variant: promptVariantFromProto(template.variant),
+      promptVersion: template.customised ? 'custom' : 'v1',
     );
-
-check_ins.CheckInPromptVariant _promptVariantToProto(
-  CheckInPromptVariant variant,
-) => switch (variant) {
-  CheckInPromptVariant.managerOneOnOne =>
-    check_ins
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE,
-  CheckInPromptVariant.managerPerformanceReview =>
-    check_ins
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
-  CheckInPromptVariant.personalReview =>
-    check_ins.CheckInPromptVariant.CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
-};
-
-CheckInPromptVariant _promptVariantFromProto(
-  check_ins.CheckInPromptVariant variant,
-) => switch (variant) {
-  check_ins
-      .CheckInPromptVariant
-      .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW =>
-    CheckInPromptVariant.managerPerformanceReview,
-  check_ins.CheckInPromptVariant.CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW =>
-    CheckInPromptVariant.personalReview,
-  _ => CheckInPromptVariant.managerOneOnOne,
-};
 
 ReviewCadence _reviewCadenceFromProto(generated.ReviewCadence cadence) {
   switch (cadence) {

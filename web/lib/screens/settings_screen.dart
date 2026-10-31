@@ -168,7 +168,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _redactUrls = state.settings.redactUrls;
       _aiPreset = AIProviderPreset.forBaseUrl(state.settings.aiBaseUrl);
       for (final variant in _promptVariants) {
-        _promptBodies[variant]!.addListener(() => _markPromptDirty(variant));
+        _promptBodies[variant]!.addListener(() {
+          // A programmatic write from the service must not create a draft, but
+          // a user edit must rebuild so the preview and button states track it.
+          if (_promptSyncing || !mounted) return;
+          setState(() => _promptDirty.add(variant));
+        });
       }
       if (state.hasSettingsService) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -464,10 +469,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _markPromptDirty(CheckInPromptVariant variant) {
-    if (!_promptSyncing) _promptDirty.add(variant);
-  }
-
   void _setPromptBody(CheckInPromptVariant variant, String value) {
     final controller = _promptBodies[variant]!;
     if (controller.text == value) return;
@@ -654,14 +655,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool get _promptReady =>
       !_promptLoading && _promptTemplates[_promptVariant] != null;
 
-  String _assembledPrompt() {
-    final template = _promptTemplates[_promptVariant];
-    final body = _promptBodies[_promptVariant]!.text.trim();
-    final rules = template?.rules ?? '';
-    if (body.isEmpty) return rules;
-    if (rules.isEmpty) return body;
-    return '$body\n\n$rules';
-  }
+  bool get _promptDraftChanged => _promptDirty.contains(_promptVariant);
+
+  /// Save is only meaningful once the user has changed the variant's body.
+  bool get _canSavePrompt =>
+      _promptReady &&
+      !_savingPrompt &&
+      !_resettingPrompt &&
+      _promptDraftChanged;
+
+  /// Reset is available for a stored override or an unsaved draft.
+  bool get _canResetPrompt =>
+      _promptReady &&
+      !_savingPrompt &&
+      !_resettingPrompt &&
+      (_promptDraftChanged ||
+          (_promptTemplates[_promptVariant]?.customised ?? false));
 
   Widget _buildPromptSection(AppState state) {
     final theme = Theme.of(context);
@@ -701,8 +710,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   List<Widget> _buildPromptEditor(ThemeData theme, ColorScheme scheme) {
     final template = _promptTemplates[_promptVariant];
-    final ready = _promptReady;
-    final busy = _savingPrompt || _resettingPrompt;
+    // The preview assembles the live draft with the server-owned rules.
+    final draft = PromptTemplate(
+      body: _promptBodies[_promptVariant]!.text,
+      rules: template?.rules ?? '',
+      variant: _promptVariant,
+    );
     return [
       if (_promptLoading) const LinearProgressIndicator(minHeight: 2),
       if (_promptError != null) ...[
@@ -805,7 +818,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           border: Border.all(color: scheme.outlineVariant),
         ),
         child: Text(
-          _assembledPrompt(),
+          draft.assembledPrompt,
           style: theme.textTheme.bodySmall?.copyWith(
             fontFamily: 'monospace',
             height: 1.5,
@@ -823,7 +836,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Row(
         children: [
           TextButton(
-            onPressed: !ready || busy
+            onPressed: !_canResetPrompt
                 ? null
                 : () => unawaited(_resetPrompt()),
             child: _resettingPrompt
@@ -836,7 +849,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const Spacer(),
           FilledButton(
-            onPressed: !ready || busy ? null : () => unawaited(_savePrompt()),
+            onPressed: !_canSavePrompt ? null : () => unawaited(_savePrompt()),
             child: _savingPrompt
                 ? const SizedBox(
                     width: 14,

@@ -367,10 +367,16 @@ func (s *SummaryService) RefineSummary(ctx context.Context, request *connect.Req
 
 	variant := domain.PromptVariantFor(checkIn)
 	promptVersion := domain.ResolvePromptVersion(variant, input.Settings)
+	// A hand-edited summary is sent as stored, except when redaction is on: the
+	// snapshot must record exactly the redacted text the model saw. Feedback and
+	// additional context are deliberate user input and stay verbatim.
+	currentSummary := checkIn.SummaryMarkdown
+	if input.Settings.AIRedact {
+		currentSummary = domain.RedactText(currentSummary)
+	}
 	transcript := []domain.PromptMessage{
 		{Role: domain.PromptRoleUser, Content: composePrompt(domain.ResolveInstruction(variant, input.Settings), domain.BuildExportSummary(input))},
-		// A hand-edited summary is sent exactly as stored.
-		{Role: domain.PromptRoleAssistant, Content: checkIn.SummaryMarkdown},
+		{Role: domain.PromptRoleAssistant, Content: currentSummary},
 		{Role: domain.PromptRoleUser, Content: feedback},
 	}
 	snapshot := domain.RenderPromptSnapshot(transcript)

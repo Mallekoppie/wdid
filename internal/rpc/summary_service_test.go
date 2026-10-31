@@ -2007,6 +2007,75 @@ func TestSummaryServiceRefineSummaryReplacesAHandEditedSummary(t *testing.T) {
 	}
 }
 
+// TestSummaryServiceRefineSummaryRedactsTheStoredSummary proves redaction
+// applies to the assistant turn that carries the current summary, so both the
+// provider request and the stored snapshot record the redacted text the model
+// saw. Feedback stays verbatim as deliberate user input.
+func TestSummaryServiceRefineSummaryRedactsTheStoredSummary(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"refined summary"},
+		response: ai.Response{Model: "refined-model"},
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	handEdited := "## Hand edited\n- see https://internal.example/private-runbook"
+	saveManualSummary(t, server, token, checkInID, handEdited)
+
+	// With redaction off the stored summary reaches the assistant turn exactly.
+	if _, err := collectRefinement(t, server, token, checkInID, "tighten"); err != nil {
+		t.Fatalf("refine without redaction: %v", err)
+	}
+	request := provider.lastRequest()
+	if len(request.Messages) != 3 || request.Messages[1].Content != handEdited {
+		t.Fatalf("assistant turn = %+v, want the stored summary verbatim", request.Messages[1])
+	}
+	unredacted, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get unredacted check-in: %v", err)
+	}
+	if snapshot := unredacted.Msg.GetCheckIn().GetGenerationPrompt(); !strings.Contains(snapshot, handEdited) {
+		t.Fatalf("unredacted snapshot = %q, want the stored summary untouched", snapshot)
+	}
+
+	// Enable redaction and restore the summary, then refine again.
+	updateAISettings(t, server, token, "https://provider.example/v1", "model-name", true)
+	saveManualSummary(t, server, token, checkInID, handEdited)
+	feedback := "Mention https://feedback.example/ref"
+	if _, err := collectRefinement(t, server, token, checkInID, feedback); err != nil {
+		t.Fatalf("refine with redaction: %v", err)
+	}
+
+	request = provider.lastRequest()
+	wantRedacted := "## Hand edited\n- see [link removed]"
+	if got := request.Messages[1].Content; got != wantRedacted {
+		t.Fatalf("redacted assistant turn = %q, want %q", got, wantRedacted)
+	}
+	if got := request.Messages[2].Content; got != feedback {
+		t.Fatalf("feedback turn = %q, want the user's text verbatim", got)
+	}
+
+	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get refined check-in: %v", err)
+	}
+	snapshot := stored.Msg.GetCheckIn().GetGenerationPrompt()
+	if strings.Contains(snapshot, "https://internal.example") {
+		t.Fatalf("snapshot leaked the redacted URL:\n%s", snapshot)
+	}
+	if !strings.Contains(snapshot, "[assistant]\n"+wantRedacted) {
+		t.Fatalf("snapshot = %q, want the redacted assistant turn", snapshot)
+	}
+	if !strings.Contains(snapshot, feedback) {
+		t.Fatalf("snapshot = %q, want the feedback verbatim", snapshot)
+	}
+}
+
 // TestSummaryServiceRefineSummaryFailureIsNonDestructive proves a failed
 // refinement leaves the stored summary, the revert slot and the snapshot
 // untouched.

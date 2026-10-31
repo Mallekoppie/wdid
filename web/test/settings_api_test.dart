@@ -432,6 +432,9 @@ void main() {
     expect(templates.first.body, 'One on one body');
     expect(templates.first.customised, isTrue);
     expect(templates.first.rules, 'Use only the supplied data.');
+    expect(templates.first.promptVersion, 'custom');
+    // The Settings path populates the editor fields, not the legacy preview.
+    expect(templates.first.template, '');
     expect(
       templates.first.assembledPrompt,
       'One on one body\n\nUse only the supplied data.',
@@ -439,6 +442,8 @@ void main() {
     expect(templates.last.variant, CheckInPromptVariant.personalReview);
     expect(templates.last.body, 'Personal body');
     expect(templates.last.customised, isFalse);
+    expect(templates.last.promptVersion, 'v1');
+    expect(templates.last.template, '');
   });
 
   test('updatePromptTemplate sends the variant and body and maps the result', () async {

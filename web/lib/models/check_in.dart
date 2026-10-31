@@ -122,16 +122,16 @@ class CheckInPrompt {
 /// the locked rules, so the client only displays and edits the body.
 class PromptTemplate {
   const PromptTemplate({
-    String? template,
+    this.template = '',
     required this.variant,
     this.promptVersion = 'v1',
     this.body = '',
     this.customised = false,
     this.rules = '',
-  }) : template = template ?? body;
+  });
 
-  /// The full instruction returned by the legacy SummaryService preview. New
-  /// callers use [body] and [rules] instead.
+  /// The full instruction returned by the legacy SummaryService preview. It is
+  /// empty for the Settings editor, which uses [body] and [rules].
   final String template;
 
   /// The current instruction body, without the locked rules.

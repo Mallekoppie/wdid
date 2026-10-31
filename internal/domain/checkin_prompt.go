@@ -45,30 +45,6 @@ func PromptVariantFor(checkIn CheckIn) PromptVariant {
 	return PromptVariantManagerOneOnOne
 }
 
-// BuildPrompt returns the prompt block for a check-in: the variant's
-// instruction followed by the check-in's Markdown summary, exactly what the
-// user would paste into a model. The summary is never modified.
-func BuildPrompt(checkIn CheckIn) string {
-	instruction, _ := PromptTemplate(PromptVariantFor(checkIn))
-	summary := strings.TrimSpace(checkIn.SummaryMarkdown)
-	if summary == "" {
-		return instruction
-	}
-	return instruction + "\n\n" + summary
-}
-
-// PromptTemplate returns the built-in instruction for one variant: its default
-// body followed by the locked rules. Callers that honour per-user overrides use
-// ResolveInstruction instead; this stays for the built-in-only compatibility
-// paths.
-func PromptTemplate(variant PromptVariant) (string, bool) {
-	body, ok := BuiltInPromptBody(variant)
-	if !ok {
-		return "", false
-	}
-	return body + "\n\n" + PromptRules, true
-}
-
 // BuiltInPromptBody returns one variant's built-in instruction body without the
 // locked rules, and whether the variant is known. It is the fallback used when
 // the caller has no override.
@@ -80,19 +56,32 @@ func BuiltInPromptBody(variant PromptVariant) (string, bool) {
 	return strings.TrimSpace(body), true
 }
 
+// ResolvedPromptBody returns the instruction body the server uses for one
+// variant: the caller's non-blank override when there is one, otherwise the
+// built-in body. The locked PromptRules are not included. The boolean reports
+// whether a per-user override supplied the body. An unknown variant without an
+// override returns an empty body.
+func ResolvedPromptBody(variant PromptVariant, settings Settings) (body string, customised bool) {
+	body = strings.TrimSpace(settings.PromptTemplates[variant])
+	if body != "" {
+		return body, true
+	}
+	builtIn, ok := promptInstructions[variant]
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(builtIn), false
+}
+
 // ResolveInstruction returns the instruction the server sends for one variant.
 // A non-blank body stored on the user's settings replaces the built-in body;
 // otherwise the built-in body is used. The server-owned PromptRules are always
 // appended last, so a custom body can never remove, replace or reorder them.
 // An unknown variant returns an empty string.
 func ResolveInstruction(variant PromptVariant, settings Settings) string {
-	body := strings.TrimSpace(settings.PromptTemplates[variant])
+	body, _ := ResolvedPromptBody(variant, settings)
 	if body == "" {
-		builtIn, ok := promptInstructions[variant]
-		if !ok {
-			return ""
-		}
-		body = strings.TrimSpace(builtIn)
+		return ""
 	}
 	return body + "\n\n" + PromptRules
 }
@@ -101,7 +90,7 @@ func ResolveInstruction(variant PromptVariant, settings Settings) string {
 // PromptVersionCustom when the variant has a non-blank user override, and
 // PromptVersion when the built-in body was used.
 func ResolvePromptVersion(variant PromptVariant, settings Settings) string {
-	if strings.TrimSpace(settings.PromptTemplates[variant]) != "" {
+	if _, customised := ResolvedPromptBody(variant, settings); customised {
 		return PromptVersionCustom
 	}
 	return PromptVersion
