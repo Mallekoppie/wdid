@@ -377,6 +377,17 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
+        if (auth.sessionNotice != null) ...[
+          Text(
+            auth.sessionNotice!,
+            key: const Key('session-expired'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.error,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         ...fields,
         if (_activeError != null) ...[
           const SizedBox(height: AppSpacing.md),

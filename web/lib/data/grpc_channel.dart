@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:grpc/grpc.dart';
 import 'package:grpc/grpc_or_grpcweb.dart';
 
@@ -15,14 +17,70 @@ GrpcOrGrpcWebClientChannel openAppChannel() {
   );
 }
 
-/// Adds the signed-in account's bearer token to every RPC.
-ClientInterceptor bearerInterceptor(String? Function() token) =>
-    _BearerInterceptor(token);
+/// The session a service-backed client works with: the bearer token to attach
+/// to every RPC and the callback that ends the session when the service
+/// rejects that token.
+///
+/// Keeping both on one object gives every client, and the fakes tests swap in,
+/// the same session-ending seam.
+class ApiSession {
+  const ApiSession({required this.token, this.onUnauthenticated});
+
+  final String? Function() token;
+  final void Function()? onUnauthenticated;
+}
+
+/// Whether [error] means the service rejected the bearer token.
+bool isUnauthenticated(Object error) =>
+    error is GrpcError && error.code == StatusCode.unauthenticated;
+
+/// Reports an unauthenticated failure of [response] through
+/// [onUnauthenticated], leaving the response's own error handling untouched.
+void watchUnauthenticatedFuture(
+  Future<Object?> response,
+  void Function()? onUnauthenticated,
+) {
+  if (onUnauthenticated == null) return;
+  response.then<void>(
+    (_) {},
+    onError: (Object error, StackTrace _) {
+      if (isUnauthenticated(error)) onUnauthenticated();
+    },
+  );
+}
+
+/// Adds the signed-in account's bearer token to every RPC and reports an
+/// unauthenticated unary reply through [onUnauthenticated].
+ClientInterceptor bearerInterceptor(
+  String? Function() token, {
+  void Function()? onUnauthenticated,
+}) => _BearerInterceptor(token, onUnauthenticated);
+
+/// Reports an unauthenticated stream error through [onUnauthenticated] and
+/// passes the error on to the caller.
+///
+/// A [ResponseStream] cannot be listened to twice, so streaming clients wrap
+/// their response with this instead of the interceptor watching it.
+Stream<T> watchUnauthenticated<T>(
+  Stream<T> stream,
+  void Function()? onUnauthenticated,
+) {
+  if (onUnauthenticated == null) return stream;
+  return stream.transform(
+    StreamTransformer<T, T>.fromHandlers(
+      handleError: (error, stackTrace, sink) {
+        if (isUnauthenticated(error)) onUnauthenticated();
+        sink.addError(error, stackTrace);
+      },
+    ),
+  );
+}
 
 class _BearerInterceptor extends ClientInterceptor {
-  _BearerInterceptor(this._token);
+  _BearerInterceptor(this._token, this._onUnauthenticated);
 
   final String? Function() _token;
+  final void Function()? _onUnauthenticated;
 
   @override
   ResponseFuture<R> interceptUnary<Q, R>(
@@ -31,7 +89,9 @@ class _BearerInterceptor extends ClientInterceptor {
     CallOptions options,
     ClientUnaryInvoker<Q, R> invoker,
   ) {
-    return invoker(method, request, _withToken(options));
+    final response = invoker(method, request, _withToken(options));
+    watchUnauthenticatedFuture(response, _onUnauthenticated);
+    return response;
   }
 
   @override
