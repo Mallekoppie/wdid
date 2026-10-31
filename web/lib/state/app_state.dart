@@ -1171,6 +1171,13 @@ class AppState extends ChangeNotifier {
     }
     final category = categoryById(entry.categoryId);
     if (category == null) {
+      // A failed or still-pending taxonomy load also leaves the list empty; it
+      // cannot tell a deleted category from one that simply is not loaded.
+      if (taxonomyError != null || categories.isEmpty) {
+        return const ResumeAvailability.blocked(
+          'The category list is unavailable.',
+        );
+      }
       return const ResumeAvailability.blocked(
         "This entry's category no longer exists.",
       );

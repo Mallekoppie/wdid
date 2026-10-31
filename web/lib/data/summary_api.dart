@@ -93,17 +93,14 @@ class GrpcSummaryRpc implements SummaryRpc {
           client ??
           generated.SummaryServiceClient(
             openAppChannel(),
-            interceptors: [
-              bearerInterceptor(
-                session?.token ?? (() => null),
-                onUnauthenticated: session?.onUnauthenticated,
-              ),
-            ],
+            interceptors: sessionInterceptors(session),
           ),
+      _tokenProvider = session?.tokenProvider,
       _onUnauthenticated = session?.onUnauthenticated;
 
   final generated.SummaryServiceClient _client;
-  final void Function()? _onUnauthenticated;
+  final String? Function()? _tokenProvider;
+  final void Function(String? token)? _onUnauthenticated;
 
   @override
   Future<generated.GetPeriodReportResponse> getPeriodReport(
@@ -128,10 +125,16 @@ class GrpcSummaryRpc implements SummaryRpc {
   @override
   Stream<generated.GenerateSummaryDelta> generateSummary(
     generated.GenerateSummaryRequest request,
-  ) => watchUnauthenticated(
-    _client.generateSummary(request),
-    _onUnauthenticated,
-  );
+  ) {
+    // Capture the token before the request so a late unauthenticated stream
+    // error is attributed to the session that started it.
+    final token = _tokenProvider?.call();
+    return watchUnauthenticated(
+      _client.generateSummary(request),
+      token,
+      _onUnauthenticated,
+    );
+  }
 }
 
 /// Period reports over Connect/gRPC-Web.

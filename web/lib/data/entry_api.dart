@@ -92,12 +92,7 @@ class GrpcEntryRpc implements EntryRpc {
           client ??
           generated.EntryServiceClient(
             openAppChannel(),
-            interceptors: [
-              bearerInterceptor(
-                session?.token ?? (() => null),
-                onUnauthenticated: session?.onUnauthenticated,
-              ),
-            ],
+            interceptors: sessionInterceptors(session),
           );
 
   final generated.EntryServiceClient _client;

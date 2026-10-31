@@ -7,6 +7,7 @@ import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/project_actions.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/project_dialog.dart';
 import '../widgets/panel.dart';
@@ -63,16 +64,7 @@ class _ProjectsViewState extends State<_ProjectsView> {
 
   Future<void> _edit(BuildContext context, Subcategory project) async {
     final state = AppStateScope.read(context);
-    final saved = await showProjectDialog(
-      context,
-      state: state,
-      project: project,
-    );
-    if (saved != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Project updated · ${saved.name}')),
-      );
-    }
+    await editProject(context, state: state, project: project);
   }
 
   Future<void> _setArchived(

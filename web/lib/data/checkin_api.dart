@@ -100,12 +100,7 @@ class GrpcCheckInRpc implements CheckInRpc {
            client ??
            generated_rpc.CheckInServiceClient(
              openAppChannel(),
-             interceptors: [
-               bearerInterceptor(
-                 session?.token ?? (() => null),
-                 onUnauthenticated: session?.onUnauthenticated,
-               ),
-             ],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated_rpc.CheckInServiceClient _client;

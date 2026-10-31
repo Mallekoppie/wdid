@@ -95,13 +95,48 @@ void main() {
     expect(find.text('Start a timer'), findsOneWidget);
 
     // A service client reports that the server rejected the token.
-    session!.onUnauthenticated!();
+    session!.onUnauthenticated!(session!.tokenProvider());
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('session-expired')), findsOneWidget);
     expect(find.text(_expiredMessage), findsOneWidget);
     expect(find.text('Start a timer'), findsNothing);
   });
+
+  testWidgets(
+    'a late unauthenticated reply from the previous session is ignored',
+    (tester) async {
+      ApiSession? session;
+      await pumpApp(
+        tester,
+        session: AuthSession(
+          user: signedInSession().user,
+          token: 'old-token',
+        ),
+        captureSession: (value) => session = value,
+      );
+
+      // End the first session and sign in again; the fake issues 'test-token'.
+      await tester.tap(find.byIcon(Icons.more_horiz));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign out'));
+      await tester.pumpAndSettle();
+      await signIn(tester);
+      expect(find.text('Start a timer'), findsOneWidget);
+
+      // A request issued with the old token answers unauthenticated after the
+      // new sign-in. It must not end the new session.
+      session!.onUnauthenticated!('old-token');
+      await tester.pumpAndSettle();
+      expect(find.text('Start a timer'), findsOneWidget);
+      expect(find.byKey(const Key('session-expired')), findsNothing);
+
+      // The live session's own rejection still ends it.
+      session!.onUnauthenticated!('test-token');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('session-expired')), findsOneWidget);
+    },
+  );
 
   testWidgets('no expired token is attached once the session has ended', (
     tester,
@@ -115,7 +150,7 @@ void main() {
 
     expect(find.byKey(const Key('session-expired')), findsOneWidget);
     // The shared token accessor every service client reads now yields nothing.
-    expect(session!.token(), isNull);
+    expect(session!.tokenProvider(), isNull);
   });
 
   testWidgets('sign-out shows no expiry message', (tester) async {

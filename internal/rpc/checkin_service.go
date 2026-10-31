@@ -333,8 +333,9 @@ func (s *CheckInService) FinalizeCheckIn(ctx context.Context, request *connect.R
 	return connect.NewResponse(&wdidv1.FinalizeCheckInResponse{CheckIn: toProtoCheckIn(checkIn)}), nil
 }
 
-// DeleteCheckIn removes a saved personal review. The store keeps a final
-// manager check-in read-only, because it is the boundary for the next period.
+// DeleteCheckIn removes a saved non-final check-in: a personal review or a
+// manager draft. The store keeps a final manager check-in read-only, because it
+// is the boundary for the next period.
 func (s *CheckInService) DeleteCheckIn(ctx context.Context, request *connect.Request[wdidv1.DeleteCheckInRequest]) (*connect.Response[wdidv1.DeleteCheckInResponse], error) {
 	userID, err := userIDFromContext(ctx, s.auth)
 	if err != nil {

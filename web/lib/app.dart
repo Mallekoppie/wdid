@@ -89,7 +89,7 @@ class _WdidAppState extends State<WdidApp> {
     // expired token being attached, and the callback ends the session when the
     // service rejects it.
     final session = ApiSession(
-      token: () => _auth.token,
+      tokenProvider: () => _auth.token,
       onUnauthenticated: _auth.handleUnauthenticated,
     );
     _state = AppState(

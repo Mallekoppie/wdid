@@ -103,12 +103,7 @@ class GrpcCategoryRpc implements CategoryRpc {
            client ??
            generated.CategoryServiceClient(
              openAppChannel(),
-             interceptors: [
-               bearerInterceptor(
-                 session?.token ?? (() => null),
-                 onUnauthenticated: session?.onUnauthenticated,
-               ),
-             ],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated.CategoryServiceClient _client;

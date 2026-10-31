@@ -132,12 +132,7 @@ class GrpcTimerRpc implements TimerRpc {
           client ??
           generated_rpc.TimerServiceClient(
             openAppChannel(),
-            interceptors: [
-              bearerInterceptor(
-                session?.token ?? (() => null),
-                onUnauthenticated: session?.onUnauthenticated,
-              ),
-            ],
+            interceptors: sessionInterceptors(session),
           );
 
   final generated_rpc.TimerServiceClient _client;

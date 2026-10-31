@@ -54,12 +54,7 @@ class GrpcNoteRpc implements NoteRpc {
           client ??
           generated_rpc.NoteServiceClient(
             openAppChannel(),
-            interceptors: [
-              bearerInterceptor(
-                session?.token ?? (() => null),
-                onUnauthenticated: session?.onUnauthenticated,
-              ),
-            ],
+            interceptors: sessionInterceptors(session),
           );
 
   final generated_rpc.NoteServiceClient _client;

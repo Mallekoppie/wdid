@@ -53,12 +53,7 @@ class GrpcMilestoneRpc implements MilestoneRpc {
            client ??
            generated_rpc.MilestoneServiceClient(
              openAppChannel(),
-             interceptors: [
-               bearerInterceptor(
-                 session?.token ?? (() => null),
-                 onUnauthenticated: session?.onUnauthenticated,
-               ),
-             ],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated_rpc.MilestoneServiceClient _client;

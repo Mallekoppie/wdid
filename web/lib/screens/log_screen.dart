@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../data/timer_api.dart';
 import '../models/enums.dart';
 import '../models/resume_availability.dart';
 import '../models/taxonomy.dart';
@@ -11,6 +10,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../utils/entry_actions.dart';
 import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
 import '../utils/time_utils.dart';
@@ -276,22 +276,6 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not split the entry: $error')),
       );
-    }
-  }
-
-  /// Starts a timer attributed like [entry]. A running timer is refused by
-  /// the shared path; this never pauses, stops or replaces it.
-  Future<void> _resume(WorkEntry entry) async {
-    final state = AppStateScope.read(context);
-    try {
-      await state.resumeEntry(entry);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Timer started')));
-    } on TimerFailure catch (failure) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(failure.message)));
     }
   }
 
@@ -667,7 +651,9 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                           onSaved: _saved,
                           onSplit: () => unawaited(_split(entry)),
                           onDelete: () => unawaited(_delete(entry)),
-                          onResume: () => unawaited(_resume(entry)),
+                          onResume: () => unawaited(
+                            resumeWorkEntry(context, entry),
+                          ),
                           resumeAvailability: state.resumeAvailabilityFor(
                             entry,
                           ),

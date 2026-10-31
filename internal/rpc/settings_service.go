@@ -148,8 +148,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 	// next load would resurrect names the client deliberately removed.
 	settings.SupportPeopleSeeded = true
 
+	backupChanged := backupSettingsChanged(settings, current)
 	if !isAdmin {
-		if backupSettingsChanged(settings, current) {
+		if backupChanged {
 			return nil, toConnectError(ErrBackupsAdminOnly)
 		}
 		// Preserve the account's own backup preferences without applying them
@@ -161,19 +162,40 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 
 	// Canonicalise before saving so the response carries exactly what is stored.
 	settings.Normalize()
-	if isAdmin && settings.BackupDirectory != "" {
-		// Create and probe the directory now so a typo fails immediately with a
-		// field error instead of at the next snapshot. An empty directory means
-		// the caller did not send the backup block, so it is not a path to check.
-		if err := backup.EnsureDirectory(settings.BackupDirectory); err != nil {
-			return nil, toConnectError(err)
+	if isAdmin {
+		if !backupChanged {
+			// An unrelated preference save must not touch the filesystem or the
+			// live schedule. Keep the stored instance-wide backup settings
+			// exactly as they are.
+			settings.BackupDirectory = current.BackupDirectory
+			settings.BackupIntervalHours = current.BackupIntervalHours
+			settings.BackupRetention = current.BackupRetention
+		} else {
+			// A partial backup change keeps the stored values for the fields the
+			// caller omitted.
+			if settings.BackupDirectory == "" {
+				settings.BackupDirectory = current.BackupDirectory
+			}
+			if settings.BackupIntervalHours == 0 {
+				settings.BackupIntervalHours = current.BackupIntervalHours
+			}
+			if settings.BackupRetention == 0 {
+				settings.BackupRetention = current.BackupRetention
+			}
+			// Create and probe the directory now so a typo fails immediately
+			// with a field error instead of at the next snapshot.
+			if settings.BackupDirectory != "" {
+				if err := backup.EnsureDirectory(settings.BackupDirectory); err != nil {
+					return nil, toConnectError(err)
+				}
+			}
 		}
 	}
 	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
 
-	if isAdmin {
+	if backupChanged {
 		// Backups are instance-wide, so the saved preferences become the live
 		// configuration for the scheduler and the backup RPCs.
 		s.backup.Configure(backup.FromSettings(settings, s.backupDefaults))
