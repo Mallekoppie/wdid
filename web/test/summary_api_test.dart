@@ -36,6 +36,15 @@ class FakeSummaryRpc implements SummaryRpc {
   List<generated.GenerateSummaryDelta> generationDeltas = const [];
   GrpcError? generationError;
 
+  generated.RefineSummaryRequest? refineRequest;
+  List<generated.GenerateSummaryDelta> refineDeltas = const [];
+  GrpcError? refineError;
+
+  generated.RevertSummaryRequest? revertRequest;
+  generated.RevertSummaryResponse revertResponse =
+      generated.RevertSummaryResponse();
+  GrpcError? revertError;
+
   @override
   Future<generated.GetPeriodReportResponse> getPeriodReport(
     generated.GetPeriodReportRequest request,
@@ -81,6 +90,26 @@ class FakeSummaryRpc implements SummaryRpc {
       yield delta;
     }
     if (generationError != null) throw generationError!;
+  }
+
+  @override
+  Stream<generated.GenerateSummaryDelta> refineSummary(
+    generated.RefineSummaryRequest request,
+  ) async* {
+    refineRequest = request;
+    for (final delta in refineDeltas) {
+      yield delta;
+    }
+    if (refineError != null) throw refineError!;
+  }
+
+  @override
+  Future<generated.RevertSummaryResponse> revertSummary(
+    generated.RevertSummaryRequest request,
+  ) async {
+    revertRequest = request;
+    if (revertError != null) throw revertError!;
+    return revertResponse;
   }
 }
 
@@ -351,24 +380,139 @@ void main() {
     expect(deltas.last.promptVersion, 'v1');
   });
 
-  test('generateSummary surfaces a provider failure as a retryable error', () async {
-    final rpc = FakeSummaryRpc()
-      ..generationDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
-      ..generationError = GrpcError.unavailable('provider offline');
+  test(
+    'generateSummary surfaces a provider failure as a retryable error',
+    () async {
+      final rpc = FakeSummaryRpc()
+        ..generationDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
+        ..generationError = GrpcError.unavailable('provider offline');
 
-    expect(
-      () => GrpcSummaryApi(
-        rpc: rpc,
-      ).generateSummary('checkin-1').toList(),
-      throwsA(
-        isA<SummaryFailure>().having(
-          (failure) => failure.message,
-          'message',
-          contains('existing summary is unchanged'),
+      expect(
+        () => GrpcSummaryApi(rpc: rpc).generateSummary('checkin-1').toList(),
+        throwsA(
+          isA<SummaryFailure>().having(
+            (failure) => failure.message,
+            'message',
+            contains('existing summary is unchanged'),
+          ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
+
+  test(
+    'refineSummary sends the feedback and maps the refined stream',
+    () async {
+      final createdAt = Timestamp.fromDateTime(DateTime.utc(2026, 10, 19, 12));
+      final rpc = FakeSummaryRpc()
+        ..refineDeltas = [
+          generated.GenerateSummaryDelta(text: '## Refined\n'),
+          generated.GenerateSummaryDelta(
+            model: 'provider-model',
+            promptVersion: 'custom',
+            checkIn: check_in_messages.CheckIn(
+              id: 'checkin-1',
+              kind: generated_check_ins.CheckInKind.CHECK_IN_KIND_MANAGER,
+              periodStart: '2026-10-19',
+              periodEnd: '2026-10-19',
+              summaryMarkdown: '## Refined\n- Tighter',
+              summaryModel: 'provider-model',
+              promptVersion: 'custom',
+              generationPrompt: 'user:\nrefine transcript',
+              previousSummaryMarkdown: '## Hand edit\n- Mine',
+              createdAt: createdAt,
+              updatedAt: createdAt,
+            ),
+          ),
+        ];
+
+      final deltas = await GrpcSummaryApi(rpc: rpc)
+          .refineSummary('checkin-1', 'Make it shorter')
+          .toList();
+
+      expect(rpc.refineRequest!.checkInId, 'checkin-1');
+      expect(rpc.refineRequest!.feedback, 'Make it shorter');
+      expect(deltas, hasLength(2));
+      expect(deltas.first.text, '## Refined\n');
+      expect(deltas.last.isFinal, isTrue);
+      expect(deltas.last.checkIn!.summaryMarkdown, '## Refined\n- Tighter');
+      expect(deltas.last.checkIn!.promptVersion, 'custom');
+      expect(deltas.last.checkIn!.generationPrompt, 'user:\nrefine transcript');
+      expect(
+        deltas.last.checkIn!.previousSummaryMarkdown,
+        '## Hand edit\n- Mine',
+      );
+      expect(deltas.last.model, 'provider-model');
+    },
+  );
+
+  test(
+    'refineSummary surfaces a provider failure as a retryable error',
+    () async {
+      final rpc = FakeSummaryRpc()
+        ..refineDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
+        ..refineError = GrpcError.unavailable('provider offline');
+
+      expect(
+        () =>
+            GrpcSummaryApi(rpc: rpc)
+                .refineSummary('checkin-1', 'Tighten it')
+                .toList(),
+        throwsA(
+          isA<SummaryFailure>().having(
+            (failure) => failure.message,
+            'message',
+            contains('existing summary is unchanged'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'revertSummary maps the returned check-in and clears the slot',
+    () async {
+      final createdAt = Timestamp.fromDateTime(DateTime.utc(2026, 10, 19, 12));
+      final rpc = FakeSummaryRpc()
+        ..revertResponse = generated.RevertSummaryResponse(
+          checkIn: check_in_messages.CheckIn(
+            id: 'checkin-1',
+            kind: generated_check_ins.CheckInKind.CHECK_IN_KIND_MANAGER,
+            periodStart: '2026-10-19',
+            periodEnd: '2026-10-19',
+            summaryMarkdown: '## Previous\n- Restored',
+            previousSummaryMarkdown: '',
+            createdAt: createdAt,
+            updatedAt: createdAt,
+          ),
+        );
+
+      final checkIn = await GrpcSummaryApi(rpc: rpc).revertSummary('checkin-1');
+
+      expect(rpc.revertRequest!.checkInId, 'checkin-1');
+      expect(checkIn.summaryMarkdown, '## Previous\n- Restored');
+      expect(checkIn.previousSummaryMarkdown, isEmpty);
+    },
+  );
+
+  test(
+    'revertSummary surfaces a state rejection as a summary failure',
+    () async {
+      final rpc = FakeSummaryRpc()
+        ..revertError = GrpcError.failedPrecondition('nothing to revert');
+
+      expect(
+        () => GrpcSummaryApi(rpc: rpc).revertSummary('checkin-1'),
+        throwsA(
+          isA<SummaryFailure>().having(
+            (failure) => failure.message,
+            'message',
+            contains('nothing to revert'),
+          ),
+        ),
+      );
+    },
+  );
 
   test('getPromptTemplate previews the service-owned instruction', () async {
     final rpc = FakeSummaryRpc()
@@ -380,9 +524,8 @@ void main() {
             .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
       );
 
-    final template = await GrpcSummaryApi(
-      rpc: rpc,
-    ).getPromptTemplate(CheckInPromptVariant.personalReview);
+    final template = await GrpcSummaryApi(rpc: rpc)
+        .getPromptTemplate(CheckInPromptVariant.personalReview);
 
     expect(
       rpc.templateRequest!.variant,

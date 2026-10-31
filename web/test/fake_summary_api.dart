@@ -98,6 +98,21 @@ class FakeSummaryApi implements SummaryApi {
   int generateCalls = 0;
   String lastGenerateCheckInId = '';
   bool lastOverwriteManualEdits = false;
+
+  /// Refinement fixtures. The stream yields [refineDeltas] and then throws
+  /// [refineFailure], so a test can model partial output before a failure.
+  List<SummaryDelta> refineDeltas = const [];
+  Object? refineFailure;
+  int refineCalls = 0;
+  String lastRefineCheckInId = '';
+  String lastRefineFeedback = '';
+
+  /// Revert fixtures. [revertResult] is the check-in the service returns after
+  /// swapping the summary and clearing the slot.
+  CheckIn? revertResult;
+  Object? revertFailure;
+  int revertCalls = 0;
+  String lastRevertCheckInId = '';
   PromptTemplate? template;
   CheckInPromptVariant? lastTemplateVariant;
 
@@ -168,9 +183,7 @@ class FakeSummaryApi implements SummaryApi {
   }
 
   @override
-  Future<PromptTemplate> getPromptTemplate(
-    CheckInPromptVariant variant,
-  ) async {
+  Future<PromptTemplate> getPromptTemplate(CheckInPromptVariant variant) async {
     lastTemplateVariant = variant;
     return template ??
         PromptTemplate(
@@ -192,5 +205,28 @@ class FakeSummaryApi implements SummaryApi {
       yield delta;
     }
     if (generationFailure != null) throw generationFailure!;
+  }
+
+  @override
+  Stream<SummaryDelta> refineSummary(String checkInId, String feedback) async* {
+    refineCalls++;
+    lastRefineCheckInId = checkInId;
+    lastRefineFeedback = feedback;
+    for (final delta in refineDeltas) {
+      yield delta;
+    }
+    if (refineFailure != null) throw refineFailure!;
+  }
+
+  @override
+  Future<CheckIn> revertSummary(String checkInId) async {
+    revertCalls++;
+    lastRevertCheckInId = checkInId;
+    if (revertFailure != null) throw revertFailure!;
+    final result = revertResult;
+    if (result == null) {
+      throw const SummaryFailure('There is no previous summary to revert.');
+    }
+    return result;
   }
 }

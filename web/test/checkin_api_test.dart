@@ -22,9 +22,12 @@ generated.CheckIn wireCheckIn() => generated.CheckIn(
   state: generated.CheckInState.CHECK_IN_STATE_DRAFT,
   audience: generated.CheckInAudience.CHECK_IN_AUDIENCE_PERFORMANCE_REVIEW,
   focusNotes: 'Ship the backfill.',
+  additionalContext: 'Unrecorded customer call on Friday.',
   summaryMarkdown: '## Highlights',
   summaryModel: 'test/model',
   promptVersion: 'v1',
+  generationPrompt: 'user:\nExact prompt sent',
+  previousSummaryMarkdown: '## Previous\n- Restorable',
   totals: generated.CheckInTotals(
     total: minutes(90),
     byCategory: [generated.CheckInTotal(key: 'cat-1', duration: minutes(60))],
@@ -168,6 +171,15 @@ void main() {
     expect(managers.single.audience, CheckInAudience.performanceReview);
     expect(managers.single.state, CheckInState.draft);
     expect(managers.single.focusNotes, 'Ship the backfill.');
+    expect(
+      managers.single.additionalContext,
+      'Unrecorded customer call on Friday.',
+    );
+    expect(managers.single.generationPrompt, 'user:\nExact prompt sent');
+    expect(
+      managers.single.previousSummaryMarkdown,
+      '## Previous\n- Restorable',
+    );
     expect(managers.single.summaryModel, 'test/model');
     expect(managers.single.updatedAt, DateTime.utc(2026, 10, 21, 9));
     expect(managers.single.totals.minutes, 90);
@@ -270,6 +282,7 @@ void main() {
       createdAt: DateTime.utc(2026, 10, 20),
       audience: CheckInAudience.oneOnOne,
       summaryMarkdown: 'Rewritten',
+      additionalContext: 'A fact the ledger missed.',
     );
 
     await api.updateCheckIn(checkIn);
@@ -277,6 +290,12 @@ void main() {
 
     expect(rpc.updateRequests.single.id, 'checkin-1');
     expect(rpc.updateRequests.single.summaryMarkdown, 'Rewritten');
+    // Context travels with the whole mutable check-in so a context-only save
+    // leaves the summary, model and prompt version unchanged.
+    expect(
+      rpc.updateRequests.single.additionalContext,
+      'A fact the ledger missed.',
+    );
     expect(
       rpc.updateRequests.single.audience,
       generated.CheckInAudience.CHECK_IN_AUDIENCE_ONE_ON_ONE,

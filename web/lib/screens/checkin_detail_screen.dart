@@ -29,16 +29,38 @@ class CheckinDetailScreen extends StatefulWidget {
   State<CheckinDetailScreen> createState() => _CheckinDetailScreenState();
 }
 
+/// Which AI action the error panel's Retry repeats. A refinement retries the
+/// refinement with the same feedback rather than switching to a generation.
+enum _RetryKind { generate, refine }
+
 class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
   final _editor = TextEditingController();
+  final _context = TextEditingController();
+  final _feedback = TextEditingController();
+  String? _contextFor;
   bool _requested = false;
   bool _editing = false;
   bool _generating = false;
+  bool _refining = false;
   String _streamText = '';
   String? _generationError;
+  _RetryKind _retryKind = _RetryKind.generate;
+  String _retryFeedback = '';
   bool _saving = false;
+  bool _savingContext = false;
+  bool _reverting = false;
   bool _buildingPrompt = false;
   bool _updatingAudience = false;
+
+  bool get _busy => _generating || _refining;
+
+  /// Initialises the context editor once per check-in. A rebuild or a saved
+  /// update must not overwrite what the user is typing.
+  void _syncContext(CheckIn checkIn) {
+    if (_contextFor == checkIn.id) return;
+    _contextFor = checkIn.id;
+    _context.text = checkIn.additionalContext;
+  }
 
   @override
   void didChangeDependencies() {
@@ -58,6 +80,8 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
   @override
   void dispose() {
     _editor.dispose();
+    _context.dispose();
+    _feedback.dispose();
     super.dispose();
   }
 
@@ -91,6 +115,8 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
       _generating = true;
       _streamText = '';
       _generationError = null;
+      _retryKind = _RetryKind.generate;
+      _retryFeedback = '';
     });
     try {
       await for (final delta in state.generateSummaryStream(
@@ -139,6 +165,107 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
       );
     }
   }
+
+  /// Saves the additional-context field through the whole check-in. The summary,
+  /// model, prompt version and state travel unchanged, so the service never
+  /// treats a context-only save as a hand edit.
+  Future<void> _saveContext(AppState state, CheckIn checkIn) async {
+    final text = _context.text.trim();
+    setState(() => _savingContext = true);
+    try {
+      await state.updateCheckIn(checkIn.copyWith(additionalContext: text));
+      if (!mounted) return;
+      _context.text = text;
+      setState(() => _savingContext = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Additional context saved')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _savingContext = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save the additional context: $error'),
+        ),
+      );
+    }
+  }
+
+  /// Refines the stored summary from the current text plus [feedback]. There is
+  /// no overwrite confirmation: the service keeps the replaced summary for one
+  /// revert and changes nothing if the request fails.
+  Future<void> _refine(
+    AppState state,
+    CheckIn checkIn, {
+    String? feedback,
+  }) async {
+    final text = (feedback ?? _feedback.text).trim();
+    if (text.isEmpty) return;
+    setState(() {
+      _refining = true;
+      _streamText = '';
+      _generationError = null;
+      _retryKind = _RetryKind.refine;
+      _retryFeedback = text;
+    });
+    try {
+      await for (final delta in state.refineSummaryStream(checkIn, text)) {
+        if (!mounted) return;
+        if (delta.text.isEmpty) continue;
+        setState(() => _streamText += delta.text);
+      }
+      if (!mounted) return;
+      setState(() {
+        _refining = false;
+        _streamText = '';
+        _feedback.clear();
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Summary refined')));
+    } catch (error) {
+      if (!mounted) return;
+      // The service persists only a complete response, so the stored summary
+      // and the revert slot are untouched. Drop the partial preview and offer
+      // the same explicit retry as a failed generation.
+      setState(() {
+        _refining = false;
+        _streamText = '';
+        _generationError = error.toString();
+      });
+    }
+  }
+
+  /// Restores the summary replaced by the last generate or refine. One step:
+  /// the returned check-in clears the slot and the link disappears.
+  Future<void> _revert(AppState state, CheckIn checkIn) async {
+    setState(() {
+      _reverting = true;
+      _generationError = null;
+    });
+    try {
+      await state.revertSummary(checkIn);
+      if (!mounted) return;
+      setState(() {
+        _reverting = false;
+        _editing = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Previous summary restored')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _reverting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not revert the summary: $error')),
+      );
+    }
+  }
+
+  bool _canSubmitFeedback(AppState state) =>
+      !_busy &&
+      !_reverting &&
+      state.canGenerateSummary &&
+      _feedback.text.trim().isNotEmpty;
 
   Future<void> _copyPrompt(AppState state, CheckIn checkIn) async {
     setState(() => _buildingPrompt = true);
@@ -235,15 +362,13 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
     try {
       await state.deleteCheckIn(checkIn.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(copy.deleted)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(copy.deleted)));
       context.go('/checkins');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${copy.failed}: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${copy.failed}: $error')));
     }
   }
 
@@ -362,6 +487,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
         ? state.checkInReport
         : null;
     final readOnly = checkIn.isReadOnly;
+    _syncContext(checkIn);
 
     return ScreenBody(
       child: PageScaffold(
@@ -550,7 +676,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                           !_editing &&
                           state.canGenerateSummary) ...[
                         FilledButton.tonalIcon(
-                          onPressed: _generating
+                          onPressed: _busy
                               ? null
                               : () => unawaited(_generate(state, checkIn)),
                           icon: _generating
@@ -588,10 +714,12 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                       const Spacer(),
                       if (!readOnly && !_editing)
                         TextButton.icon(
-                          onPressed: () {
-                            _editor.text = checkIn.summaryMarkdown;
-                            setState(() => _editing = true);
-                          },
+                          onPressed: _busy
+                              ? null
+                              : () {
+                                  _editor.text = checkIn.summaryMarkdown;
+                                  setState(() => _editing = true);
+                                },
                           icon: const Icon(Icons.edit_outlined, size: 15),
                           label: const Text('Edit'),
                         ),
@@ -643,7 +771,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                           const SizedBox(width: AppSpacing.sm),
                           Expanded(
                             child: Text(
-                              'Generation failed. The existing summary is '
+                              'The AI request failed. The existing summary is '
                               'unchanged. ${_generationError!}',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: scheme.onErrorContainer,
@@ -651,8 +779,16 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                             ),
                           ),
                           TextButton.icon(
-                            onPressed: _generating
+                            onPressed: _busy
                                 ? null
+                                : _retryKind == _RetryKind.refine
+                                ? () => unawaited(
+                                    _refine(
+                                      state,
+                                      checkIn,
+                                      feedback: _retryFeedback,
+                                    ),
+                                  )
                                 : () => unawaited(_generate(state, checkIn)),
                             icon: const Icon(Icons.refresh, size: 16),
                             label: const Text('Retry'),
@@ -662,7 +798,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                   ],
-                  if (_generating)
+                  if (_busy)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(AppSpacing.md),
@@ -685,7 +821,9 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                               ),
                               const SizedBox(width: AppSpacing.sm),
                               Text(
-                                'Generating with ${checkIn.summaryModel ?? 'the configured model'}…',
+                                _generating
+                                    ? 'Generating with ${checkIn.summaryModel ?? 'the configured model'}…'
+                                    : 'Refining with ${checkIn.summaryModel ?? 'the configured model'}…',
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: scheme.onSurfaceVariant,
                                 ),
@@ -707,6 +845,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     )
                   else if (_editing)
                     TextField(
+                      key: const Key('summary-editor'),
                       controller: _editor,
                       minLines: 14,
                       maxLines: 24,
@@ -733,7 +872,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                       action: readOnly || !state.canGenerateSummary
                           ? null
                           : FilledButton.icon(
-                              onPressed: _generating
+                              onPressed: _busy
                                   ? null
                                   : () => unawaited(_generate(state, checkIn)),
                               icon: const Icon(Icons.auto_awesome, size: 16),
@@ -742,6 +881,88 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     )
                   else
                     SimpleMarkdown(checkIn.summaryMarkdown),
+                  if (!_editing &&
+                      checkIn.summaryMarkdown.isNotEmpty &&
+                      !readOnly) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(AppRadius.input),
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('Feedback', style: theme.textTheme.titleSmall),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            'Refine the current summary from this feedback. '
+                            'The version it replaces is kept for one revert.',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextField(
+                            key: const Key('feedback-field'),
+                            controller: _feedback,
+                            enabled: !_busy && !_reverting,
+                            minLines: 2,
+                            maxLines: 6,
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              hintText: 'What should change?',
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Row(
+                            children: [
+                              const Spacer(),
+                              FilledButton.icon(
+                                onPressed: _canSubmitFeedback(state)
+                                    ? () => unawaited(_refine(state, checkIn))
+                                    : null,
+                                icon: _refining
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_fix_high, size: 16),
+                                label: Text(_refining ? 'Refining…' : 'Submit'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (!readOnly &&
+                      checkIn.previousSummaryMarkdown.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _busy || _reverting
+                            ? null
+                            : () => unawaited(_revert(state, checkIn)),
+                        icon: _reverting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.undo, size: 16),
+                        label: const Text('Revert to previous summary'),
+                      ),
+                    ),
+                  ],
                   // A missing key hides the Regenerate action. Keep the reason
                   // visible next to an existing summary too, instead of leaving
                   // the user to wonder why the action disappeared.
@@ -785,6 +1006,45 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: AppSpacing.lg),
+            Panel(
+              child: ExpansionTile(
+                title: const Text('Prompt used'),
+                subtitle: Text(
+                  checkIn.generationPrompt.isEmpty
+                      ? checkIn.state == CheckInState.edited
+                            ? 'No snapshot · built-in instructions · then edited by hand'
+                            : 'No snapshot · built-in instructions'
+                      : checkIn.state == CheckInState.edited
+                      ? 'Exact text sent to the model · then edited by hand'
+                      : 'Exact text sent to the model',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  0,
+                  AppSpacing.md,
+                  AppSpacing.md,
+                ),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SelectableText(
+                      checkIn.generationPrompt.isEmpty
+                          ? 'Built-in prompt v1'
+                          : checkIn.generationPrompt,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (checkIn.focusNotes.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.lg),
               Panel(
@@ -801,6 +1061,71 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: AppSpacing.lg),
+            Panel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PanelHeader(
+                    title: 'Additional context',
+                    icon: Icons.note_add_outlined,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  if (!readOnly && checkIn.generationPrompt.isEmpty) ...[
+                    TextField(
+                      key: const Key('additional-context-field'),
+                      controller: _context,
+                      minLines: 3,
+                      maxLines: 8,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        hintText:
+                            'Facts the ledger did not capture: events, '
+                            'decisions, context for the summary.',
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Sent to the model as supplied data and never '
+                            'redacted. It locks after the first generation.',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        FilledButton(
+                          onPressed:
+                              _savingContext ||
+                                  _context.text.trim() ==
+                                      checkIn.additionalContext.trim()
+                              ? null
+                              : () => unawaited(_saveContext(state, checkIn)),
+                          child: _savingContext
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Save context'),
+                        ),
+                      ],
+                    ),
+                  ] else
+                    Text(
+                      checkIn.additionalContext.isEmpty
+                          ? 'No additional context recorded.'
+                          : checkIn.additionalContext,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                ],
+              ),
+            ),
             const SizedBox(height: AppSpacing.lg),
             CheckInAggregates(state: state, report: report),
             if (!state.hasCheckInService) ...[

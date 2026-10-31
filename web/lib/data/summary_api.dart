@@ -60,6 +60,16 @@ abstract class SummaryApi {
     String checkInId, {
     bool overwriteManualEdits = false,
   });
+
+  /// Regenerates the stored summary from its current text plus [feedback].
+  /// There is no overwrite confirmation: the service sends the hand-edited
+  /// summary to the model as-is and keeps the replaced summary for one revert.
+  /// A failure ends the stream without changing the stored summary.
+  Stream<SummaryDelta> refineSummary(String checkInId, String feedback);
+
+  /// Swaps the one-step revert slot back into the summary. The returned
+  /// check-in carries the restored text and an empty slot.
+  Future<CheckIn> revertSummary(String checkInId);
 }
 
 /// The narrow generated-client surface, separated so field mapping and error
@@ -83,6 +93,14 @@ abstract class SummaryRpc {
 
   Stream<generated.GenerateSummaryDelta> generateSummary(
     generated.GenerateSummaryRequest request,
+  );
+
+  Stream<generated.GenerateSummaryDelta> refineSummary(
+    generated.RefineSummaryRequest request,
+  );
+
+  Future<generated.RevertSummaryResponse> revertSummary(
+    generated.RevertSummaryRequest request,
   );
 }
 
@@ -135,6 +153,25 @@ class GrpcSummaryRpc implements SummaryRpc {
       _onUnauthenticated,
     );
   }
+
+  @override
+  Stream<generated.GenerateSummaryDelta> refineSummary(
+    generated.RefineSummaryRequest request,
+  ) {
+    // Capture the token before the request so a late unauthenticated stream
+    // error is attributed to the session that started it.
+    final token = _tokenProvider?.call();
+    return watchUnauthenticated(
+      _client.refineSummary(request),
+      token,
+      _onUnauthenticated,
+    );
+  }
+
+  @override
+  Future<generated.RevertSummaryResponse> revertSummary(
+    generated.RevertSummaryRequest request,
+  ) => _client.revertSummary(request);
 }
 
 /// Period reports over Connect/gRPC-Web.
@@ -218,9 +255,7 @@ class GrpcSummaryApi implements SummaryApi {
   }
 
   @override
-  Future<PromptTemplate> getPromptTemplate(
-    CheckInPromptVariant variant,
-  ) async {
+  Future<PromptTemplate> getPromptTemplate(CheckInPromptVariant variant) async {
     try {
       final response = await _rpc.getPromptTemplate(
         generated.GetPromptTemplateRequest(
@@ -261,6 +296,48 @@ class GrpcSummaryApi implements SummaryApi {
       }
     } on GrpcError catch (error) {
       throw _generationFailure(error);
+    }
+  }
+
+  @override
+  Stream<SummaryDelta> refineSummary(String checkInId, String feedback) async* {
+    try {
+      final stream = _rpc.refineSummary(
+        generated.RefineSummaryRequest(
+          checkInId: checkInId,
+          feedback: feedback,
+        ),
+      );
+      await for (final delta in stream) {
+        yield SummaryDelta(
+          text: delta.text,
+          checkIn: delta.hasCheckIn() ? checkInFromProto(delta.checkIn) : null,
+          model: delta.model,
+          promptVersion: delta.promptVersion,
+        );
+      }
+    } on GrpcError catch (error) {
+      throw _generationFailure(error);
+    }
+  }
+
+  @override
+  Future<CheckIn> revertSummary(String checkInId) async {
+    try {
+      final response = await _rpc.revertSummary(
+        generated.RevertSummaryRequest(checkInId: checkInId),
+      );
+      return checkInFromProto(response.checkIn);
+    } on GrpcError catch (error) {
+      final text = describeGrpcError(
+        error,
+        unavailable:
+            'The service is unreachable. Check that the server is running.',
+        unauthenticated: 'Sign in again to revert the summary.',
+        notFound: 'That check-in no longer exists.',
+        failedPrecondition: 'This summary cannot be reverted right now.',
+      );
+      throw SummaryFailure(text.message, field: text.field);
     }
   }
 

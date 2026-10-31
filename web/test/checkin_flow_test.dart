@@ -41,7 +41,12 @@ CheckIn checkIn({
   CheckInAudience? audience = CheckInAudience.oneOnOne,
   CheckInState state = CheckInState.draft,
   String focusNotes = 'Manager focus',
+  String additionalContext = '',
   String summaryMarkdown = '',
+  String? summaryModel,
+  String promptVersion = 'v1',
+  String generationPrompt = '',
+  String previousSummaryMarkdown = '',
   DateTime? createdAt,
   DateTime? periodStart,
   DateTime? periodEnd,
@@ -52,7 +57,12 @@ CheckIn checkIn({
     audience: kind == CheckInKind.manager ? audience : null,
     state: state,
     focusNotes: focusNotes,
+    additionalContext: additionalContext,
     summaryMarkdown: summaryMarkdown,
+    summaryModel: summaryModel,
+    promptVersion: promptVersion,
+    generationPrompt: generationPrompt,
+    previousSummaryMarkdown: previousSummaryMarkdown,
     periodStart: periodStart ?? DateTime(2026, 10, 1),
     periodEnd: periodEnd ?? DateTime(2026, 10, 20),
     createdAt: createdAt ?? DateTime.utc(2026, 10, 20, 12),
@@ -337,7 +347,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Edit'));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byType(TextField),
+      find.byKey(const Key('summary-editor')),
       '## Highlights\n- Cut invoicing from 40 min to 3 min',
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Save summary'));
@@ -354,7 +364,7 @@ void main() {
     // An empty summary is a valid state, not a validation error.
     await tester.tap(find.widgetWithText(TextButton, 'Edit'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '');
+    await tester.enterText(find.byKey(const Key('summary-editor')), '');
     await tester.tap(find.widgetWithText(FilledButton, 'Save summary'));
     await tester.pumpAndSettle();
 
@@ -470,7 +480,10 @@ void main() {
     // Replace the generated text with a manual edit.
     await tester.tap(find.widgetWithText(TextButton, 'Edit'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '## Manual\n- My own words');
+    await tester.enterText(
+      find.byKey(const Key('summary-editor')),
+      '## Manual\n- My own words',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Save summary'));
     await tester.pumpAndSettle();
     expect(find.textContaining('My own words'), findsWidgets);
@@ -524,7 +537,10 @@ void main() {
 
     await tester.tap(find.widgetWithText(TextButton, 'Edit'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '## Unsaved draft');
+    await tester.enterText(
+      find.byKey(const Key('summary-editor')),
+      '## Unsaved draft',
+    );
 
     final markFinal = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Mark final'),
@@ -542,7 +558,10 @@ void main() {
     // The draft is still in the editor rather than stranded behind a
     // read-only final check-in.
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      tester
+          .widget<TextField>(find.byKey(const Key('summary-editor')))
+          .controller!
+          .text,
       '## Unsaved draft',
     );
   });
@@ -834,6 +853,379 @@ void main() {
     expect(find.text('Summary generated'), findsOneWidget);
     expect(find.textContaining('Generated after retry'), findsWidgets);
     expect(find.textContaining('My own words'), findsNothing);
+  });
+
+  testWidgets('saves additional context without touching the summary', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(find.text('Additional context'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('additional-context-field')),
+      'The customer call on Friday is not in the ledger.',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save context'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateRequests, hasLength(1));
+    final sent = api.updateRequests.single;
+    expect(
+      sent.additionalContext,
+      'The customer call on Friday is not in the ledger.',
+    );
+    // The whole check-in travels, so the context-only save leaves the summary,
+    // model, prompt version and state exactly as they were.
+    expect(sent.summaryMarkdown, '## Existing\n- Evidence');
+    expect(sent.state, CheckInState.draft);
+    expect(sent.promptVersion, 'v1');
+    expect(find.text('Additional context saved'), findsOneWidget);
+  });
+
+  testWidgets(
+    'additional context becomes read-only after the first generation',
+    (tester) async {
+      final api = FakeCheckInApi(
+        checkIns: [
+          checkIn(
+            additionalContext: 'Recorded before generating.',
+            summaryMarkdown: '## Generated\n- Output',
+            generationPrompt: 'user:\nExact prompt',
+          ),
+        ],
+      );
+      await pumpCheckIns(
+        tester,
+        checkInApi: api,
+        route: '/checkins/checkin-manager',
+      );
+
+      expect(find.byKey(const Key('additional-context-field')), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Save context'), findsNothing);
+      expect(find.text('Recorded before generating.'), findsOneWidget);
+      expect(find.text('Prompt used'), findsOneWidget);
+    },
+  );
+
+  testWidgets('refines an edited summary without a confirmation', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          state: CheckInState.edited,
+          summaryMarkdown: '## Mine\n- Hand edited',
+        ),
+      ],
+    );
+    final summaryApi = FakeSummaryApi(report: report)
+      ..refineDeltas = [
+        const SummaryDelta(text: '## Refined\n'),
+        SummaryDelta(
+          checkIn: checkIn(
+            state: CheckInState.generated,
+            summaryMarkdown: '## Refined\n- Tighter',
+            summaryModel: 'provider-model',
+            generationPrompt: 'user:\nrefine transcript',
+            previousSummaryMarkdown: '## Mine\n- Hand edited',
+          ),
+          model: 'provider-model',
+          promptVersion: 'v1',
+        ),
+      ];
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: summaryApi,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(find.text('Feedback'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('feedback-field')),
+      'Make it tighter',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Submit'));
+    await tester.pumpAndSettle();
+
+    expect(summaryApi.refineCalls, 1);
+    expect(summaryApi.lastRefineCheckInId, 'checkin-manager');
+    expect(summaryApi.lastRefineFeedback, 'Make it tighter');
+    expect(find.text('Replace edited summary?'), findsNothing);
+    expect(find.text('Summary refined'), findsOneWidget);
+    expect(find.textContaining('Tighter'), findsWidgets);
+    expect(find.textContaining('Hand edited'), findsNothing);
+    // The replaced summary stays in the one-step revert slot.
+    expect(find.text('Revert to previous summary'), findsOneWidget);
+  });
+
+  testWidgets('a failed refine keeps the summary and retries the refinement', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- My own words')],
+    );
+    final summaryApi = FakeSummaryApi(report: report)
+      ..refineDeltas = [const SummaryDelta(text: '## Partial')]
+      ..refineFailure = const SummaryFailure(
+        'The AI provider could not complete the summary.',
+      );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: summaryApi,
+      route: '/checkins/checkin-manager',
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('feedback-field')),
+      'Shorten this',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Submit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.textContaining('My own words'), findsWidgets);
+    expect(find.textContaining('## Partial'), findsNothing);
+    expect(summaryApi.refineCalls, 1);
+
+    summaryApi.refineFailure = null;
+    summaryApi.refineDeltas = [
+      SummaryDelta(
+        checkIn: checkIn(
+          summaryMarkdown: '## Refined after retry\n- Short',
+          generationPrompt: 'user:\nrefine retry',
+        ),
+      ),
+    ];
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    // Retry repeats the refine with the feedback that failed, not a generate.
+    expect(summaryApi.refineCalls, 2);
+    expect(summaryApi.lastRefineFeedback, 'Shorten this');
+    expect(summaryApi.generateCalls, 0);
+    expect(find.textContaining('Refined after retry'), findsWidgets);
+  });
+
+  testWidgets('feedback submit is disabled while blank or without a key', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: FakeSummaryApi(report: report),
+      route: '/checkins/checkin-manager',
+    );
+
+    FilledButton submit() => tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Submit'),
+    );
+
+    expect(submit().onPressed, isNull, reason: 'blank feedback cannot submit');
+    await tester.enterText(
+      find.byKey(const Key('feedback-field')),
+      'Tighten the opening',
+    );
+    await tester.pump();
+    expect(submit().onPressed, isNotNull);
+  });
+
+  testWidgets('feedback submit is disabled without a stored key', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: FakeSummaryApi(report: report),
+      route: '/checkins/checkin-manager',
+      hasAIKey: false,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('feedback-field')),
+      'Tighten the opening',
+    );
+    await tester.pump();
+
+    final submit = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Submit'),
+    );
+    expect(submit.onPressed, isNull, reason: 'no stored key means no refine');
+    expect(
+      find.textContaining('Add your AI provider key in Settings'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('reverts the previous summary once and removes the link', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          state: CheckInState.edited,
+          summaryMarkdown: '## New\n- Current words',
+          previousSummaryMarkdown: '## Old\n- Restored words',
+        ),
+      ],
+    );
+    final summaryApi = FakeSummaryApi(report: report)
+      ..revertResult = checkIn(
+        state: CheckInState.edited,
+        summaryMarkdown: '## Old\n- Restored words',
+      );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: summaryApi,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(find.text('Revert to previous summary'), findsOneWidget);
+    await tester.tap(find.text('Revert to previous summary'));
+    await tester.pumpAndSettle();
+
+    expect(summaryApi.revertCalls, 1);
+    expect(summaryApi.lastRevertCheckInId, 'checkin-manager');
+    expect(find.textContaining('Restored words'), findsWidgets);
+    expect(find.textContaining('Current words'), findsNothing);
+    // The returned check-in cleared the slot, so the one-step link is gone.
+    expect(find.text('Revert to previous summary'), findsNothing);
+    expect(find.text('Previous summary restored'), findsOneWidget);
+  });
+
+  testWidgets('a final manager check-in keeps context and prompt provenance', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          state: CheckInState.final_,
+          summaryMarkdown: '## Final\n- Locked',
+          additionalContext: 'A decision the ledger missed.',
+          generationPrompt: 'user:\nExact final prompt',
+          previousSummaryMarkdown: '## Prior',
+        ),
+      ],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(find.text('A decision the ledger missed.'), findsOneWidget);
+    expect(find.text('Prompt used'), findsOneWidget);
+    expect(find.text('Feedback'), findsNothing);
+    expect(find.text('Revert to previous summary'), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Generate with AI'), findsNothing);
+    expect(find.widgetWithText(TextButton, 'Edit'), findsNothing);
+    expect(find.byKey(const Key('additional-context-field')), findsNothing);
+    expect(find.widgetWithText(FilledButton, 'Save context'), findsNothing);
+  });
+
+  testWidgets('the prompt disclosure shows the exact snapshot and edit label', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          state: CheckInState.edited,
+          summaryMarkdown: '## Mine\n- Hand edited',
+          generationPrompt: 'user:\nExact prompt sent\n\nassistant:\nGenerated',
+        ),
+      ],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(find.textContaining('then edited by hand'), findsWidgets);
+    await tester.ensureVisible(find.text('Prompt used'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prompt used'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Exact prompt sent'), findsWidgets);
+  });
+
+  testWidgets('a legacy check-in reports the built-in prompt', (tester) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(summaryMarkdown: '## Existing\n- Evidence')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    await tester.ensureVisible(find.text('Prompt used'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prompt used'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Built-in prompt v1'), findsOneWidget);
+  });
+
+  testWidgets('a personal review remains refineable', (tester) async {
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          id: 'checkin-personal',
+          kind: CheckInKind.personal,
+          state: CheckInState.edited,
+          summaryMarkdown: '## Mine\n- Personal words',
+        ),
+      ],
+    );
+    final summaryApi = FakeSummaryApi(report: report)
+      ..refineDeltas = [
+        SummaryDelta(
+          checkIn: checkIn(
+            id: 'checkin-personal',
+            kind: CheckInKind.personal,
+            state: CheckInState.generated,
+            summaryMarkdown: '## Refined\n- Personal take',
+          ),
+        ),
+      ];
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      summaryApi: summaryApi,
+      route: '/checkins/checkin-personal',
+    );
+
+    expect(find.text('Feedback'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('feedback-field')),
+      'Focus on what changed',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Submit'));
+    await tester.pumpAndSettle();
+
+    expect(summaryApi.refineCalls, 1);
+    expect(find.textContaining('Personal take'), findsWidgets);
   });
 }
 
