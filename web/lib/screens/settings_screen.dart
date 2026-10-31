@@ -63,10 +63,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _aiDirty = false;
   bool _syncing = false;
 
-  CheckInPromptVariant _previewVariant = CheckInPromptVariant.managerOneOnOne;
-  PromptTemplate? _previewTemplate;
-  String? _previewError;
-  bool _previewLoading = false;
+  static const _promptVariants = [
+    CheckInPromptVariant.managerOneOnOne,
+    CheckInPromptVariant.managerPerformanceReview,
+    CheckInPromptVariant.personalReview,
+  ];
+
+  static const _promptVariantItems = [
+    DropdownMenuItem(
+      value: CheckInPromptVariant.managerOneOnOne,
+      child: Text('Manager 1:1'),
+    ),
+    DropdownMenuItem(
+      value: CheckInPromptVariant.managerPerformanceReview,
+      child: Text('Manager performance review'),
+    ),
+    DropdownMenuItem(
+      value: CheckInPromptVariant.personalReview,
+      child: Text('Personal review'),
+    ),
+  ];
+
+  CheckInPromptVariant _promptVariant = CheckInPromptVariant.managerOneOnOne;
+  final Map<CheckInPromptVariant, TextEditingController> _promptBodies = {
+    for (final variant in _promptVariants) variant: TextEditingController(),
+  };
+
+  /// Drafts the user has changed. A late template load must never overwrite
+  /// one, and each variant is tracked separately.
+  final Set<CheckInPromptVariant> _promptDirty = {};
+  final Map<CheckInPromptVariant, PromptTemplate> _promptTemplates = {};
+  bool _promptSyncing = false;
+  bool _promptLoading = false;
+  bool _savingPrompt = false;
+  bool _resettingPrompt = false;
+  String? _promptError;
+  String? _promptMessage;
+
+  // Read-only fallback when SettingsService is absent but the SummaryService
+  // compatibility preview is wired.
+  PromptTemplate? _fallbackTemplate;
+  String? _fallbackError;
+  bool _fallbackLoading = false;
 
   @override
   void initState() {
@@ -129,9 +167,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _reviewCadence = state.settings.reviewCadence;
       _redactUrls = state.settings.redactUrls;
       _aiPreset = AIProviderPreset.forBaseUrl(state.settings.aiBaseUrl);
-      if (state.hasSummaryService) {
+      for (final variant in _promptVariants) {
+        _promptBodies[variant]!.addListener(() => _markPromptDirty(variant));
+      }
+      if (state.hasSettingsService) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_loadPromptTemplate());
+          if (mounted) unawaited(_loadPromptTemplates());
+        });
+      } else if (state.hasSummaryService) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_loadFallbackTemplate());
         });
       }
       return;
@@ -187,6 +232,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _baseUrl.dispose();
     _model.dispose();
     _apiKey.dispose();
+    for (final controller in _promptBodies.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -416,25 +464,159 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _loadPromptTemplate() async {
+  void _markPromptDirty(CheckInPromptVariant variant) {
+    if (!_promptSyncing) _promptDirty.add(variant);
+  }
+
+  void _setPromptBody(CheckInPromptVariant variant, String value) {
+    final controller = _promptBodies[variant]!;
+    if (controller.text == value) return;
+    _promptSyncing = true;
+    try {
+      controller.text = value;
+    } finally {
+      _promptSyncing = false;
+    }
+  }
+
+  /// Applies a loaded body unless the user already has a draft for it.
+  void _syncPromptBody(CheckInPromptVariant variant) {
+    if (_promptDirty.contains(variant)) return;
+    final template = _promptTemplates[variant];
+    if (template == null) return;
+    _setPromptBody(variant, template.body);
+  }
+
+  Future<void> _loadPromptTemplates() async {
     final state = AppStateScope.read(context);
-    if (!state.hasSummaryService) return;
+    if (!state.hasSettingsService) return;
     setState(() {
-      _previewLoading = true;
-      _previewError = null;
+      _promptLoading = true;
+      _promptError = null;
     });
     try {
-      final template = await state.promptTemplate(_previewVariant);
+      final templates = await state.listPromptTemplates();
       if (!mounted) return;
       setState(() {
-        _previewTemplate = template;
-        _previewLoading = false;
+        for (final template in templates) {
+          _promptTemplates[template.variant] = template;
+        }
+        _promptLoading = false;
+        for (final variant in _promptVariants) {
+          _syncPromptBody(variant);
+        }
+      });
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _promptLoading = false;
+        _promptError = failure.message;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _previewLoading = false;
-        _previewError = error.toString();
+        _promptLoading = false;
+        _promptError = '$error';
+      });
+    }
+  }
+
+  Future<void> _loadFallbackTemplate() async {
+    final state = AppStateScope.read(context);
+    if (!state.hasSummaryService) return;
+    setState(() {
+      _fallbackLoading = true;
+      _fallbackError = null;
+    });
+    try {
+      final template = await state.promptTemplate(_promptVariant);
+      if (!mounted) return;
+      setState(() {
+        _fallbackTemplate = template;
+        _fallbackLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _fallbackLoading = false;
+        _fallbackError = error.toString();
+      });
+    }
+  }
+
+  Future<void> _savePrompt() async {
+    final state = AppStateScope.read(context);
+    final variant = _promptVariant;
+    final body = _promptBodies[variant]!.text.trim();
+    if (body.isEmpty) {
+      setState(() {
+        _promptMessage =
+            'Enter a prompt body before saving, or reset to the built-in '
+            'prompt.';
+      });
+      return;
+    }
+    setState(() {
+      _savingPrompt = true;
+      _promptMessage = null;
+    });
+    try {
+      final saved = await state.updatePromptTemplate(variant, body);
+      if (!mounted) return;
+      setState(() {
+        _promptTemplates[variant] = saved;
+        _promptDirty.remove(variant);
+        _savingPrompt = false;
+        _setPromptBody(variant, saved.body);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Prompt template saved')),
+      );
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _savingPrompt = false;
+        _promptMessage = failure.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _savingPrompt = false;
+        _promptMessage = 'Could not save the prompt template: $error';
+      });
+    }
+  }
+
+  Future<void> _resetPrompt() async {
+    final state = AppStateScope.read(context);
+    final variant = _promptVariant;
+    setState(() {
+      _resettingPrompt = true;
+      _promptMessage = null;
+    });
+    try {
+      final reset = await state.resetPromptTemplate(variant);
+      if (!mounted) return;
+      setState(() {
+        _promptTemplates[variant] = reset;
+        _promptDirty.remove(variant);
+        _resettingPrompt = false;
+        _setPromptBody(variant, reset.body);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Prompt reset to the built-in default')),
+      );
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _resettingPrompt = false;
+        _promptMessage = failure.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _resettingPrompt = false;
+        _promptMessage = 'Could not reset the prompt template: $error';
       });
     }
   }
@@ -468,6 +650,243 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
   }
+
+  bool get _promptReady =>
+      !_promptLoading && _promptTemplates[_promptVariant] != null;
+
+  String _assembledPrompt() {
+    final template = _promptTemplates[_promptVariant];
+    final body = _promptBodies[_promptVariant]!.text.trim();
+    final rules = template?.rules ?? '';
+    if (body.isEmpty) return rules;
+    if (rules.isEmpty) return body;
+    return '$body\n\n$rules';
+  }
+
+  Widget _buildPromptSection(AppState state) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: Text('Prompt template', style: theme.textTheme.labelMedium),
+      subtitle: Text(
+        state.hasSettingsService
+            ? 'Per-variant instruction body; the locked rules are always appended'
+            : 'Read-only preview',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      children: [
+        if (state.hasSettingsService)
+          ..._buildPromptEditor(theme, scheme)
+        else if (state.hasSummaryService)
+          ..._buildPromptFallback(theme, scheme)
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Connect the service to edit prompt templates.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _buildPromptEditor(ThemeData theme, ColorScheme scheme) {
+    final template = _promptTemplates[_promptVariant];
+    final ready = _promptReady;
+    final busy = _savingPrompt || _resettingPrompt;
+    return [
+      if (_promptLoading) const LinearProgressIndicator(minHeight: 2),
+      if (_promptError != null) ...[
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _promptError!,
+          style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.sm),
+      AppDropdown<CheckInPromptVariant>(
+        value: _promptVariant,
+        label: 'Variant',
+        items: _promptVariantItems,
+        onChanged: (value) {
+          if (value == null) return;
+          setState(() {
+            _promptVariant = value;
+            _promptMessage = null;
+          });
+        },
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Instruction body',
+              style: theme.textTheme.labelMedium,
+            ),
+          ),
+          if (template?.customised ?? false)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(AppRadius.input),
+              ),
+              child: Text(
+                'Customised',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSecondaryContainer,
+                ),
+              ),
+            ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      TextField(
+        controller: _promptBodies[_promptVariant],
+        minLines: 6,
+        maxLines: 12,
+        style: theme.textTheme.bodySmall?.copyWith(
+          fontFamily: 'monospace',
+          height: 1.5,
+        ),
+        decoration: const InputDecoration(
+          labelText: 'Prompt body',
+          alignLabelWithHint: true,
+          hintText: 'Instruction sent to the model for this variant',
+        ),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      Text('Locked rules', style: theme.textTheme.labelMedium),
+      const SizedBox(height: AppSpacing.xs),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Text(
+          template?.rules ?? '',
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontFamily: 'monospace',
+            height: 1.5,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        'These rules are server-owned and are always appended; they cannot be '
+        'edited, omitted or reordered.',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      Text('Assembled prompt', style: theme.textTheme.labelMedium),
+      const SizedBox(height: AppSpacing.xs),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Text(
+          _assembledPrompt(),
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontFamily: 'monospace',
+            height: 1.5,
+          ),
+        ),
+      ),
+      if (_promptMessage != null) ...[
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _promptMessage!,
+          style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.sm),
+      Row(
+        children: [
+          TextButton(
+            onPressed: !ready || busy
+                ? null
+                : () => unawaited(_resetPrompt()),
+            child: _resettingPrompt
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Reset to default'),
+          ),
+          const Spacer(),
+          FilledButton(
+            onPressed: !ready || busy ? null : () => unawaited(_savePrompt()),
+            child: _savingPrompt
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Save prompt'),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _buildPromptFallback(ThemeData theme, ColorScheme scheme) => [
+    AppDropdown<CheckInPromptVariant>(
+      value: _promptVariant,
+      label: 'Variant',
+      items: _promptVariantItems,
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _promptVariant = value);
+        unawaited(_loadFallbackTemplate());
+      },
+    ),
+    const SizedBox(height: AppSpacing.sm),
+    if (_fallbackLoading)
+      const LinearProgressIndicator(minHeight: 2)
+    else if (_fallbackError != null)
+      Text(
+        _fallbackError!,
+        style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+      )
+    else
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Text(
+          _fallbackTemplate?.template ?? '',
+          style: theme.textTheme.bodySmall?.copyWith(
+            fontFamily: 'monospace',
+            height: 1.5,
+          ),
+        ),
+      ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -837,90 +1256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    shape: const Border(),
-                    collapsedShape: const Border(),
-                    title: Text(
-                      'Prompt template preview',
-                      style: theme.textTheme.labelMedium,
-                    ),
-                    subtitle: Text(
-                      'Version ${_previewTemplate?.promptVersion ?? 'v1'} · service-owned',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    children: [
-                      if (!state.hasSummaryService)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Connect the service to preview the versioned '
-                            'prompt templates.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      else ...[
-                        AppDropdown<CheckInPromptVariant>(
-                          value: _previewVariant,
-                          label: 'Variant',
-                          items: const [
-                            DropdownMenuItem(
-                              value: CheckInPromptVariant.managerOneOnOne,
-                              child: Text('Manager 1:1'),
-                            ),
-                            DropdownMenuItem(
-                              value:
-                                  CheckInPromptVariant.managerPerformanceReview,
-                              child: Text('Manager performance review'),
-                            ),
-                            DropdownMenuItem(
-                              value: CheckInPromptVariant.personalReview,
-                              child: Text('Personal review'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value == null) return;
-                            setState(() => _previewVariant = value);
-                            unawaited(_loadPromptTemplate());
-                          },
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        if (_previewLoading)
-                          const LinearProgressIndicator(minHeight: 2)
-                        else if (_previewError != null)
-                          Text(
-                            _previewError!,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.error,
-                            ),
-                          )
-                        else
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceContainerLow,
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.input,
-                              ),
-                              border: Border.all(color: scheme.outlineVariant),
-                            ),
-                            child: Text(
-                              _previewTemplate?.template ?? '',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontFamily: 'monospace',
-                                height: 1.5,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ],
-                  ),
+                  _buildPromptSection(state),
                   const SizedBox(height: AppSpacing.sm),
                   Row(
                     children: [
