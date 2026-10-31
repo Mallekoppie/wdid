@@ -1,10 +1,84 @@
 package domain_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Mallekoppie/wdid/internal/domain"
 )
+
+func TestNormalizeTrimsTheCheckInAIFields(t *testing.T) {
+	checkIn := domain.CheckIn{
+		Kind:                    domain.CheckInKindManager,
+		AdditionalContext:       "  The outage was caused by a bad deploy.  ",
+		GenerationPrompt:        "\n[user]\nPrompt\n",
+		PreviousSummaryMarkdown: "  # Previous summary\n  ",
+	}
+
+	checkIn.Normalize()
+
+	if checkIn.AdditionalContext != "The outage was caused by a bad deploy." {
+		t.Fatalf("additional context = %q, want it trimmed", checkIn.AdditionalContext)
+	}
+	if checkIn.GenerationPrompt != "[user]\nPrompt" {
+		t.Fatalf("generation prompt = %q, want it trimmed", checkIn.GenerationPrompt)
+	}
+	if checkIn.PreviousSummaryMarkdown != "# Previous summary" {
+		t.Fatalf("previous summary = %q, want it trimmed", checkIn.PreviousSummaryMarkdown)
+	}
+}
+
+// TestLegacyCheckInJSONRoundTripsWithoutTheNewFields pins backwards
+// compatibility: records written before additional context, the generation
+// prompt and the revert slot existed must load, normalize and save without
+// acquiring or changing any other field.
+func TestLegacyCheckInJSONRoundTripsWithoutTheNewFields(t *testing.T) {
+	const legacy = `{
+		"id": "checkin-legacy",
+		"userId": "user-1",
+		"kind": "manager",
+		"periodStart": "2026-10-01",
+		"periodEnd": "2026-10-07",
+		"state": "generated",
+		"audience": "one_on_one",
+		"focusNotes": "Freight billing",
+		"summaryMarkdown": "# Summary\n- Shipped",
+		"summaryModel": "claude-sonnet-5-5",
+		"promptVersion": "v1",
+		"totals": {"minutes": 120},
+		"createdAt": "2026-10-07T17:00:00Z",
+		"updatedAt": "2026-10-07T17:00:00Z"
+	}`
+
+	var checkIn domain.CheckIn
+	if err := json.Unmarshal([]byte(legacy), &checkIn); err != nil {
+		t.Fatalf("unmarshal legacy check-in: %v", err)
+	}
+	if checkIn.AdditionalContext != "" || checkIn.GenerationPrompt != "" || checkIn.PreviousSummaryMarkdown != "" {
+		t.Fatalf("legacy check-in gained AI fields: %+v", checkIn)
+	}
+	checkIn.Normalize()
+
+	encoded, err := json.Marshal(checkIn)
+	if err != nil {
+		t.Fatalf("marshal legacy check-in: %v", err)
+	}
+	for _, field := range []string{"additionalContext", "generationPrompt", "previousSummaryMarkdown"} {
+		if strings.Contains(string(encoded), field) {
+			t.Fatalf("saved legacy check-in contains empty %q: %s", field, encoded)
+		}
+	}
+	for _, expected := range []string{
+		`"focusNotes":"Freight billing"`,
+		`"summaryMarkdown":"# Summary\n- Shipped"`,
+		`"promptVersion":"v1"`,
+	} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("saved legacy check-in is missing %s: %s", expected, encoded)
+		}
+	}
+}
 
 func TestCheckInTotalsFromReportKeepsSupportTotalsAuthoritative(t *testing.T) {
 	// Per-person rows credit each name the full entry minutes, so they add up

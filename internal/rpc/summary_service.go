@@ -357,6 +357,7 @@ func (s *SummaryService) exportInput(userID, fromDate, toDate string, checkIn *d
 
 	var checkIns []domain.CheckIn
 	focusNotes := ""
+	additionalContext := ""
 	if checkIn != nil {
 		scoped := snapshot.ScopedCheckIn
 		if scoped == nil || scoped.ID != checkIn.ID {
@@ -364,20 +365,22 @@ func (s *SummaryService) exportInput(userID, fromDate, toDate string, checkIn *d
 		}
 		checkIns = []domain.CheckIn{*scoped}
 		focusNotes = scoped.FocusNotes
+		additionalContext = scoped.AdditionalContext
 	} else {
 		checkIns = checkInsInPeriod(snapshot.CheckIns, snapshot.Report.FromDate, snapshot.Report.ToDate)
 	}
 
 	return domain.ExportInput{
-		Report:        snapshot.Report,
-		Entries:       snapshot.Entries,
-		Categories:    snapshot.Categories,
-		Subcategories: snapshot.Subcategories,
-		Milestones:    snapshot.Milestones,
-		CheckIns:      checkIns,
-		Settings:      snapshot.Settings,
-		FocusNotes:    focusNotes,
-		GeneratedAt:   s.now().UTC(),
+		Report:            snapshot.Report,
+		Entries:           snapshot.Entries,
+		Categories:        snapshot.Categories,
+		Subcategories:     snapshot.Subcategories,
+		Milestones:        snapshot.Milestones,
+		CheckIns:          checkIns,
+		Settings:          snapshot.Settings,
+		FocusNotes:        focusNotes,
+		AdditionalContext: additionalContext,
+		GeneratedAt:       s.now().UTC(),
 	}, nil
 }
 

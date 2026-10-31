@@ -1,6 +1,8 @@
 package domain_test
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Mallekoppie/wdid/internal/domain"
@@ -31,6 +33,76 @@ func TestNormalizeSupportPeopleDropsAnEmptyRoster(t *testing.T) {
 
 	if settings.SupportPeople != nil {
 		t.Fatalf("support people = %#v, want nil", settings.SupportPeople)
+	}
+}
+
+func TestSettingsPromptTemplatesUseThePromptTemplatesJSONKey(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.PromptTemplates = map[domain.PromptVariant]string{
+		domain.PromptVariantManagerOneOnOne: "Custom body",
+	}
+
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+	for _, expected := range []string{
+		`"promptTemplates":{"manager_one_on_one":"Custom body"}`,
+	} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("settings JSON is missing %s: %s", expected, encoded)
+		}
+	}
+
+	var decoded domain.Settings
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
+	}
+	if got := decoded.PromptTemplates[domain.PromptVariantManagerOneOnOne]; got != "Custom body" {
+		t.Fatalf("decoded prompt template = %q, want the custom body", got)
+	}
+}
+
+func TestSettingsOmitsAnEmptyPromptTemplateMap(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.PromptTemplates = map[domain.PromptVariant]string{}
+
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+	if strings.Contains(string(encoded), "promptTemplates") {
+		t.Fatalf("settings JSON kept an empty prompt template map: %s", encoded)
+	}
+}
+
+func TestNormalizePromptTemplatesTrimsBodiesAndDropsBlankOverrides(t *testing.T) {
+	settings := domain.DefaultSettings("user-1")
+	settings.PromptTemplates = map[domain.PromptVariant]string{
+		domain.PromptVariantManagerOneOnOne:          "  Keep it short.  ",
+		domain.PromptVariantManagerPerformanceReview: " \t\n ",
+		domain.PromptVariantPersonalReview:           "",
+		domain.PromptVariant("not_a_variant"):        "Stale body",
+	}
+
+	settings.Normalize()
+
+	if len(settings.PromptTemplates) != 1 {
+		t.Fatalf("prompt templates = %#v, want only the custom one", settings.PromptTemplates)
+	}
+	if got := settings.PromptTemplates[domain.PromptVariantManagerOneOnOne]; got != "Keep it short." {
+		t.Fatalf("custom body = %q, want it trimmed", got)
+	}
+
+	// A blank map is canonicalised away, so a stored record keeps meaning
+	// "every variant uses its built-in body".
+	blank := domain.DefaultSettings("user-1")
+	blank.PromptTemplates = map[domain.PromptVariant]string{
+		domain.PromptVariantPersonalReview: "   ",
+	}
+	blank.Normalize()
+	if blank.PromptTemplates != nil {
+		t.Fatalf("blank prompt templates = %#v, want nil", blank.PromptTemplates)
 	}
 }
 

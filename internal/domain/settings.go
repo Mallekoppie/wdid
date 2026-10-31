@@ -94,6 +94,10 @@ type Settings struct {
 	AIBaseURL              string        `json:"aiBaseUrl,omitempty"`
 	AIModel                string        `json:"aiModel,omitempty"`
 	AIRedact               bool          `json:"aiRedact"`
+	// PromptTemplates holds the caller's own instruction body per check-in
+	// variant. A missing or blank entry means the variant's built-in body; the
+	// server-owned PromptRules are always appended and cannot be overridden.
+	PromptTemplates map[PromptVariant]string `json:"promptTemplates,omitempty"`
 	// AIAPIKey is the caller's own provider key. It is write-only over RPC and
 	// never leaves the service except as the provider request header.
 	AIAPIKey         string    `json:"aiApiKey,omitempty"`
@@ -173,5 +177,28 @@ func (s *Settings) Normalize() {
 	s.AIAPIKey = strings.TrimSpace(s.AIAPIKey)
 	s.JournalStartDate = strings.TrimSpace(s.JournalStartDate)
 	s.SupportPeople = NormalizeList(s.SupportPeople)
+	s.PromptTemplates = normalizePromptTemplates(s.PromptTemplates)
 	s.UpdatedAt = utc(s.UpdatedAt)
+}
+
+// normalizePromptTemplates trims every stored body and drops blank entries, so
+// a whitespace-only save is recorded as "use the built-in" rather than as an
+// override that resolves to nothing.
+func normalizePromptTemplates(templates map[PromptVariant]string) map[PromptVariant]string {
+	if len(templates) == 0 {
+		return nil
+	}
+	normalized := make(map[PromptVariant]string, len(templates))
+	for variant, body := range templates {
+		if !variant.Valid() {
+			continue
+		}
+		if trimmed := strings.TrimSpace(body); trimmed != "" {
+			normalized[variant] = trimmed
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
