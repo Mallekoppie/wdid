@@ -415,8 +415,17 @@ shows period, kind, days covered, hours logged, categories touched, and state
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- The summary is editable Markdown. Generation never overwrites manual edits
-  without confirmation.
+- The summary is editable Markdown. Generation never silently overwrites
+  material manual edits: a generate over a hand-edited summary requires
+  confirmation. A feedback refinement does not, because the user is explicitly
+  asking to replace the current text.
+- A persistent additional-context panel records facts the ledger missed. It is
+  included in every generate/refine prompt and in both export files.
+- A feedback box below a generated summary regenerates it from the current
+  summary plus the user's feedback, streaming the replacement in place. The
+  previous summary is kept in a one-step revert slot.
+- `Prompt used` shows the stored snapshot of the exact prompt transcript that
+  produced the summary (from the detail RPC only, not the list).
 - **Audience** (manager check-ins only): `1:1` (default) or `Performance review`.
   It selects the prompt variant; it does not change the data.
 - `Final` manager check-ins are read-only and become the boundary for the next
@@ -443,7 +452,9 @@ Grouped cards, no tabs:
   (`Weekly` / `Monthly` / `Off`). There is no rounding setting.
 - **AI** — provider preset (`Anthropic`, `DeepSeek`, `Custom URL`), base URL,
   model (always editable), the account's own write-only API key
-  (set/replace/clear), redaction of URLs and notes, prompt template preview.
+  (set/replace/clear), redaction of URLs and notes, and a per-variant prompt
+  template editor (editable body, locked server rules, `Save` and `Reset to
+  default` per variant, assembled-prompt preview).
 - **Appearance** — theme (`System`, `Light`, `Dark`, `High Contrast`), density
   (`Comfortable` / `Compact`), preview swatches.
 - **About** — version, schema version, license.
@@ -821,8 +832,17 @@ The prompt is prepended to `summary.md`. Three variants exist:
   worth changing, and up to three concrete changes for the next period.
 
 All variants instruct the model to use only the supplied data, invent nothing,
-cite links only when present, and output Markdown. The exact prompt text lives in
-one versioned place in the service and is surfaced in Settings for preview.
+cite links only when present, and output Markdown. Each variant has a built-in
+body held by the service, and the locked rules are always appended to whatever
+body is used. A user may override a variant's body per account in Settings; an
+absent or blank body means the built-in, and `Reset` is the only way to clear an
+override. The resolved instruction is therefore the trimmed override (or the
+built-in body) followed by the server rules.
+
+Every generated or refined summary stores the exact prompt transcript sent to
+the provider, including any redaction, as its provenance record. `PromptVersion`
+remains a label only: `v1` for a built-in body and `custom` when an override was
+used.
 
 ### 9.4 Built-in AI generation
 
@@ -834,11 +854,18 @@ one versioned place in the service and is surfaced in Settings for preview.
 - Each account stores its own API key in its settings record (cleartext for now;
   encryption is backlog). The key is write-only: no RPC returns it, exports omit
   it, and generation is disabled until one is set.
-- Only the selected period is sent. A settings toggle can strip URLs and notes.
-- The response streams into the editable summary box, then persists with the model
-  name and prompt version.
-- Failures are explicit and non-destructive: the existing summary is untouched,
-  with a retry action.
+- Only the selected period is sent, plus the check-in's additional context. A
+  settings toggle can strip URLs and notes; additional context is deliberate
+  user input and stays verbatim.
+- The prompt is the resolved per-variant instruction followed by the supplied
+  data. A refinement sends the resolved instruction plus data, then the current
+  summary as an assistant turn, then the user's feedback.
+- The response streams into the editable summary box, then persists with the
+  model name, prompt version and the exact prompt transcript that was sent.
+- Replacing a non-empty summary moves it into a one-step revert slot. Revert
+  swaps current and previous, then clears the slot; final check-ins reject it.
+- Failures are explicit and non-destructive: the existing summary, revert slot
+  and snapshot are untouched, with a retry action.
 
 ---
 

@@ -45,7 +45,24 @@ func TestPromptVariantFollowsKindAndAudience(t *testing.T) {
 	}
 }
 
-func TestBuildPromptSelectsTheVariantTemplateAndKeepsTheSummary(t *testing.T) {
+// compose joins a resolved instruction and a summary the same way the RPC
+// paths do: one blank line between them, or the instruction alone.
+func compose(instruction, summary string) string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return instruction
+	}
+	return instruction + "\n\n" + summary
+}
+
+func builtInPrompt(checkIn domain.CheckIn) string {
+	return compose(
+		domain.ResolveInstruction(domain.PromptVariantFor(checkIn), domain.Settings{}),
+		checkIn.SummaryMarkdown,
+	)
+}
+
+func TestResolvedInstructionSelectsTheVariantTemplateAndKeepsTheSummary(t *testing.T) {
 	summary := "## Highlights\n- Cut invoicing from 40 min to 3 min"
 	oneOnOne := domain.CheckIn{
 		Kind:            domain.CheckInKindManager,
@@ -59,9 +76,9 @@ func TestBuildPromptSelectsTheVariantTemplateAndKeepsTheSummary(t *testing.T) {
 		SummaryMarkdown: summary,
 	}
 
-	oneOnOnePrompt := domain.BuildPrompt(oneOnOne)
-	performancePrompt := domain.BuildPrompt(performance)
-	personalPrompt := domain.BuildPrompt(personal)
+	oneOnOnePrompt := builtInPrompt(oneOnOne)
+	performancePrompt := builtInPrompt(performance)
+	personalPrompt := builtInPrompt(personal)
 
 	if !strings.Contains(oneOnOnePrompt, "1:1") {
 		t.Fatalf("one-on-one prompt = %q, want the 1:1 instruction", oneOnOnePrompt)
@@ -92,7 +109,7 @@ func TestBuildPromptSelectsTheVariantTemplateAndKeepsTheSummary(t *testing.T) {
 	}
 
 	// An empty summary is allowed; the prompt is then the instruction alone.
-	empty := domain.BuildPrompt(domain.CheckIn{Kind: domain.CheckInKindManager})
+	empty := builtInPrompt(domain.CheckIn{Kind: domain.CheckInKindManager})
 	if strings.Contains(empty, "\n\n\n") || strings.TrimSpace(empty) == "" {
 		t.Fatalf("empty-summary prompt = %q", empty)
 	}
@@ -112,12 +129,16 @@ func TestResolveInstructionUsesTheBuiltInBodyByDefault(t *testing.T) {
 
 			resolved := domain.ResolveInstruction(variant, settings)
 
-			builtIn, ok := domain.PromptTemplate(variant)
-			if !ok {
-				t.Fatalf("variant %q has no built-in template", variant)
+			builtIn, customised := domain.ResolvedPromptBody(variant, settings)
+			if customised {
+				t.Fatalf("variant %q reported a custom body by default", variant)
 			}
-			if resolved != builtIn {
-				t.Fatalf("resolved instruction = %q, want the built-in %q", resolved, builtIn)
+			if builtIn == "" {
+				t.Fatalf("variant %q has no built-in body", variant)
+			}
+			want := builtIn + "\n\n" + domain.PromptRules
+			if resolved != want {
+				t.Fatalf("resolved instruction = %q, want the built-in %q", resolved, want)
 			}
 			if !strings.HasSuffix(resolved, domain.PromptRules) {
 				t.Fatalf("resolved instruction does not end with the rules: %q", resolved)
@@ -145,7 +166,8 @@ func TestResolveInstructionUsesACustomBodyAndAlwaysAppendsTheRules(t *testing.T)
 }
 
 func TestResolveInstructionFallsBackForBlankOverrides(t *testing.T) {
-	builtIn, _ := domain.PromptTemplate(domain.PromptVariantPersonalReview)
+	builtIn, _ := domain.ResolvedPromptBody(domain.PromptVariantPersonalReview, domain.Settings{})
+	wantBuiltIn := builtIn + "\n\n" + domain.PromptRules
 
 	for name, body := range map[string]string{
 		"empty":        "",
@@ -159,10 +181,35 @@ func TestResolveInstructionFallsBackForBlankOverrides(t *testing.T) {
 				},
 			}
 
-			if got := domain.ResolveInstruction(domain.PromptVariantPersonalReview, settings); got != builtIn {
-				t.Fatalf("resolved instruction = %q, want the built-in fallback %q", got, builtIn)
+			if got := domain.ResolveInstruction(domain.PromptVariantPersonalReview, settings); got != wantBuiltIn {
+				t.Fatalf("resolved instruction = %q, want the built-in fallback %q", got, wantBuiltIn)
 			}
 		})
+	}
+}
+
+func TestResolvedPromptBodyReportsTheOverrideAndBuiltInBody(t *testing.T) {
+	settings := domain.Settings{
+		PromptTemplates: map[domain.PromptVariant]string{
+			domain.PromptVariantManagerOneOnOne:          "  Write a blunt summary.  ",
+			domain.PromptVariantManagerPerformanceReview: "   ",
+		},
+	}
+
+	body, customised := domain.ResolvedPromptBody(domain.PromptVariantManagerOneOnOne, settings)
+	if body != "Write a blunt summary." || !customised {
+		t.Fatalf("one-on-one body = %q, customised = %v, want the trimmed override", body, customised)
+	}
+
+	body, customised = domain.ResolvedPromptBody(domain.PromptVariantManagerPerformanceReview, settings)
+	builtIn, ok := domain.BuiltInPromptBody(domain.PromptVariantManagerPerformanceReview)
+	if !ok || body != builtIn || customised {
+		t.Fatalf("performance body = %q, customised = %v, want the built-in body", body, customised)
+	}
+
+	body, customised = domain.ResolvedPromptBody(domain.PromptVariant("unknown"), settings)
+	if body != "" || customised {
+		t.Fatalf("unknown body = %q, customised = %v, want an empty built-in", body, customised)
 	}
 }
 

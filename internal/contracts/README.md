@@ -67,7 +67,8 @@ in either generated directory.
 - Durations use `google.protobuf.Duration`. Do not mix minutes and seconds in
   the same message.
 - List RPCs use `page_size`, `page_token`, and `next_page_token`. The server caps
-  page size.
+  page size. Small fixed lists (`ListBackups`, `ListPromptTemplates`) are exempt
+  and return the complete collection without paging fields.
 - Request and response messages are distinct types.
 - Do not expose BoltDB records, bucket names, auth internals, or secrets.
 - Never trust a `user_id` or tenant field supplied by the client. Derive

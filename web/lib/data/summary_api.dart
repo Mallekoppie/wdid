@@ -8,11 +8,11 @@ import '../models/export_bundle.dart';
 import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../src/generated/categories.pbenum.dart' as categories_generated;
-import '../src/generated/check_ins.pbenum.dart' as check_ins_generated;
 import '../src/generated/summaries.pbgrpc.dart' as generated;
 import 'checkin_api.dart';
 import 'grpc_channel.dart';
 import 'grpc_errors.dart';
+import 'prompt_variant_mapping.dart';
 
 /// A user-facing period-report failure.
 class SummaryFailure extends ServiceFailure {
@@ -239,12 +239,12 @@ class GrpcSummaryApi implements SummaryApi {
           fromDate: fromDate,
           toDate: toDate,
           checkInId: checkInId,
-          variant: _promptVariantToProto(variant),
+          variant: promptVariantToProto(variant),
         ),
       );
       return CheckInPrompt(
         prompt: response.prompt,
-        variant: _promptVariantFromProto(response.variant),
+        variant: promptVariantFromProto(response.variant),
         promptVersion: response.promptVersion.isEmpty
             ? 'v1'
             : response.promptVersion,
@@ -261,12 +261,12 @@ class GrpcSummaryApi implements SummaryApi {
     try {
       final response = await _rpc.getPromptTemplate(
         generated.GetPromptTemplateRequest(
-          variant: _promptVariantToProto(variant),
+          variant: promptVariantToProto(variant),
         ),
       );
       return PromptTemplate(
         template: response.template,
-        variant: _promptVariantFromProto(response.variant),
+        variant: promptVariantFromProto(response.variant),
         promptVersion: response.promptVersion.isEmpty
             ? 'v1'
             : response.promptVersion,
@@ -378,41 +378,6 @@ ExportBundle exportBundleFromProto(generated.BuildExportResponse response) {
     files: {for (final file in response.files) file.name: file.content},
   );
 }
-
-check_ins_generated.CheckInPromptVariant _promptVariantToProto(
-  CheckInPromptVariant? variant,
-) => switch (variant) {
-  CheckInPromptVariant.managerOneOnOne =>
-    check_ins_generated
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE,
-  CheckInPromptVariant.managerPerformanceReview =>
-    check_ins_generated
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
-  CheckInPromptVariant.personalReview =>
-    check_ins_generated
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
-  null =>
-    check_ins_generated
-        .CheckInPromptVariant
-        .CHECK_IN_PROMPT_VARIANT_UNSPECIFIED,
-};
-
-CheckInPromptVariant _promptVariantFromProto(
-  check_ins_generated.CheckInPromptVariant variant,
-) => switch (variant) {
-  check_ins_generated
-      .CheckInPromptVariant
-      .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW =>
-    CheckInPromptVariant.managerPerformanceReview,
-  check_ins_generated
-      .CheckInPromptVariant
-      .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW =>
-    CheckInPromptVariant.personalReview,
-  _ => CheckInPromptVariant.managerOneOnOne,
-};
 
 /// Maps the wire report onto the UI model. Exposed so tests can check the
 /// mapping without a network channel.

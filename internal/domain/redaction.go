@@ -89,6 +89,13 @@ func RedactExportInput(input ExportInput) ExportInput {
 	return input
 }
 
+// RedactText replaces URLs in free text with the same marker RedactExportInput
+// uses. Callers use it for text the model sees that is not part of an export
+// input, so a stored prompt snapshot records exactly what was sent.
+func RedactText(value string) string {
+	return redactText(value)
+}
+
 func redactText(value string) string {
 	if value == "" {
 		return value

@@ -9,6 +9,7 @@ import '../src/generated/check_ins.pb.dart' as generated;
 import '../src/generated/check_ins.pbgrpc.dart' as generated_rpc;
 import 'grpc_channel.dart';
 import 'grpc_errors.dart';
+import 'prompt_variant_mapping.dart';
 
 /// A user-facing check-in failure, with the field the service rejected.
 class CheckInFailure extends ServiceFailure {
@@ -262,7 +263,7 @@ class GrpcCheckInApi implements CheckInApi {
       );
       return CheckInPrompt(
         prompt: response.prompt,
-        variant: _promptVariantFromProto(response.variant),
+        variant: promptVariantFromProto(response.variant),
         promptVersion: response.promptVersion.isEmpty
             ? 'v1'
             : response.promptVersion,
@@ -394,18 +395,6 @@ generated.CheckInSummarySource _summarySourceToProto(
     generated.CheckInSummarySource.CHECK_IN_SUMMARY_SOURCE_MANUAL,
   CheckInSummarySource.generated =>
     generated.CheckInSummarySource.CHECK_IN_SUMMARY_SOURCE_GENERATED,
-};
-
-CheckInPromptVariant _promptVariantFromProto(
-  generated.CheckInPromptVariant variant,
-) => switch (variant) {
-  generated
-      .CheckInPromptVariant
-      .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW =>
-    CheckInPromptVariant.managerPerformanceReview,
-  generated.CheckInPromptVariant.CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW =>
-    CheckInPromptVariant.personalReview,
-  _ => CheckInPromptVariant.managerOneOnOne,
 };
 
 CheckInState _stateFromProto(generated.CheckInState state) => switch (state) {

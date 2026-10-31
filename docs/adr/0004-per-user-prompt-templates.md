@@ -44,7 +44,10 @@ it is deliberate user-supplied data for the model); snapshotting only the
 instruction (rejected: no proof of what the model actually saw).
 
 **Consequences:** existing settings and check-ins load unchanged; new JSON
-fields are omitempty so an old record exports identically. Settings delivery
-and the prompt RPCs are follow-up work. A custom body is still subject to the
-locked rules, and the assembled prompt remains server-composed, so the
-copy-prompt path and generation path can never disagree.
+fields are omitempty so an old record exports identically. The prompt RPCs are
+implemented on `SettingsService` (`ListPromptTemplates`, `UpdatePromptTemplate`,
+`ResetPromptTemplate`), and the Settings screen edits each variant through them.
+A custom body is still subject to the locked rules, and the server always
+resolves and sends the generation prompt; the client only assembles a
+display-only preview of the body plus the rules in Settings. The copy-prompt
+path and the generation path therefore can never disagree.

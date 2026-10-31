@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -314,12 +313,8 @@ func (s *CheckInService) BuildCheckInPrompt(ctx context.Context, request *connec
 
 	variant := domain.PromptVariantFor(checkIn)
 	instruction := domain.ResolveInstruction(variant, settings)
-	prompt := instruction
-	if summary := strings.TrimSpace(checkIn.SummaryMarkdown); summary != "" {
-		prompt = instruction + "\n\n" + summary
-	}
 	return connect.NewResponse(&wdidv1.BuildCheckInPromptResponse{
-		Prompt:        prompt,
+		Prompt:        composePrompt(instruction, checkIn.SummaryMarkdown),
 		PromptVersion: domain.ResolvePromptVersion(variant, settings),
 		Variant:       toProtoPromptVariant(variant),
 	}), nil

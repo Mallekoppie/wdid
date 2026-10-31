@@ -1102,8 +1102,6 @@ func (x *BuildPromptResponse) GetVariant() CheckInPromptVariant {
 	return CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_UNSPECIFIED
 }
 
-// GetPromptTemplateRequest asks for one versioned instruction. The text lives
-// in a single place in the service; the client only previews it in Settings.
 // GetPromptTemplateRequest asks for the caller's resolved instruction for one
 // variant. The service composes it from the caller's override (or the built-in
 // body) and the locked server rules; the client never composes prompt text.

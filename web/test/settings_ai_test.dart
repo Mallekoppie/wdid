@@ -320,6 +320,30 @@ void main() {
     expect(promptBody(tester), 'PERSONAL BODY');
   });
 
+  testWidgets('typing updates the assembled preview and enables save', (
+    tester,
+  ) async {
+    await pumpSettings(tester, settingsApi: promptSettings());
+    await openPromptEditor(tester);
+
+    FilledButton saveButton() => tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Save prompt'),
+    );
+
+    expect(saveButton().onPressed, isNull);
+    expect(find.text('ONE ON ONE BODY\n\n$rules'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      'UPDATED BODY',
+    );
+    await tester.pumpAndSettle();
+
+    expect(saveButton().onPressed, isNotNull);
+    expect(find.text('UPDATED BODY\n\n$rules'), findsOneWidget);
+    expect(find.text('ONE ON ONE BODY\n\n$rules'), findsNothing);
+  });
+
   testWidgets('saving one variant customises only that variant', (
     tester,
   ) async {
