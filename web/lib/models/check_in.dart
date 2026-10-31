@@ -185,9 +185,12 @@ class CheckIn {
     this.audience,
     this.state = CheckInState.draft,
     this.focusNotes = '',
+    this.additionalContext = '',
     this.summaryMarkdown = '',
     this.summaryModel,
     this.promptVersion = 'v1',
+    this.generationPrompt = '',
+    this.previousSummaryMarkdown = '',
     this.totals = const CheckInTotals(),
   });
 
@@ -200,9 +203,21 @@ class CheckIn {
   final CheckInAudience? audience;
   final CheckInState state;
   final String focusNotes;
+
+  /// User-supplied facts the ledger did not record. It is sent to the model
+  /// as authoritative supplied data and is never redacted.
+  final String additionalContext;
   final String summaryMarkdown;
   final String? summaryModel;
   final String promptVersion;
+
+  /// The exact prompt transcript the model saw on the last generate or refine
+  /// turn. Empty on check-ins written before prompt snapshots existed.
+  final String generationPrompt;
+
+  /// The summary this one replaced, kept for a one-step revert. Empty when
+  /// there is nothing to restore.
+  final String previousSummaryMarkdown;
   final CheckInTotals totals;
 
   bool get isManager => kind == CheckInKind.manager;
@@ -241,9 +256,12 @@ class CheckIn {
     bool clearAudience = false,
     CheckInState? state,
     String? focusNotes,
+    String? additionalContext,
     String? summaryMarkdown,
     String? summaryModel,
     String? promptVersion,
+    String? generationPrompt,
+    String? previousSummaryMarkdown,
     CheckInTotals? totals,
   }) {
     return CheckIn(
@@ -256,9 +274,13 @@ class CheckIn {
       audience: clearAudience ? null : (audience ?? this.audience),
       state: state ?? this.state,
       focusNotes: focusNotes ?? this.focusNotes,
+      additionalContext: additionalContext ?? this.additionalContext,
       summaryMarkdown: summaryMarkdown ?? this.summaryMarkdown,
       summaryModel: summaryModel ?? this.summaryModel,
       promptVersion: promptVersion ?? this.promptVersion,
+      generationPrompt: generationPrompt ?? this.generationPrompt,
+      previousSummaryMarkdown:
+          previousSummaryMarkdown ?? this.previousSummaryMarkdown,
       totals: totals ?? this.totals,
     );
   }
@@ -275,9 +297,13 @@ class CheckIn {
       audience: CheckInAudience.parse(json['audience']),
       state: CheckInState.parse(json['state']),
       focusNotes: json['focusNotes']?.toString() ?? '',
+      additionalContext: json['additionalContext']?.toString() ?? '',
       summaryMarkdown: json['summaryMarkdown']?.toString() ?? '',
       summaryModel: json['summaryModel']?.toString(),
       promptVersion: json['promptVersion']?.toString() ?? 'v1',
+      generationPrompt: json['generationPrompt']?.toString() ?? '',
+      previousSummaryMarkdown:
+          json['previousSummaryMarkdown']?.toString() ?? '',
       totals: json['totals'] is Map
           ? CheckInTotals.fromJson(
               Map<String, dynamic>.from(json['totals'] as Map),
@@ -296,9 +322,12 @@ class CheckIn {
     'audience': audience?.wireName,
     'state': state.wireName,
     'focusNotes': focusNotes,
+    'additionalContext': additionalContext,
     'summaryMarkdown': summaryMarkdown,
     'summaryModel': summaryModel,
     'promptVersion': promptVersion,
+    'generationPrompt': generationPrompt,
+    'previousSummaryMarkdown': previousSummaryMarkdown,
     'totals': totals.toJson(),
   };
 

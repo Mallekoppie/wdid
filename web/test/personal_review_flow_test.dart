@@ -283,6 +283,29 @@ void main() {
     expect(find.text('What moved this week'), findsOneWidget);
   });
 
+  testWidgets('the live review has no feedback, context or prompt provenance', (
+    tester,
+  ) async {
+    final today = dateOnly(DateTime.now());
+    final api = FakeCheckInApi();
+    await pumpApp(
+      tester,
+      checkInApi: api,
+      route: reviewRoute(addDays(today, -6), today, 'last7Days'),
+    );
+
+    // The unsaved live review stays summary-editing only: the AI feedback,
+    // additional-context and prompt-provenance surfaces belong to a saved
+    // check-in's detail screen.
+    expect(find.text('Reflection'), findsOneWidget);
+    expect(find.text('Additional context'), findsNothing);
+    expect(find.text('Feedback'), findsNothing);
+    expect(find.text('Prompt used'), findsNothing);
+    expect(find.text('Revert to previous summary'), findsNothing);
+    expect(find.byKey(const Key('feedback-field')), findsNothing);
+    expect(find.byKey(const Key('additional-context-field')), findsNothing);
+  });
+
   testWidgets('leaving a live review without saving discards it', (
     tester,
   ) async {
@@ -324,7 +347,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Edit'));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byType(TextField).last,
+      find.byKey(const Key('summary-editor')),
       '## What changed\n- Focused on the backfill',
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Save summary'));

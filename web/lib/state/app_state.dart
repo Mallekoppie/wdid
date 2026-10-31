@@ -2162,6 +2162,41 @@ class AppState extends ChangeNotifier {
         });
   }
 
+  /// Streams a refined summary from the current stored text plus [feedback].
+  /// The final delta carries the persisted check-in with its new snapshot and
+  /// one-step revert slot.
+  Stream<SummaryDelta> refineSummaryStream(CheckIn checkIn, String feedback) {
+    final api = summaryApi;
+    if (api == null) {
+      return Stream<SummaryDelta>.error(
+        const ServicePendingException(
+          'SummaryService',
+          'AI summaries need the summary service contract.',
+        ),
+      );
+    }
+    return api.refineSummary(checkIn.id, feedback).map((delta) {
+      final updated = delta.checkIn;
+      if (updated != null) _applyGeneratedCheckIn(updated);
+      return delta;
+    });
+  }
+
+  /// Restores the summary replaced by the last generate or refine. The service
+  /// clears the slot, so the returned check-in has nothing left to revert.
+  Future<CheckIn> revertSummary(CheckIn checkIn) async {
+    final api = summaryApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SummaryService',
+        'Reverting a summary needs the summary service contract.',
+      );
+    }
+    final updated = await api.revertSummary(checkIn.id);
+    _applyGeneratedCheckIn(updated);
+    return updated;
+  }
+
   Future<CheckIn> generateSummary(CheckIn checkIn) async {
     CheckIn? generated;
     await for (final delta in generateSummaryStream(
