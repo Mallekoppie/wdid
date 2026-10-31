@@ -343,6 +343,9 @@ class AppState extends ChangeNotifier {
 
   bool get hasBackupService => settingsApi != null;
 
+  /// True when the settings service is wired in, which owns prompt templates.
+  bool get hasSettingsService => settingsApi != null;
+
   bool get canManageBackups => hasBackupService && isAdmin;
 
   DateTime get today => dateOnly(DateTime.now());
@@ -2564,6 +2567,49 @@ class AppState extends ChangeNotifier {
 
   Future<void> setDensity(DensityPreference density) {
     return saveSettings(settings.copyWith(density: density));
+  }
+
+  /// The caller's three prompt variants: current body, locked rules, and
+  /// whether each carries an override.
+  Future<List<PromptTemplate>> listPromptTemplates() async {
+    final api = settingsApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SettingsService',
+        'Editing prompt templates needs the service contract.',
+      );
+    }
+    return api.listPromptTemplates();
+  }
+
+  /// Replaces the account's instruction body for one variant. Save is
+  /// per-variant; other templates are untouched.
+  Future<PromptTemplate> updatePromptTemplate(
+    CheckInPromptVariant variant,
+    String body,
+  ) async {
+    final api = settingsApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SettingsService',
+        'Saving a prompt template needs the service contract.',
+      );
+    }
+    return api.updatePromptTemplate(variant, body);
+  }
+
+  /// Removes the account's override for one variant, restoring the built-in.
+  Future<PromptTemplate> resetPromptTemplate(
+    CheckInPromptVariant variant,
+  ) async {
+    final api = settingsApi;
+    if (api == null) {
+      throw const ServicePendingException(
+        'SettingsService',
+        'Resetting a prompt template needs the service contract.',
+      );
+    }
+    return api.resetPromptTemplate(variant);
   }
 
   /// The account's roster of common support-person names. A person is a name,

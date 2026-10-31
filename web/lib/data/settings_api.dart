@@ -4,6 +4,9 @@ import 'package:protobuf/well_known_types/google/protobuf/duration.pb.dart'
     as duration;
 
 import '../models/app_settings.dart';
+import '../models/check_in.dart';
+import '../models/enums.dart';
+import '../src/generated/check_ins.pb.dart' as check_ins;
 import '../src/generated/settings.pbgrpc.dart' as generated;
 import 'grpc_channel.dart';
 import 'grpc_errors.dart';
@@ -113,6 +116,19 @@ abstract class SettingsApi {
   /// Removes the stored provider key and disables AI generation.
   Future<AppSettings> clearAiApiKey();
 
+  /// Lists the three prompt variants as the caller currently sees them.
+  Future<List<PromptTemplate>> listPromptTemplates();
+
+  /// Replaces the account's instruction body for one variant. The server
+  /// rejects a blank body; use [resetPromptTemplate] to restore the built-in.
+  Future<PromptTemplate> updatePromptTemplate(
+    CheckInPromptVariant variant,
+    String body,
+  );
+
+  /// Removes the account's override for one variant.
+  Future<PromptTemplate> resetPromptTemplate(CheckInPromptVariant variant);
+
   /// Backups are instance-wide and admin-only. Non-admins receive a
   /// permission-denied [SettingsFailure].
   Future<BackupStatusInfo> getBackupStatus();
@@ -138,6 +154,16 @@ abstract class SettingsRpc {
   );
 
   Future<generated.ClearAIApiKeyResponse> clearAiApiKey();
+
+  Future<generated.ListPromptTemplatesResponse> listPromptTemplates();
+
+  Future<generated.UpdatePromptTemplateResponse> updatePromptTemplate(
+    generated.UpdatePromptTemplateRequest request,
+  );
+
+  Future<generated.ResetPromptTemplateResponse> resetPromptTemplate(
+    generated.ResetPromptTemplateRequest request,
+  );
 
   Future<generated.GetBackupStatusResponse> getBackupStatus();
 
@@ -181,6 +207,20 @@ class GrpcSettingsRpc implements SettingsRpc {
   @override
   Future<generated.ClearAIApiKeyResponse> clearAiApiKey() =>
       _client.clearAIApiKey(generated.ClearAIApiKeyRequest());
+
+  @override
+  Future<generated.ListPromptTemplatesResponse> listPromptTemplates() =>
+      _client.listPromptTemplates(generated.ListPromptTemplatesRequest());
+
+  @override
+  Future<generated.UpdatePromptTemplateResponse> updatePromptTemplate(
+    generated.UpdatePromptTemplateRequest request,
+  ) => _client.updatePromptTemplate(request);
+
+  @override
+  Future<generated.ResetPromptTemplateResponse> resetPromptTemplate(
+    generated.ResetPromptTemplateRequest request,
+  ) => _client.resetPromptTemplate(request);
 
   @override
   Future<generated.GetBackupStatusResponse> getBackupStatus() =>
@@ -252,6 +292,53 @@ class GrpcSettingsApi implements SettingsApi {
     try {
       final response = await _rpc.clearAiApiKey();
       return _fromProto(response.settings, const AppSettings());
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<List<PromptTemplate>> listPromptTemplates() async {
+    try {
+      final response = await _rpc.listPromptTemplates();
+      return [
+        for (final template in response.templates)
+          _promptTemplateFromProto(template),
+      ];
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<PromptTemplate> updatePromptTemplate(
+    CheckInPromptVariant variant,
+    String body,
+  ) async {
+    try {
+      final response = await _rpc.updatePromptTemplate(
+        generated.UpdatePromptTemplateRequest(
+          variant: _promptVariantToProto(variant),
+          body: body.trim(),
+        ),
+      );
+      return _promptTemplateFromProto(response.template);
+    } on GrpcError catch (error) {
+      throw _failure(error);
+    }
+  }
+
+  @override
+  Future<PromptTemplate> resetPromptTemplate(
+    CheckInPromptVariant variant,
+  ) async {
+    try {
+      final response = await _rpc.resetPromptTemplate(
+        generated.ResetPromptTemplateRequest(
+          variant: _promptVariantToProto(variant),
+        ),
+      );
+      return _promptTemplateFromProto(response.template);
     } on GrpcError catch (error) {
       throw _failure(error);
     }
@@ -388,6 +475,42 @@ class GrpcSettingsApi implements SettingsApi {
 
 duration.Duration _minutesDuration(int minutes) =>
     duration.Duration(seconds: Int64(minutes * 60));
+
+PromptTemplate _promptTemplateFromProto(generated.PromptTemplate template) =>
+    PromptTemplate(
+      template: template.body,
+      body: template.body,
+      customised: template.customised,
+      rules: template.rules,
+      variant: _promptVariantFromProto(template.variant),
+    );
+
+check_ins.CheckInPromptVariant _promptVariantToProto(
+  CheckInPromptVariant variant,
+) => switch (variant) {
+  CheckInPromptVariant.managerOneOnOne =>
+    check_ins
+        .CheckInPromptVariant
+        .CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE,
+  CheckInPromptVariant.managerPerformanceReview =>
+    check_ins
+        .CheckInPromptVariant
+        .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
+  CheckInPromptVariant.personalReview =>
+    check_ins.CheckInPromptVariant.CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+};
+
+CheckInPromptVariant _promptVariantFromProto(
+  check_ins.CheckInPromptVariant variant,
+) => switch (variant) {
+  check_ins
+      .CheckInPromptVariant
+      .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW =>
+    CheckInPromptVariant.managerPerformanceReview,
+  check_ins.CheckInPromptVariant.CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW =>
+    CheckInPromptVariant.personalReview,
+  _ => CheckInPromptVariant.managerOneOnOne,
+};
 
 ReviewCadence _reviewCadenceFromProto(generated.ReviewCadence cadence) {
   switch (cadence) {

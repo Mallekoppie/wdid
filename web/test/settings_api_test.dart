@@ -7,6 +7,8 @@ import 'package:protobuf/well_known_types/google/protobuf/timestamp.pb.dart';
 
 import 'package:wdid_web/data/settings_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
+import 'package:wdid_web/models/enums.dart';
+import 'package:wdid_web/src/generated/check_ins.pb.dart' as check_ins;
 import 'package:wdid_web/src/generated/settings.pbgrpc.dart' as generated;
 
 class FakeSettingsRpc implements SettingsRpc {
@@ -25,6 +27,16 @@ class FakeSettingsRpc implements SettingsRpc {
   generated.ClearAIApiKeyResponse clearAiApiKeyResponse =
       generated.ClearAIApiKeyResponse(settings: generated.Settings());
   int clearAiApiKeyCalls = 0;
+
+  generated.ListPromptTemplatesResponse listPromptTemplatesResponse =
+      generated.ListPromptTemplatesResponse();
+  int listPromptTemplatesCalls = 0;
+  generated.UpdatePromptTemplateResponse updatePromptTemplateResponse =
+      generated.UpdatePromptTemplateResponse();
+  generated.UpdatePromptTemplateRequest? updatePromptTemplateRequest;
+  generated.ResetPromptTemplateResponse resetPromptTemplateResponse =
+      generated.ResetPromptTemplateResponse();
+  generated.ResetPromptTemplateRequest? resetPromptTemplateRequest;
 
   generated.GetBackupStatusResponse backupStatusResponse =
       generated.GetBackupStatusResponse(
@@ -73,6 +85,31 @@ class FakeSettingsRpc implements SettingsRpc {
     clearAiApiKeyCalls++;
     _maybeFail();
     return clearAiApiKeyResponse;
+  }
+
+  @override
+  Future<generated.ListPromptTemplatesResponse> listPromptTemplates() async {
+    listPromptTemplatesCalls++;
+    _maybeFail();
+    return listPromptTemplatesResponse;
+  }
+
+  @override
+  Future<generated.UpdatePromptTemplateResponse> updatePromptTemplate(
+    generated.UpdatePromptTemplateRequest request,
+  ) async {
+    updatePromptTemplateRequest = request;
+    _maybeFail();
+    return updatePromptTemplateResponse;
+  }
+
+  @override
+  Future<generated.ResetPromptTemplateResponse> resetPromptTemplate(
+    generated.ResetPromptTemplateRequest request,
+  ) async {
+    resetPromptTemplateRequest = request;
+    _maybeFail();
+    return resetPromptTemplateResponse;
   }
 
   @override
@@ -363,6 +400,125 @@ void main() {
 
     expect(rpc.clearAiApiKeyCalls, 1);
     expect(saved.hasAiApiKey, isFalse);
+  });
+
+  test('listPromptTemplates maps variant, body, customised and rules', () async {
+    final rpc = FakeSettingsRpc()
+      ..listPromptTemplatesResponse = generated.ListPromptTemplatesResponse(
+        templates: [
+          generated.PromptTemplate(
+            variant: check_ins
+                .CheckInPromptVariant
+                .CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE,
+            body: 'One on one body',
+            customised: true,
+            rules: 'Use only the supplied data.',
+          ),
+          generated.PromptTemplate(
+            variant: check_ins
+                .CheckInPromptVariant
+                .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+            body: 'Personal body',
+            rules: 'Use only the supplied data.',
+          ),
+        ],
+      );
+
+    final templates = await GrpcSettingsApi(rpc: rpc).listPromptTemplates();
+
+    expect(rpc.listPromptTemplatesCalls, 1);
+    expect(templates, hasLength(2));
+    expect(templates.first.variant, CheckInPromptVariant.managerOneOnOne);
+    expect(templates.first.body, 'One on one body');
+    expect(templates.first.customised, isTrue);
+    expect(templates.first.rules, 'Use only the supplied data.');
+    expect(
+      templates.first.assembledPrompt,
+      'One on one body\n\nUse only the supplied data.',
+    );
+    expect(templates.last.variant, CheckInPromptVariant.personalReview);
+    expect(templates.last.body, 'Personal body');
+    expect(templates.last.customised, isFalse);
+  });
+
+  test('updatePromptTemplate sends the variant and body and maps the result', () async {
+    final rpc = FakeSettingsRpc()
+      ..updatePromptTemplateResponse = generated.UpdatePromptTemplateResponse(
+        template: generated.PromptTemplate(
+          variant: check_ins
+              .CheckInPromptVariant
+              .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
+          body: 'Custom performance body',
+          customised: true,
+          rules: 'RULES',
+        ),
+      );
+
+    final saved = await GrpcSettingsApi(rpc: rpc).updatePromptTemplate(
+      CheckInPromptVariant.managerPerformanceReview,
+      '  Custom performance body  ',
+    );
+
+    expect(
+      rpc.updatePromptTemplateRequest!.variant,
+      check_ins
+          .CheckInPromptVariant
+          .CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW,
+    );
+    expect(rpc.updatePromptTemplateRequest!.body, 'Custom performance body');
+    expect(saved.variant, CheckInPromptVariant.managerPerformanceReview);
+    expect(saved.body, 'Custom performance body');
+    expect(saved.customised, isTrue);
+  });
+
+  test('resetPromptTemplate sends the variant and maps the built-in result', () async {
+    final rpc = FakeSettingsRpc()
+      ..resetPromptTemplateResponse = generated.ResetPromptTemplateResponse(
+        template: generated.PromptTemplate(
+          variant: check_ins
+              .CheckInPromptVariant
+              .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+          body: 'Built-in personal body',
+          customised: false,
+          rules: 'RULES',
+        ),
+      );
+
+    final reset = await GrpcSettingsApi(
+      rpc: rpc,
+    ).resetPromptTemplate(CheckInPromptVariant.personalReview);
+
+    expect(
+      rpc.resetPromptTemplateRequest!.variant,
+      check_ins
+          .CheckInPromptVariant
+          .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
+    );
+    expect(reset.variant, CheckInPromptVariant.personalReview);
+    expect(reset.body, 'Built-in personal body');
+    expect(reset.customised, isFalse);
+  });
+
+  test('a blank prompt template failure exposes the body field', () async {
+    final rpc = FakeSettingsRpc()
+      ..error = GrpcError.invalidArgument(
+        'body: is required; use Reset to restore the built-in',
+      );
+
+    expect(
+      () => GrpcSettingsApi(
+        rpc: rpc,
+      ).updatePromptTemplate(CheckInPromptVariant.managerOneOnOne, 'x'),
+      throwsA(
+        isA<SettingsFailure>()
+            .having((failure) => failure.field, 'field', 'body')
+            .having(
+              (failure) => failure.message,
+              'message',
+              'body: is required; use Reset to restore the built-in',
+            ),
+      ),
+    );
   });
 
   test('AI provider presets seed a base URL and an editable model', () {

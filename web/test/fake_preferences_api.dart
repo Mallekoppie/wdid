@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:wdid_web/data/category_api.dart';
 import 'package:wdid_web/data/settings_api.dart';
 import 'package:wdid_web/models/app_settings.dart';
+import 'package:wdid_web/models/check_in.dart';
+import 'package:wdid_web/models/enums.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 
 /// In-memory taxonomy used by widget and state tests.
@@ -181,7 +183,29 @@ class FakeSettingsApi implements SettingsApi {
       schemaVersion: 1,
       license: 'MIT',
     ),
-  });
+    Map<CheckInPromptVariant, PromptTemplate>? promptTemplates,
+  }) : promptTemplates = {
+         ..._defaultPromptTemplates(),
+         ...?promptTemplates,
+       },
+       _builtInBodies = {
+         for (final entry in _defaultPromptTemplates().entries)
+           entry.key: entry.value.body,
+       };
+
+  static const _defaultRules =
+      'Use only the supplied data. Invent nothing. Cite links only when '
+      'present. Output Markdown.';
+
+  static Map<CheckInPromptVariant, PromptTemplate> _defaultPromptTemplates() =>
+      {
+        for (final variant in CheckInPromptVariant.values)
+          variant: PromptTemplate(
+            body: 'Built-in ${variant.wireName} body.',
+            rules: _defaultRules,
+            variant: variant,
+          ),
+      };
 
   AppSettings settings;
   AboutInfo about;
@@ -190,6 +214,22 @@ class FakeSettingsApi implements SettingsApi {
   int setKeyCalls = 0;
   int clearKeyCalls = 0;
   String? lastApiKey;
+
+  /// The service's current templates keyed by variant, and the built-in bodies
+  /// Reset restores. Passing a template map treats its bodies as the built-ins.
+  final Map<CheckInPromptVariant, PromptTemplate> promptTemplates;
+  final Map<CheckInPromptVariant, String> _builtInBodies;
+  int listPromptTemplatesCalls = 0;
+  int updatePromptTemplateCalls = 0;
+  int resetPromptTemplateCalls = 0;
+  CheckInPromptVariant? lastPromptTemplateVariant;
+  String? lastPromptTemplateBody;
+  CheckInPromptVariant? lastResetPromptTemplateVariant;
+  SettingsFailure? promptTemplateFailure;
+
+  /// When set, the next `listPromptTemplates` waits for it so tests can edit
+  /// before the service answers.
+  Completer<void>? promptTemplatesGate;
 
   /// When set, the next `getSettings` waits for it so tests can observe the
   /// screen before the preferences arrive.
@@ -247,6 +287,57 @@ class FakeSettingsApi implements SettingsApi {
     if (failure != null) throw failure!;
     settings = settings.copyWith(hasAiApiKey: false);
     return settings;
+  }
+
+  @override
+  Future<List<PromptTemplate>> listPromptTemplates() async {
+    listPromptTemplatesCalls++;
+    if (promptTemplatesGate != null) {
+      final pending = promptTemplatesGate!;
+      promptTemplatesGate = null;
+      await pending.future;
+    }
+    if (promptTemplateFailure != null) throw promptTemplateFailure!;
+    return [
+      for (final variant in CheckInPromptVariant.values)
+        promptTemplates[variant] ??
+            PromptTemplate(body: '', variant: variant),
+    ];
+  }
+
+  @override
+  Future<PromptTemplate> updatePromptTemplate(
+    CheckInPromptVariant variant,
+    String body,
+  ) async {
+    updatePromptTemplateCalls++;
+    lastPromptTemplateVariant = variant;
+    lastPromptTemplateBody = body;
+    if (promptTemplateFailure != null) throw promptTemplateFailure!;
+    final updated = PromptTemplate(
+      body: body.trim(),
+      customised: true,
+      rules: promptTemplates[variant]?.rules ?? '',
+      variant: variant,
+    );
+    promptTemplates[variant] = updated;
+    return updated;
+  }
+
+  @override
+  Future<PromptTemplate> resetPromptTemplate(
+    CheckInPromptVariant variant,
+  ) async {
+    resetPromptTemplateCalls++;
+    lastResetPromptTemplateVariant = variant;
+    if (promptTemplateFailure != null) throw promptTemplateFailure!;
+    final reset = PromptTemplate(
+      body: _builtInBodies[variant] ?? '',
+      rules: promptTemplates[variant]?.rules ?? '',
+      variant: variant,
+    );
+    promptTemplates[variant] = reset;
+    return reset;
   }
 
   @override
