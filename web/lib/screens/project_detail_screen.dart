@@ -16,6 +16,7 @@ import '../utils/people.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/milestone_dialog.dart';
 import '../widgets/forms/note_dialog.dart';
+import '../widgets/forms/project_dialog.dart';
 import '../widgets/forms/project_entry_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
@@ -182,6 +183,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not delete the milestone: $error')),
+      );
+    }
+  }
+
+  Future<void> _edit(AppState state, Subcategory project) async {
+    final saved = await showProjectDialog(
+      context,
+      state: state,
+      project: project,
+    );
+    if (saved != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Project updated · ${saved.name}')),
       );
     }
   }
@@ -439,6 +453,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
                   label: 'Entries',
                   value: '${allocation?.entryCount ?? 0}',
                   icon: Icons.list_alt,
+                ),
+                StatTile(
+                  label: 'Progress',
+                  value: '${project.progress}%',
+                  icon: Icons.trending_up,
                 ),
                 StatTile(
                   label: 'Milestones',
@@ -951,6 +970,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
                 ),
                 if (!archived) ...[
                   const SizedBox(width: AppSpacing.md),
+                  OutlinedButton.icon(
+                    onPressed: () => unawaited(_edit(state, project)),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Edit'),
+                  ),
+                  const SizedBox(width: 6),
                   OutlinedButton.icon(
                     onPressed: () => unawaited(_addNote(state, project)),
                     icon: const Icon(Icons.notes_outlined, size: 16),

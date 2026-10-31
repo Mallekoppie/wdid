@@ -2237,6 +2237,9 @@ class AppState extends ChangeNotifier {
   Future<Subcategory> saveSubcategory(Subcategory subcategory) async {
     final updated = await _categoryApi().updateSubcategory(subcategory);
     _replaceSubcategory(updated);
+    // The card and detail read the subcategory list, but the reports that show
+    // it come from the service, so they must be refetched after an edit.
+    _refreshReports();
     _notify();
     return updated;
   }
