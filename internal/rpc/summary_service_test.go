@@ -921,6 +921,77 @@ func TestSummaryServiceBuildExportScopesToTheSelectedPeriodOrCheckIn(t *testing.
 	})
 }
 
+// TestSummaryServiceBuildExportCarriesAdditionalContext proves the scoped
+// check-in's context reaches both export files and that a custom prompt
+// template is recorded in the settings summary without the API key.
+func TestSummaryServiceBuildExportCarriesAdditionalContext(t *testing.T) {
+	forEachSummaryProtocol(t, func(t *testing.T, options ...connect.ClientOption) {
+		server, database := newDomainServer(t)
+		token := bootstrapToken(t, server)
+		buildSummaryExportFixture(t, server, database, token)
+		userID := currentUserID(t, server, token)
+
+		contextText := "The outage postmortem is at https://internal.example/postmortem.\n\nWe added a canary gate."
+		created := time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC)
+		checkIn := domain.CheckIn{
+			ID:                "checkin-context",
+			UserID:            userID,
+			Kind:              domain.CheckInKindManager,
+			State:             domain.CheckInStateGenerated,
+			PeriodStart:       "2026-10-19",
+			PeriodEnd:         "2026-10-25",
+			FocusNotes:        "Land the migration",
+			SummaryMarkdown:   "# Summary",
+			AdditionalContext: contextText,
+			GenerationPrompt:  "[user]\nInstruction",
+			CreatedAt:         created,
+			UpdatedAt:         created,
+		}
+		if err := database.SaveCheckIn(checkIn); err != nil {
+			t.Fatalf("save check-in: %v", err)
+		}
+		settings := domain.DefaultSettings(userID)
+		settings.PromptTemplates = map[domain.PromptVariant]string{
+			domain.PromptVariantManagerOneOnOne: "Write a blunt summary.",
+		}
+		settings.AIAPIKey = "sk-export-secret"
+		if err := database.SaveSettings(settings); err != nil {
+			t.Fatalf("save settings: %v", err)
+		}
+
+		response, err := summaryClient(server, options...).BuildExport(context.Background(), withBearer(&wdidv1.BuildExportRequest{
+			CheckInId: checkIn.ID,
+		}, token))
+		if err != nil {
+			t.Fatalf("build export: %v", err)
+		}
+		if summary := exportFile(t, response.Msg, "summary.md"); !strings.Contains(summary, "Additional context:\n\n"+contextText) {
+			t.Fatalf("summary.md is missing the check-in context:\n%s", summary)
+		}
+
+		var data map[string]any
+		if err := json.Unmarshal([]byte(exportFile(t, response.Msg, "data.json")), &data); err != nil {
+			t.Fatalf("parse data.json: %v", err)
+		}
+		exportedCheckIn := data["checkIns"].([]any)[0].(map[string]any)
+		if exportedCheckIn["additionalContext"] != contextText {
+			t.Fatalf("data.json additionalContext = %v", exportedCheckIn["additionalContext"])
+		}
+		if exportedCheckIn["generationPrompt"] != "[user]\nInstruction" {
+			t.Fatalf("data.json generationPrompt = %v", exportedCheckIn["generationPrompt"])
+		}
+		exportedSettings := data["settingsSummary"].(map[string]any)
+		templates := exportedSettings["promptTemplates"].(map[string]any)
+		if templates[string(domain.PromptVariantManagerOneOnOne)] != "Write a blunt summary." {
+			t.Fatalf("data.json promptTemplates = %v", templates)
+		}
+		raw := exportFile(t, response.Msg, "data.json")
+		if strings.Contains(raw, "sk-export-secret") || strings.Contains(raw, "aiApiKey") {
+			t.Fatalf("data.json leaked the API key:\n%s", raw)
+		}
+	})
+}
+
 // TestSummaryServiceBuildPromptAppendsSummary proves the copy-prompt text is
 // the versioned instruction followed by exactly the bundle's summary.md, and
 // that the check-in kind and audience select the variant.

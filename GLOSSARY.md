@@ -82,8 +82,10 @@ which are addressed by email.
 _Avoid_: handle, login name, user id
 
 **Check-in**:
-A saved artifact covering a period, with focus notes, aggregates, and an optional
-summary. Every check-in has a kind.
+A saved artifact covering a period, with focus notes, aggregates, an optional
+additional context, and an optional summary. Every check-in has a kind. A
+generated summary records the exact prompt sent to the model as a prompt
+snapshot, plus the summary it replaced for a one-step revert.
 _Avoid_: report, review, summary
 
 **Manager check-in**:
@@ -107,6 +109,25 @@ _Avoid_: task, ticket
 **Note**:
 Free text attached to a day or to a subcategory.
 _Avoid_: comment, memo, annotation
+
+**Prompt template**:
+A per-user, per-variant instruction body for check-in generation, stored in the
+caller's settings. An absent or blank template means that variant's built-in
+body. The server resolves the template and appends the prompt rules, so the
+client never composes a prompt.
+_Avoid_: system prompt, custom prompt (when meaning the whole instruction)
+
+**Prompt rules**:
+The server-owned honesty suffix appended to every resolved prompt template: use
+only the supplied data, invent nothing, cite links only when present, and output
+Markdown. A user can never edit, omit, replace or reorder them.
+_Avoid_: guardrails, constraints
+
+**Additional context**:
+Free text a user records on a check-in for facts the ledger did not capture. It
+is authoritative supplied data for generation, is never redacted, and appears
+under `## Notes and context` in the export.
+_Avoid_: notes, extra notes, comments
 
 **AI provider key**:
 The per-account Anthropic-compatible API key stored write-only in that account's
