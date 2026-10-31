@@ -332,6 +332,10 @@ class AppState extends ChangeNotifier {
   Timer? _ticker;
   bool _disposed = false;
 
+  /// Bumped whenever the account changes so responses started for the previous
+  /// account are ignored instead of repopulating cleared state.
+  int _epoch = 0;
+
   /// True when the account carries the admin role. Backups cover the whole
   /// instance, so only an administrator manages them.
   bool get isAdmin => roleCheck?.call() ?? false;
@@ -344,6 +348,7 @@ class AppState extends ChangeNotifier {
   String get todayIso => isoDate(today);
 
   Future<void> load() async {
+    final epoch = _epoch;
     status = AppStatus.loading;
     loadError = null;
     _notify();
@@ -354,20 +359,135 @@ class AppState extends ChangeNotifier {
       if (checkInApi != null) await loadCheckIns(force: true);
       if (timerApi != null) {
         await syncTimer();
-        _startTicker();
+        if (epoch == _epoch) _startTicker();
       }
+      if (epoch != _epoch) return;
       status = AppStatus.ready;
       _notify();
       unawaited(loadEntries());
       unawaited(loadWeekReport());
     } catch (error) {
+      if (epoch != _epoch) return;
       status = AppStatus.error;
       loadError = error.toString();
     }
-    _notify();
+    if (epoch == _epoch) _notify();
   }
 
   Future<void> reload() => load();
+
+  /// Drops every account-scoped value so the signed-out account's data cannot
+  /// flash for the account that signs in next. Session-ending paths call this;
+  /// the login screen reloads the new account from the service.
+  void reset() {
+    _stopTicker();
+    _epoch++;
+    // Invalidate in-flight requests that rely on a request counter rather than
+    // [_epoch].
+    _checkInsRequest++;
+    _checkInDetailRequest++;
+    _reviewRequest++;
+    _logRequest++;
+    _supportRequest++;
+    _weekRequest++;
+    _initiativesRequest++;
+    _projectEntriesRequest++;
+    _projectNotesRequest++;
+    _projectMilestonesRequest++;
+
+    status = AppStatus.loading;
+    loadError = null;
+
+    checkIns = const [];
+    checkInsLoading = false;
+    checkInsError = null;
+    checkInKindFilter = null;
+    _checkInsLoaded = false;
+
+    checkInDetail = null;
+    checkInDetailId = null;
+    checkInReport = null;
+    checkInDetailLoading = false;
+    checkInDetailError = null;
+
+    reviewReport = null;
+    _reviewFromDate = null;
+    _reviewToDate = null;
+    reviewLoading = false;
+    reviewError = null;
+    _dismissedReviewPromptPeriod = null;
+
+    notes = const [];
+    notesLoading = false;
+    notesError = null;
+
+    projectNotes = const [];
+    projectNotesProjectId = null;
+    projectNotesLoading = false;
+    projectNotesError = null;
+
+    projectMilestones = const [];
+    projectMilestonesProjectId = null;
+    projectMilestonesLoading = false;
+    projectMilestonesError = null;
+
+    settings = const AppSettings();
+
+    backups = const [];
+    backupStatus = null;
+    backupsLoading = false;
+    backupsError = null;
+    _backupsLoaded = false;
+
+    categories = const [];
+    subcategories = const [];
+    taxonomyLoading = false;
+    taxonomyError = null;
+    preferencesLoading = false;
+    preferencesError = null;
+    about = null;
+    _pendingRoster.clear();
+
+    entries = const [];
+    entriesLoading = false;
+    entriesError = null;
+
+    weekReport = null;
+    weekReportError = null;
+
+    initiativesReport = null;
+    initiativesLoading = false;
+    initiativesError = null;
+    _initiativesLoaded = false;
+
+    projectEntries = const [];
+    projectEntriesProjectId = null;
+    projectEntriesLoading = false;
+    projectEntriesError = null;
+
+    logEntries = const [];
+    logOverlappingIds = const {};
+    logLoading = false;
+    logError = null;
+    _logQuery = null;
+
+    supportEntries = const [];
+    supportReport = null;
+    supportLoading = false;
+    supportError = null;
+    _supportFromDate = null;
+    _supportToDate = null;
+
+    lastCategoryId = null;
+    lastSubcategoryId = null;
+    _lastSupportCategoryId = null;
+
+    _interruptedTimer = null;
+    activeTimer = null;
+    blockLimitMinutes = 240;
+
+    _notify();
+  }
 
   /// Loads the service-backed taxonomy. Failures stay local to the Categories
   /// panel instead of taking down the whole journal.
@@ -375,6 +495,7 @@ class AppState extends ChangeNotifier {
     final api = categoryApi;
     if (api == null) return;
 
+    final epoch = _epoch;
     taxonomyLoading = true;
     taxonomyError = null;
     _notify();
@@ -383,13 +504,17 @@ class AppState extends ChangeNotifier {
         api.listCategories(),
         api.listSubcategories(),
       ]);
+      if (epoch != _epoch) return;
       categories = List<Category>.from(results[0] as List<Category>);
       subcategories = List<Subcategory>.from(results[1] as List<Subcategory>);
     } catch (error) {
+      if (epoch != _epoch) return;
       taxonomyError = error.toString();
     } finally {
-      taxonomyLoading = false;
-      _notify();
+      if (epoch == _epoch) {
+        taxonomyLoading = false;
+        _notify();
+      }
     }
   }
 
@@ -398,12 +523,14 @@ class AppState extends ChangeNotifier {
     final api = settingsApi;
     if (api == null) return;
 
+    final epoch = _epoch;
     preferencesLoading = true;
     preferencesError = null;
     _notify();
     var replayPendingRoster = false;
     try {
       final snapshot = await api.getSettings();
+      if (epoch != _epoch) return;
       about = snapshot.about;
       final loaded = snapshot.settings.copyWith(
         version: snapshot.about.version,
@@ -423,14 +550,17 @@ class AppState extends ChangeNotifier {
         replayPendingRoster = true;
       }
     } catch (error) {
+      if (epoch != _epoch) return;
       preferencesError = error.toString();
     } finally {
-      preferencesLoading = false;
-      _notify();
+      if (epoch == _epoch) {
+        preferencesLoading = false;
+        _notify();
+      }
     }
     // Replay after the loading gate opens so the write carries the real
     // preferences instead of the defaults.
-    if (replayPendingRoster) await _persistSupportPeople();
+    if (replayPendingRoster && epoch == _epoch) await _persistSupportPeople();
   }
 
   /// Applies queued roster edits on top of the server's roster.
@@ -453,11 +583,13 @@ class AppState extends ChangeNotifier {
     final api = entryApi;
     if (api == null) return;
 
+    final epoch = _epoch;
     entriesLoading = true;
     entriesError = null;
     _notify();
     try {
       final loaded = await api.listEntries(today: true);
+      if (epoch != _epoch) return;
       entries = _newestFirst(loaded.entries);
       // Prefill the capture selector from the most recent entry, so a reload
       // keeps the last used pair without adding a preference field.
@@ -466,10 +598,13 @@ class AppState extends ChangeNotifier {
         lastSubcategoryId ??= entries.first.subcategoryId;
       }
     } catch (error) {
+      if (epoch != _epoch) return;
       entriesError = error.toString();
     } finally {
-      entriesLoading = false;
-      _notify();
+      if (epoch == _epoch) {
+        entriesLoading = false;
+        _notify();
+      }
     }
   }
 
@@ -560,16 +695,22 @@ class AppState extends ChangeNotifier {
     final api = noteApi;
     if (api == null) return;
 
+    final epoch = _epoch;
     notesLoading = true;
     notesError = null;
     _notify();
     try {
-      notes = _newestFirstNotes(await api.listNotes(date: todayIso));
+      final loaded = await api.listNotes(date: todayIso);
+      if (epoch != _epoch) return;
+      notes = _newestFirstNotes(loaded);
     } catch (error) {
+      if (epoch != _epoch) return;
       notesError = error.toString();
     } finally {
-      notesLoading = false;
-      _notify();
+      if (epoch == _epoch) {
+        notesLoading = false;
+        _notify();
+      }
     }
   }
 
@@ -1201,8 +1342,10 @@ class AppState extends ChangeNotifier {
     final api = timerApi;
     if (api == null) return;
 
+    final epoch = _epoch;
     try {
       final status = await api.getActiveTimer();
+      if (epoch != _epoch) return;
       if (status.blockLimitMinutes > 0) {
         blockLimitMinutes = status.blockLimitMinutes;
       }
@@ -2450,20 +2593,25 @@ class AppState extends ChangeNotifier {
 
     backupsLoading = true;
     backupsError = null;
+    final epoch = _epoch;
     _notify();
     try {
       final results = await Future.wait<dynamic>([
         api.getBackupStatus(),
         api.listBackups(),
       ]);
+      if (epoch != _epoch) return;
       backupStatus = results[0] as BackupStatusInfo;
       backups = List<BackupSnapshot>.from(results[1] as List<BackupSnapshot>);
       _backupsLoaded = true;
     } catch (error) {
+      if (epoch != _epoch) return;
       backupsError = error.toString();
     } finally {
-      backupsLoading = false;
-      _notify();
+      if (epoch == _epoch) {
+        backupsLoading = false;
+        _notify();
+      }
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
+import '../state/auth_state.dart';
 import '../theme/app_tokens.dart';
 import 'app_header.dart';
 import 'forms/entry_form.dart';
@@ -16,9 +17,15 @@ import 'person_picker.dart';
 import 'timer_actions.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.currentPath, required this.child});
+  const AppShell({
+    super.key,
+    required this.currentPath,
+    required this.auth,
+    required this.child,
+  });
 
   final String currentPath;
+  final AuthState auth;
   final Widget child;
 
   @override
@@ -212,7 +219,7 @@ class _AppShellState extends State<AppShell> {
           children: [
             Column(
               children: [
-                const AppHeader(),
+                AppHeader(auth: widget.auth),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {

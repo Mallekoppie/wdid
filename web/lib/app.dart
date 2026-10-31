@@ -97,14 +97,24 @@ class _WdidAppState extends State<WdidApp> {
       roleCheck: widget.isAdmin ?? () => _auth.session?.user.role == 'admin',
     );
     _router = buildRouter(_state, _auth, initialLocation: widget.initialRoute);
+    _auth.onSessionEnded = _handleSessionEnded;
     // The service-backed clients send the session bearer token, so loading
     // before sign-in would only produce unauthenticated errors. The login
     // screen reloads once a session exists.
     if (_auth.signedIn) unawaited(_state.load());
   }
 
+  /// Shared cleanup for every session-ending path: sign-out today, token
+  /// expiry later. Drop the account's cached data, then go to the login screen
+  /// explicitly because the router deliberately does not listen to auth.
+  void _handleSessionEnded() {
+    _state.reset();
+    _router.go('/login');
+  }
+
   @override
   void dispose() {
+    _auth.onSessionEnded = null;
     _router.dispose();
     _auth.dispose();
     _state.dispose();
