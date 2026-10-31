@@ -9,21 +9,25 @@ import '../app_dropdown.dart';
 import '../duration_chips.dart';
 import 'dialog_frame.dart';
 
+/// Opens the project form. With [project] set it edits that subcategory in
+/// place; the category is shown read-only because a subcategory never moves.
 Future<Subcategory?> showProjectDialog(
   BuildContext context, {
   required AppState state,
+  Subcategory? project,
 }) {
   return showDialog<Subcategory>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => _ProjectDialog(state: state),
+    builder: (context) => _ProjectDialog(state: state, project: project),
   );
 }
 
 class _ProjectDialog extends StatefulWidget {
-  const _ProjectDialog({required this.state});
+  const _ProjectDialog({required this.state, this.project});
 
   final AppState state;
+  final Subcategory? project;
 
   @override
   State<_ProjectDialog> createState() => _ProjectDialogState();
@@ -42,10 +46,36 @@ class _ProjectDialogState extends State<_ProjectDialog> {
   bool _saving = false;
   String? _error;
 
+  bool get _editing => widget.project != null;
+
   @override
   void initState() {
     super.initState();
-    _categoryId = widget.state.selectableInitiativeCategories.first.id;
+    final existing = widget.project;
+    if (existing == null) {
+      _categoryId = widget.state.selectableInitiativeCategories.first.id;
+      return;
+    }
+    _categoryId = existing.categoryId;
+    _name.text = existing.name;
+    _description.text = existing.description;
+    _targetOutcome.text = existing.targetOutcome;
+    _links.text = _formatLinks(existing.links);
+    // Archive is a separate action, so "archived" is never a form status.
+    _status = existing.status == SubcategoryStatus.archived
+        ? SubcategoryStatus.active
+        : existing.status;
+    _progress = existing.progress;
+    _targetDate = DateTime.tryParse(existing.targetDate);
+  }
+
+  static String _formatLinks(List<LinkRef> links) {
+    return [
+      for (final link in links)
+        link.label.trim().isEmpty || link.label.trim() == link.url.trim()
+            ? link.url.trim()
+            : '${link.label.trim()} | ${link.url.trim()}',
+    ].join('\n');
   }
 
   @override
@@ -89,31 +119,48 @@ class _ProjectDialogState extends State<_ProjectDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final category = widget.state.selectableInitiativeCategories.firstWhere(
-      (candidate) => candidate.id == _categoryId,
-    );
+    final existing = widget.project;
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
-      final saved = await widget.state.createProject(
-        category: category,
-        name: _name.text.trim(),
-        description: _description.text.trim(),
-        status: _status,
-        progress: _progress,
-        targetOutcome: _targetOutcome.text.trim(),
-        targetDate: _targetDate == null ? '' : isoDate(_targetDate!),
-        links: _parsedLinks(),
-      );
+      final Subcategory saved;
+      if (existing != null) {
+        saved = await widget.state.saveSubcategory(
+          existing.copyWith(
+            name: _name.text.trim(),
+            description: _description.text.trim(),
+            status: _status,
+            progress: _progress,
+            targetOutcome: _targetOutcome.text.trim(),
+            targetDate: _targetDate == null ? '' : isoDate(_targetDate!),
+            links: _parsedLinks(),
+          ),
+        );
+      } else {
+        final category = widget.state.selectableInitiativeCategories
+            .firstWhere((candidate) => candidate.id == _categoryId);
+        saved = await widget.state.createProject(
+          category: category,
+          name: _name.text.trim(),
+          description: _description.text.trim(),
+          status: _status,
+          progress: _progress,
+          targetOutcome: _targetOutcome.text.trim(),
+          targetDate: _targetDate == null ? '' : isoDate(_targetDate!),
+          links: _parsedLinks(),
+        );
+      }
       if (!mounted) return;
       Navigator.of(context).pop(saved);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = 'Could not create the project. $error';
+        _error = _editing
+            ? 'Could not save the project. $error'
+            : 'Could not create the project. $error';
       });
     }
   }
@@ -122,32 +169,53 @@ class _ProjectDialogState extends State<_ProjectDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final existing = widget.project;
     final categories = widget.state.selectableInitiativeCategories;
+    // Resolve through categoryById so a project under an archived category
+    // still shows its category name; selectable categories exclude those.
+    final readOnlyCategory = existing == null
+        ? null
+        : widget.state.categoryById(_categoryId);
 
     return DialogFrame(
-      title: 'New project',
-      subtitle: 'A project is a subcategory under an initiative category.',
+      title: _editing ? 'Edit project' : 'New project',
+      subtitle: _editing
+          ? 'Update the project and its progress.'
+          : 'A project is a subcategory under an initiative category.',
       icon: Icons.workspaces_outline,
       content: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AppDropdown<String>(
-              value: _categoryId,
-              label: 'Category',
-              icon: Icons.account_tree_outlined,
-              items: [
-                for (final category in categories)
-                  DropdownMenuItem(
-                    value: category.id,
-                    child: Text(category.name),
-                  ),
-              ],
-              onChanged: (value) {
-                if (value != null) setState(() => _categoryId = value);
-              },
-            ),
+            if (existing == null)
+              AppDropdown<String>(
+                value: _categoryId,
+                label: 'Category',
+                icon: Icons.account_tree_outlined,
+                items: [
+                  for (final category in categories)
+                    DropdownMenuItem(
+                      value: category.id,
+                      child: Text(category.name),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _categoryId = value);
+                },
+              )
+            else
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  prefixIcon: Icon(Icons.account_tree_outlined, size: 16),
+                  helperText: 'The category cannot be changed.',
+                ),
+                child: Text(
+                  readOnlyCategory?.name ?? 'Unknown category',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
             formGap,
             TextFormField(
               controller: _name,
@@ -278,7 +346,7 @@ class _ProjectDialogState extends State<_ProjectDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check, size: 16),
-            label: const Text('Create project'),
+            label: Text(_editing ? 'Save changes' : 'Create project'),
           ),
         ],
       ),

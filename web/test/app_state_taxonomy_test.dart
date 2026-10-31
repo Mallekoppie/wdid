@@ -7,6 +7,7 @@ import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/state/app_state.dart';
 
 import 'fake_preferences_api.dart';
+import 'fake_summary_api.dart';
 
 Category testCategory(
   String id,
@@ -195,6 +196,40 @@ void main() {
       ], reason: 're-filing into an archived category would be invisible');
     },
   );
+
+  test('saving a subcategory refreshes the reports that show it', () async {
+    final categories = FakeCategoryApi(
+      categories: [testCategory('cat-1', 'Initiatives')],
+      subcategories: [
+        Subcategory(
+          id: 'sub-1',
+          categoryId: 'cat-1',
+          name: 'Billing migration',
+          createdAt: DateTime.utc(2026, 10, 23),
+          updatedAt: DateTime.utc(2026, 10, 23),
+        ),
+      ],
+    );
+    final summary = FakeSummaryApi();
+    final state = AppState(
+      categoryApi: categories,
+      settingsApi: FakeSettingsApi(),
+      summaryApi: summary,
+    );
+    await state.load();
+    await state.loadInitiativesReport();
+    await pumpEventQueue();
+    final before = summary.calls;
+
+    await state.saveSubcategory(
+      state.subcategories.single.copyWith(progress: 80),
+    );
+    await pumpEventQueue();
+
+    expect(state.subcategories.single.progress, 80);
+    // Both the week report and the loaded initiative report are refetched.
+    expect(summary.calls, before + 2);
+  });
 
   test('taxonomy failures stay inside the categories surface', () async {
     final categories = FakeCategoryApi()

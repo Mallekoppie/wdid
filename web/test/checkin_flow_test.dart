@@ -562,6 +562,112 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Mark final'), findsNothing);
   });
 
+  testWidgets('a manager draft can be deleted from its detail screen', (
+    tester,
+  ) async {
+    final today = dateOnly(DateTime.now());
+    final api = FakeCheckInApi(
+      checkIns: [
+        checkIn(
+          id: 'manager-draft',
+          focusNotes: 'Draft focus',
+          periodStart: addDays(today, -5),
+          periodEnd: today,
+          createdAt: DateTime.utc(today.year, today.month, today.day, 12),
+        ),
+        checkIn(
+          id: 'manager-final',
+          state: CheckInState.final_,
+          focusNotes: 'Final focus',
+          periodStart: DateTime(2026, 10, 1),
+          periodEnd: addDays(today, -10),
+          createdAt: DateTime.utc(2026, 10, 10, 12),
+        ),
+      ],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/manager-draft',
+    );
+
+    // The draft is the latest check-in, so the pill counts from it.
+    expect(find.text('Check-in due'), findsOneWidget);
+    expect(
+      find.widgetWithText(OutlinedButton, 'Delete draft check-in'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.widgetWithText(OutlinedButton, 'Delete draft check-in'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this draft check-in?'), findsOneWidget);
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Delete draft check-in').last,
+    );
+    await tester.pumpAndSettle();
+
+    expect(api.deleteRequests, ['manager-draft']);
+    expect(find.text('Check-ins'), findsWidgets);
+    expect(find.text('Draft focus'), findsNothing);
+    expect(find.text('Final focus'), findsOneWidget);
+    // The pill now counts from the remaining final check-in.
+    expect(find.textContaining('days since check-in'), findsOneWidget);
+    // The list itself never offers a delete action.
+    expect(
+      find.widgetWithText(OutlinedButton, 'Delete draft check-in'),
+      findsNothing,
+    );
+    expect(find.widgetWithText(OutlinedButton, 'Delete review'), findsNothing);
+  });
+
+  testWidgets('cancelling a draft delete leaves the draft untouched', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(
+      checkIns: [checkIn(id: 'manager-draft', focusNotes: 'Draft focus')],
+    );
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/manager-draft',
+    );
+
+    await tester.tap(
+      find.widgetWithText(OutlinedButton, 'Delete draft check-in'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this draft check-in?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete this draft check-in?'), findsNothing);
+    expect(api.deleteRequests, isEmpty);
+    expect(api.checkIns, hasLength(1));
+    // Still on the detail screen, with the draft intact.
+    expect(find.widgetWithText(FilledButton, 'Mark final'), findsOneWidget);
+    expect(find.text('Draft focus'), findsOneWidget);
+  });
+
+  testWidgets('a final manager check-in has no delete action', (tester) async {
+    final api = FakeCheckInApi(checkIns: [checkIn(state: CheckInState.final_)]);
+    await pumpCheckIns(
+      tester,
+      checkInApi: api,
+      route: '/checkins/checkin-manager',
+    );
+
+    expect(
+      find.widgetWithText(OutlinedButton, 'Delete draft check-in'),
+      findsNothing,
+    );
+    expect(find.widgetWithText(OutlinedButton, 'Delete review'), findsNothing);
+    expect(find.textContaining('Delete'), findsNothing);
+  });
+
   testWidgets('list failure shows a retry that reloads', (tester) async {
     final api = FakeCheckInApi(checkIns: [checkIn()])
       ..failure = const CheckInFailure(

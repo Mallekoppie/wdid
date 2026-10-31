@@ -357,6 +357,27 @@ void main() {
     expect(find.text('Original focus'), findsNothing);
   });
 
+  testWidgets('cancelling a personal review delete leaves it untouched', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(checkIns: [personalReview(), finalManager()]);
+    await pumpApp(tester, checkInApi: api, route: '/checkins/personal-1');
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Delete review'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this personal review?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete this personal review?'), findsNothing);
+    expect(api.deleteRequests, isEmpty);
+    expect(api.checkIns, hasLength(2));
+    // Still on the review's detail screen with its content intact.
+    expect(find.text('Original focus'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Delete review'), findsOneWidget);
+  });
+
   testWidgets('the live review handles loading, error and empty states', (
     tester,
   ) async {

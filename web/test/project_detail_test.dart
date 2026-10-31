@@ -15,6 +15,7 @@ import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 import 'package:wdid_web/models/work_entry.dart';
 import 'package:wdid_web/utils/time_utils.dart';
+import 'package:wdid_web/widgets/stat_tile.dart';
 
 import 'fake_auth_api.dart';
 import 'fake_entry_api.dart';
@@ -1099,6 +1100,91 @@ void main() {
     expect(find.byTooltip('Edit milestone'), findsNothing);
     expect(find.byTooltip('Delete milestone'), findsNothing);
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).onChanged, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits a project from the detail header', (tester) async {
+    final categories = projectTaxonomy();
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      categoryApi: categories,
+    );
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit project'), findsOneWidget);
+    final fields = find.byType(TextFormField);
+    expect(
+      tester.widget<TextFormField>(fields.at(0)).controller!.text,
+      'Invoice pipeline',
+    );
+    expect(
+      tester.widget<TextFormField>(fields.at(2)).controller!.text,
+      'Invoice generation under 5 minutes',
+    );
+
+    await tester.enterText(fields.at(2), 'Invoices under two minutes');
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(80);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+
+    final saved = categories.subcategories.firstWhere(
+      (item) => item.id == 'sub-invoice',
+    );
+    expect(saved.targetOutcome, 'Invoices under two minutes');
+    expect(saved.progress, 80);
+    expect(find.text('Invoices under two minutes'), findsOneWidget);
+    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('Project updated · Invoice pipeline'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an archived project offers no edit action', (tester) async {
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      categoryApi: projectTaxonomy(archived: true),
+    );
+
+    expect(find.text('Restore'), findsOneWidget);
+    expect(find.text('Edit'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Edit'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the report shows progress and reflects an edit', (tester) async {
+    final categories = projectTaxonomy();
+    await pumpDetail(
+      tester,
+      route: '/initiatives/sub-invoice',
+      categoryApi: categories,
+    );
+
+    await tester.tap(find.text('Report'));
+    await tester.pumpAndSettle();
+
+    StatTile progressTile() => tester.widget<StatTile>(
+      find.widgetWithText(StatTile, 'Progress'),
+    );
+    expect(progressTile().value, '64%');
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Edit'));
+    await tester.pumpAndSettle();
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(90);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(progressTile().value, '90%');
+    expect(
+      categories.subcategories
+          .firstWhere((item) => item.id == 'sub-invoice')
+          .progress,
+      90,
+    );
     expect(tester.takeException(), isNull);
   });
 }
