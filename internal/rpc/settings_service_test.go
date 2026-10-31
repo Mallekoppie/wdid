@@ -2,6 +2,8 @@ package rpc_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -293,5 +295,75 @@ func TestSettingsAIKeyRequiresAuthentication(t *testing.T) {
 	}
 	if _, err := client.ClearAIApiKey(context.Background(), connect.NewRequest(&wdidv1.ClearAIApiKeyRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("clear code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// Saving a preference unrelated to backups must not touch or revalidate the
+// stored backup directory. The directory may have become unusable since it was
+// configured; only a change to the backup settings checks it again.
+func TestUpdateSettingsDoesNotRevalidateUnchangedBackupDirectory(t *testing.T) {
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	dir := filepath.Join(t.TempDir(), "backups")
+	configured := backupTestSettings()
+	configured.BackupDirectory = dir
+	configured.BackupInterval = minutes(60)
+	configured.BackupRetention = 2
+	if _, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: configured}, token)); err != nil {
+		t.Fatalf("configure backups: %v", err)
+	}
+
+	// Break the configured path: replace the directory with a regular file, so
+	// any EnsureDirectory probe would fail.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove backup directory: %v", err)
+	}
+	if err := os.WriteFile(dir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("replace backup directory with a file: %v", err)
+	}
+
+	unrelated := backupTestSettings()
+	unrelated.BackupDirectory = dir
+	unrelated.BackupInterval = minutes(60)
+	unrelated.BackupRetention = 2
+	unrelated.DefaultEntryDuration = minutes(45)
+	updated, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: unrelated}, token))
+	if err != nil {
+		t.Fatalf("saving an unrelated preference must not revalidate backups: %v", err)
+	}
+	if got := updated.Msg.GetSettings().GetDefaultEntryDuration().AsDuration(); got != 45*time.Minute {
+		t.Fatalf("default entry duration = %s, want 45m", got)
+	}
+	if got := updated.Msg.GetSettings().GetBackupDirectory(); got != dir {
+		t.Fatalf("backup directory = %q, want the unchanged %q", got, dir)
+	}
+
+	// A genuine backup-directory change still validates and reports the bad path.
+	blocked := filepath.Join(t.TempDir(), "blocking-file")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+	changed := backupTestSettings()
+	changed.BackupDirectory = blocked
+	changed.BackupInterval = minutes(60)
+	changed.BackupRetention = 2
+	_, err = client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: changed}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if !strings.Contains(err.Error(), "backupDirectory") {
+		t.Fatalf("error = %q, want a backupDirectory field violation", err)
+	}
+
+	// The rejected change did not replace the stored directory.
+	reread, err := client.GetSettings(context.Background(), withBearer(&wdidv1.GetSettingsRequest{}, token))
+	if err != nil {
+		t.Fatalf("get settings after rejected change: %v", err)
+	}
+	if got := reread.Msg.GetSettings().GetBackupDirectory(); got != dir {
+		t.Fatalf("backup directory = %q, want the unchanged %q", got, dir)
 	}
 }

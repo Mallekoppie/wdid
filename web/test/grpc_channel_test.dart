@@ -35,23 +35,32 @@ void main() {
     expect(metadata?['authorization'], 'Bearer token-1');
   });
 
-  test('an unauthenticated reply reports the dead session', () async {
-    var reported = 0;
+  test('an unauthenticated reply reports its issuing token', () async {
+    String? reportedToken;
     final response = Future<int>.error(
       GrpcError.unauthenticated('token expired'),
     );
 
-    watchUnauthenticatedFuture(response, () => reported++);
+    watchUnauthenticatedFuture(
+      response,
+      'token-1',
+      (token) => reportedToken = token,
+    );
 
     await expectLater(response, throwsA(isA<GrpcError>()));
-    expect(reported, 1);
+    await pumpEventQueue();
+    expect(reportedToken, 'token-1');
   });
 
   test('other failures do not end the session', () async {
     var reported = 0;
     final response = Future<int>.error(GrpcError.unavailable('offline'));
 
-    watchUnauthenticatedFuture(response, () => reported++);
+    watchUnauthenticatedFuture(
+      response,
+      'token-1',
+      (token) => reported++,
+    );
 
     await expectLater(response, throwsA(isA<GrpcError>()));
     expect(reported, 0);
@@ -60,28 +69,39 @@ void main() {
   test('a successful reply never reports the session dead', () async {
     var reported = 0;
 
-    watchUnauthenticatedFuture(Future<void>.value(), () => reported++);
+    watchUnauthenticatedFuture(
+      Future<void>.value(),
+      'token-1',
+      (token) => reported++,
+    );
     await pumpEventQueue();
 
     expect(reported, 0);
   });
 
   test('a stream reports the dead session and keeps its error', () async {
+    String? reportedToken;
     var reported = 0;
     final stream = watchUnauthenticated<int>(
       Stream<int>.error(GrpcError.unauthenticated('token expired')),
-      () => reported++,
+      'token-1',
+      (token) {
+        reported++;
+        reportedToken = token;
+      },
     );
 
     await expectLater(stream, emitsError(isA<GrpcError>()));
     expect(reported, 1);
+    expect(reportedToken, 'token-1');
   });
 
   test('a healthy stream passes values through untouched', () async {
     var reported = 0;
     final stream = watchUnauthenticated<int>(
       Stream<int>.fromIterable(const [1, 2, 3]),
-      () => reported++,
+      'token-1',
+      (token) => reported++,
     );
 
     await expectLater(stream, emitsInOrder(const [1, 2, 3]));

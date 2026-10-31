@@ -98,10 +98,14 @@ class AuthState extends ChangeNotifier {
 
   /// Ends the session after the service answered an RPC with unauthenticated.
   ///
-  /// While signed out this is a no-op, so the login screen's own "wrong
+  /// [token] is the token that issued the rejected request. A late reply from a
+  /// previous session carries that session's token, so it cannot end a newer
+  /// one. While signed out this is a no-op, so the login screen's own "wrong
   /// password" unauthenticated reply cannot end or duplicate a session.
-  void handleUnauthenticated() {
-    if (session == null) return;
+  void handleUnauthenticated(String? token) {
+    final current = session;
+    if (current == null) return;
+    if (token == null || token != current.token) return;
     endSession(message: sessionExpiredMessage);
   }
 

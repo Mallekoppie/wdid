@@ -159,12 +159,7 @@ class GrpcSettingsRpc implements SettingsRpc {
            client ??
            generated.SettingsServiceClient(
              openAppChannel(),
-             interceptors: [
-               bearerInterceptor(
-                 session?.token ?? (() => null),
-                 onUnauthenticated: session?.onUnauthenticated,
-               ),
-             ],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated.SettingsServiceClient _client;

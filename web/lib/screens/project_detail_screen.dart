@@ -13,10 +13,10 @@ import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
+import '../utils/project_actions.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/milestone_dialog.dart';
 import '../widgets/forms/note_dialog.dart';
-import '../widgets/forms/project_dialog.dart';
 import '../widgets/forms/project_entry_dialog.dart';
 import '../widgets/panel.dart';
 import '../widgets/screen_states.dart';
@@ -188,16 +188,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
   }
 
   Future<void> _edit(AppState state, Subcategory project) async {
-    final saved = await showProjectDialog(
-      context,
-      state: state,
-      project: project,
-    );
-    if (saved != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Project updated · ${saved.name}')),
-      );
-    }
+    await editProject(context, state: state, project: project);
   }
 
   Future<void> _restore(AppState state, Subcategory project) async {

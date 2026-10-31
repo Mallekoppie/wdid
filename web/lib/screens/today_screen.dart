@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../data/timer_api.dart';
 import '../models/app_settings.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/entry_actions.dart';
 import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 import '../widgets/allocation_bars.dart';
@@ -76,21 +76,6 @@ class _TodayScreenState extends State<TodayScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not save the outcome: $error')),
       );
-    }
-  }
-
-  /// Starts a timer attributed like [entry]. A running timer is refused by
-  /// the shared path; this never pauses, stops or replaces it.
-  Future<void> _resume(AppState state, WorkEntry entry) async {
-    try {
-      await state.resumeEntry(entry);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Timer started')));
-    } on TimerFailure catch (failure) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(failure.message)));
     }
   }
 
@@ -181,7 +166,7 @@ class _TodayScreenState extends State<TodayScreen> {
               supportModes: state.selectableSupportModes,
               onSetMode: (mode) => unawaited(_setMode(entry, mode)),
               onEditOutcome: (entry) => unawaited(_editOutcome(entry)),
-              onResume: () => unawaited(_resume(state, entry)),
+              onResume: () => unawaited(resumeWorkEntry(context, entry)),
               resumeAvailability: state.resumeAvailabilityFor(entry),
             ),
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wdid_web/app.dart';
+import 'package:wdid_web/data/category_api.dart';
 import 'package:wdid_web/data/timer_api.dart';
 import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/taxonomy.dart';
@@ -289,6 +290,51 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'Resume is disabled with the unavailable reason when taxonomy fails to load',
+    (tester) async {
+      final categoryApi = FakeCategoryApi()
+        ..failure = const CategoryFailure('offline');
+
+      await pumpToday(
+        tester,
+        timerApi: FakeTimerApi(),
+        entryApi: FakeEntryApi(entries: [workEntry()]),
+        categoryApi: categoryApi,
+      );
+
+      expect(tester.widget<IconButton>(todayResumeButton()).onPressed, isNull);
+      expect(
+        find.byTooltip('The category list is unavailable.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip("This entry's category no longer exists."),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'Resume is disabled with the unavailable reason before taxonomy loads',
+    (tester) async {
+      // An empty taxonomy cannot tell a deleted category from one that has not
+      // loaded, so it must not claim the category no longer exists.
+      await pumpToday(
+        tester,
+        timerApi: FakeTimerApi(),
+        entryApi: FakeEntryApi(entries: [workEntry()]),
+        categoryApi: FakeCategoryApi(),
+      );
+
+      expect(tester.widget<IconButton>(todayResumeButton()).onPressed, isNull);
+      expect(
+        find.byTooltip('The category list is unavailable.'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets(
     'Resume is disabled with a tooltip when the category is archived',
