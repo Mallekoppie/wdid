@@ -20,6 +20,7 @@ import '../models/link_ref.dart';
 import '../models/milestone.dart';
 import '../models/note.dart';
 import '../models/period_report.dart';
+import '../models/resume_availability.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../utils/analytics.dart';
@@ -1016,6 +1017,45 @@ class AppState extends ChangeNotifier {
     final subcategoryId = timer.subcategoryId;
     if (subcategoryId.isEmpty) return null;
     return projectById(subcategoryId) == null ? null : subcategoryId;
+  }
+
+  /// Whether [entry] can be resumed into a new timer. The gate is client-side
+  /// because the server accepts an archived category. A missing subcategory
+  /// does not block: the start drops it.
+  ResumeAvailability resumeAvailabilityFor(WorkEntry entry) {
+    if (timerApi == null) {
+      return const ResumeAvailability.blocked(
+        'The timer service is unavailable.',
+      );
+    }
+    final category = categoryById(entry.categoryId);
+    if (category == null) {
+      return const ResumeAvailability.blocked(
+        "This entry's category no longer exists.",
+      );
+    }
+    if (category.archived) {
+      return const ResumeAvailability.blocked(
+        "This entry's category is archived.",
+      );
+    }
+    return const ResumeAvailability.allowed();
+  }
+
+  /// Starts a timer attributed like [entry]: the same category, subcategory,
+  /// description and people. Outcome, tags and links stay with the finished
+  /// entry. A running timer is refused by [startTimer] and left untouched.
+  Future<void> resumeEntry(WorkEntry entry) async {
+    final availability = resumeAvailabilityFor(entry);
+    if (!availability.enabled) {
+      throw TimerFailure(availability.reason);
+    }
+    await startTimer(
+      categoryId: entry.categoryId,
+      subcategoryId: entry.subcategoryId,
+      description: entry.description,
+      people: entry.people,
+    );
   }
 
   /// Starts a timer. A manual start retires any interrupt stash, because the

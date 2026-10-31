@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/resume_availability.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../theme/app_theme.dart';
@@ -18,12 +19,22 @@ class WorkEntryRow extends StatelessWidget {
     required this.onEditOutcome,
     this.supportModes = const [],
     this.onSetMode,
+    this.onResume,
+    this.resumeAvailability = const ResumeAvailability.allowed(),
   });
 
   final WorkEntry entry;
   final Category? category;
   final Subcategory? subcategory;
   final ValueChanged<WorkEntry> onEditOutcome;
+
+  /// Starts a timer attributed like this entry. The action only renders when
+  /// this is set; the Today screen always supplies it.
+  final VoidCallback? onResume;
+
+  /// Why the resume action is disabled, if it is. Both this and [onResume]
+  /// are shared with the Log's Resume menu item.
+  final ResumeAvailability resumeAvailability;
 
   /// The support modes offered on a support row. Both this and [onSetMode]
   /// must be supplied for the selector to render.
@@ -132,6 +143,20 @@ class WorkEntryRow extends StatelessWidget {
                   ),
                 ),
               ),
+              if (onResume != null)
+                IconButton(
+                  onPressed: resumeAvailability.enabled ? onResume : null,
+                  tooltip: resumeAvailability.enabled
+                      ? 'Resume'
+                      : resumeAvailability.reason,
+                  icon: const Icon(Icons.play_arrow, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 2),
