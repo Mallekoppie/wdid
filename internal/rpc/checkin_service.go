@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -82,7 +83,12 @@ func (s *CheckInService) ListCheckIns(ctx context.Context, request *connect.Requ
 		NextPageToken: nextPageToken,
 	}
 	for _, checkIn := range page {
-		response.CheckIns = append(response.CheckIns, toProtoCheckIn(checkIn))
+		protoCheckIn := toProtoCheckIn(checkIn)
+		// The prompt snapshot and revert slot belong to the detail view; list
+		// responses stay small by omitting them.
+		protoCheckIn.GenerationPrompt = ""
+		protoCheckIn.PreviousSummaryMarkdown = ""
+		response.CheckIns = append(response.CheckIns, protoCheckIn)
 	}
 	return connect.NewResponse(response), nil
 }
@@ -235,6 +241,10 @@ func (s *CheckInService) UpdateCheckIn(ctx context.Context, request *connect.Req
 	checkIn.SummaryMarkdown = request.Msg.GetSummaryMarkdown()
 	checkIn.SummaryModel = request.Msg.GetSummaryModel()
 	checkIn.PromptVersion = request.Msg.GetPromptVersion()
+	// GenerationPrompt and PreviousSummaryMarkdown are server-owned provenance
+	// fields, so a manual update never touches them. A context-only update keeps
+	// the state because only a summary change advances the lifecycle below.
+	checkIn.AdditionalContext = request.Msg.GetAdditionalContext()
 	checkIn.UpdatedAt = s.now().UTC()
 	checkIn.Normalize()
 
@@ -297,10 +307,20 @@ func (s *CheckInService) BuildCheckInPrompt(ctx context.Context, request *connec
 		return nil, toConnectError(err)
 	}
 
+	settings, err := s.store.EnsureSupportPeople(userID)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
 	variant := domain.PromptVariantFor(checkIn)
+	instruction := domain.ResolveInstruction(variant, settings)
+	prompt := instruction
+	if summary := strings.TrimSpace(checkIn.SummaryMarkdown); summary != "" {
+		prompt = instruction + "\n\n" + summary
+	}
 	return connect.NewResponse(&wdidv1.BuildCheckInPromptResponse{
-		Prompt:        domain.BuildPrompt(checkIn),
-		PromptVersion: domain.PromptVersion,
+		Prompt:        prompt,
+		PromptVersion: domain.ResolvePromptVersion(variant, settings),
 		Variant:       toProtoPromptVariant(variant),
 	}), nil
 }
@@ -461,19 +481,22 @@ func toProtoAudience(audience domain.Audience) wdidv1.CheckInAudience {
 
 func toProtoCheckIn(checkIn domain.CheckIn) *wdidv1.CheckIn {
 	return &wdidv1.CheckIn{
-		Id:              checkIn.ID,
-		Kind:            toProtoCheckInKind(checkIn.Kind),
-		PeriodStart:     checkIn.PeriodStart,
-		PeriodEnd:       checkIn.PeriodEnd,
-		State:           toProtoCheckInState(checkIn.State),
-		Audience:        toProtoAudience(checkIn.Audience),
-		FocusNotes:      checkIn.FocusNotes,
-		SummaryMarkdown: checkIn.SummaryMarkdown,
-		SummaryModel:    checkIn.SummaryModel,
-		PromptVersion:   checkIn.PromptVersion,
-		Totals:          toProtoCheckInTotals(checkIn.Totals),
-		CreatedAt:       timestamppb.New(checkIn.CreatedAt),
-		UpdatedAt:       timestamppb.New(checkIn.UpdatedAt),
+		Id:                      checkIn.ID,
+		Kind:                    toProtoCheckInKind(checkIn.Kind),
+		PeriodStart:             checkIn.PeriodStart,
+		PeriodEnd:               checkIn.PeriodEnd,
+		State:                   toProtoCheckInState(checkIn.State),
+		Audience:                toProtoAudience(checkIn.Audience),
+		FocusNotes:              checkIn.FocusNotes,
+		SummaryMarkdown:         checkIn.SummaryMarkdown,
+		SummaryModel:            checkIn.SummaryModel,
+		PromptVersion:           checkIn.PromptVersion,
+		AdditionalContext:       checkIn.AdditionalContext,
+		GenerationPrompt:        checkIn.GenerationPrompt,
+		PreviousSummaryMarkdown: checkIn.PreviousSummaryMarkdown,
+		Totals:                  toProtoCheckInTotals(checkIn.Totals),
+		CreatedAt:               timestamppb.New(checkIn.CreatedAt),
+		UpdatedAt:               timestamppb.New(checkIn.UpdatedAt),
 	}
 }
 

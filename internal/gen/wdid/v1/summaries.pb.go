@@ -968,15 +968,16 @@ func (x *BuildExportResponse) GetFiles() []*ExportFile {
 	return nil
 }
 
-// BuildPromptRequest returns the ready-to-paste prompt block followed by
+// BuildPromptRequest returns the caller's resolved instruction followed by
 // summary.md for the same scope as BuildExport.
 type BuildPromptRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	FromDate  string                 `protobuf:"bytes,1,opt,name=from_date,json=fromDate,proto3" json:"from_date,omitempty"`
 	ToDate    string                 `protobuf:"bytes,2,opt,name=to_date,json=toDate,proto3" json:"to_date,omitempty"`
 	CheckInId string                 `protobuf:"bytes,3,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
-	// Overrides the template. Unspecified follows the check-in's kind and
-	// audience, or the manager 1:1 default for a bare period.
+	// Overrides the variant. Unspecified follows the check-in's kind and
+	// audience, or the manager 1:1 default for a bare period. A per-user override
+	// for the selected variant is always applied.
 	Variant       CheckInPromptVariant `protobuf:"varint,4,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1042,7 +1043,7 @@ func (x *BuildPromptRequest) GetVariant() CheckInPromptVariant {
 
 type BuildPromptResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The versioned instruction followed by summary.md.
+	// The resolved instruction followed by summary.md.
 	Prompt        string               `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	PromptVersion string               `protobuf:"bytes,2,opt,name=prompt_version,json=promptVersion,proto3" json:"prompt_version,omitempty"`
 	Variant       CheckInPromptVariant `protobuf:"varint,3,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
@@ -1103,6 +1104,9 @@ func (x *BuildPromptResponse) GetVariant() CheckInPromptVariant {
 
 // GetPromptTemplateRequest asks for one versioned instruction. The text lives
 // in a single place in the service; the client only previews it in Settings.
+// GetPromptTemplateRequest asks for the caller's resolved instruction for one
+// variant. The service composes it from the caller's override (or the built-in
+// body) and the locked server rules; the client never composes prompt text.
 type GetPromptTemplateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unspecified returns the manager 1:1 default.
@@ -1150,8 +1154,9 @@ func (x *GetPromptTemplateRequest) GetVariant() CheckInPromptVariant {
 
 type GetPromptTemplateResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The instruction alone, without any period data.
-	Template      string               `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
+	// The resolved instruction alone, without any period data.
+	Template string `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
+	// v1 for the built-in body, custom when the caller has an override.
 	PromptVersion string               `protobuf:"bytes,2,opt,name=prompt_version,json=promptVersion,proto3" json:"prompt_version,omitempty"`
 	Variant       CheckInPromptVariant `protobuf:"varint,3,opt,name=variant,proto3,enum=wdid.v1.CheckInPromptVariant" json:"variant,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1337,6 +1342,152 @@ func (x *GenerateSummaryDelta) GetPromptVersion() string {
 	return ""
 }
 
+// RefineSummaryRequest regenerates a stored summary from its current text and
+// the user's feedback. The stored summary is sent to the provider as-is; there
+// is no overwrite confirmation. The draft prompt snapshot, model and prompt
+// version are replaced together with the summary only on success.
+type RefineSummaryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CheckInId     string                 `protobuf:"bytes,1,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
+	Feedback      string                 `protobuf:"bytes,2,opt,name=feedback,proto3" json:"feedback,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefineSummaryRequest) Reset() {
+	*x = RefineSummaryRequest{}
+	mi := &file_summaries_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefineSummaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefineSummaryRequest) ProtoMessage() {}
+
+func (x *RefineSummaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefineSummaryRequest.ProtoReflect.Descriptor instead.
+func (*RefineSummaryRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RefineSummaryRequest) GetCheckInId() string {
+	if x != nil {
+		return x.CheckInId
+	}
+	return ""
+}
+
+func (x *RefineSummaryRequest) GetFeedback() string {
+	if x != nil {
+		return x.Feedback
+	}
+	return ""
+}
+
+// RevertSummaryRequest restores the summary replaced by the last generate or
+// refine. The slot is cleared after one revert.
+type RevertSummaryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CheckInId     string                 `protobuf:"bytes,1,opt,name=check_in_id,json=checkInId,proto3" json:"check_in_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevertSummaryRequest) Reset() {
+	*x = RevertSummaryRequest{}
+	mi := &file_summaries_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevertSummaryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevertSummaryRequest) ProtoMessage() {}
+
+func (x *RevertSummaryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevertSummaryRequest.ProtoReflect.Descriptor instead.
+func (*RevertSummaryRequest) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RevertSummaryRequest) GetCheckInId() string {
+	if x != nil {
+		return x.CheckInId
+	}
+	return ""
+}
+
+type RevertSummaryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CheckIn       *CheckIn               `protobuf:"bytes,1,opt,name=check_in,json=checkIn,proto3" json:"check_in,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevertSummaryResponse) Reset() {
+	*x = RevertSummaryResponse{}
+	mi := &file_summaries_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevertSummaryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevertSummaryResponse) ProtoMessage() {}
+
+func (x *RevertSummaryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_summaries_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevertSummaryResponse.ProtoReflect.Descriptor instead.
+func (*RevertSummaryResponse) Descriptor() ([]byte, []int) {
+	return file_summaries_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RevertSummaryResponse) GetCheckIn() *CheckIn {
+	if x != nil {
+		return x.CheckIn
+	}
+	return nil
+}
+
 var File_summaries_proto protoreflect.FileDescriptor
 
 const file_summaries_proto_rawDesc = "" +
@@ -1444,13 +1595,22 @@ const file_summaries_proto_rawDesc = "" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12+\n" +
 	"\bcheck_in\x18\x02 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn\x12\x14\n" +
 	"\x05model\x18\x03 \x01(\tR\x05model\x12%\n" +
-	"\x0eprompt_version\x18\x04 \x01(\tR\rpromptVersion2\xab\x03\n" +
+	"\x0eprompt_version\x18\x04 \x01(\tR\rpromptVersion\"R\n" +
+	"\x14RefineSummaryRequest\x12\x1e\n" +
+	"\vcheck_in_id\x18\x01 \x01(\tR\tcheckInId\x12\x1a\n" +
+	"\bfeedback\x18\x02 \x01(\tR\bfeedback\"6\n" +
+	"\x14RevertSummaryRequest\x12\x1e\n" +
+	"\vcheck_in_id\x18\x01 \x01(\tR\tcheckInId\"D\n" +
+	"\x15RevertSummaryResponse\x12+\n" +
+	"\bcheck_in\x18\x01 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn2\xcc\x04\n" +
 	"\x0eSummaryService\x12T\n" +
 	"\x0fGetPeriodReport\x12\x1f.wdid.v1.GetPeriodReportRequest\x1a .wdid.v1.GetPeriodReportResponse\x12H\n" +
 	"\vBuildExport\x12\x1b.wdid.v1.BuildExportRequest\x1a\x1c.wdid.v1.BuildExportResponse\x12H\n" +
 	"\vBuildPrompt\x12\x1b.wdid.v1.BuildPromptRequest\x1a\x1c.wdid.v1.BuildPromptResponse\x12Z\n" +
 	"\x11GetPromptTemplate\x12!.wdid.v1.GetPromptTemplateRequest\x1a\".wdid.v1.GetPromptTemplateResponse\x12S\n" +
-	"\x0fGenerateSummary\x12\x1f.wdid.v1.GenerateSummaryRequest\x1a\x1d.wdid.v1.GenerateSummaryDelta0\x01B9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
+	"\x0fGenerateSummary\x12\x1f.wdid.v1.GenerateSummaryRequest\x1a\x1d.wdid.v1.GenerateSummaryDelta0\x01\x12O\n" +
+	"\rRefineSummary\x12\x1d.wdid.v1.RefineSummaryRequest\x1a\x1d.wdid.v1.GenerateSummaryDelta0\x01\x12N\n" +
+	"\rRevertSummary\x12\x1d.wdid.v1.RevertSummaryRequest\x1a\x1e.wdid.v1.RevertSummaryResponseB9Z7github.com/Mallekoppie/wdid/internal/gen/wdid/v1;wdidv1b\x06proto3"
 
 var (
 	file_summaries_proto_rawDescOnce sync.Once
@@ -1464,7 +1624,7 @@ func file_summaries_proto_rawDescGZIP() []byte {
 	return file_summaries_proto_rawDescData
 }
 
-var file_summaries_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_summaries_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_summaries_proto_goTypes = []any{
 	(*CategoryAllocation)(nil),        // 0: wdid.v1.CategoryAllocation
 	(*SubcategoryAllocation)(nil),     // 1: wdid.v1.SubcategoryAllocation
@@ -1485,21 +1645,24 @@ var file_summaries_proto_goTypes = []any{
 	(*GetPromptTemplateResponse)(nil), // 16: wdid.v1.GetPromptTemplateResponse
 	(*GenerateSummaryRequest)(nil),    // 17: wdid.v1.GenerateSummaryRequest
 	(*GenerateSummaryDelta)(nil),      // 18: wdid.v1.GenerateSummaryDelta
-	(CategoryRole)(0),                 // 19: wdid.v1.CategoryRole
-	(*durationpb.Duration)(nil),       // 20: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),     // 21: google.protobuf.Timestamp
-	(CheckInPromptVariant)(0),         // 22: wdid.v1.CheckInPromptVariant
-	(*CheckIn)(nil),                   // 23: wdid.v1.CheckIn
+	(*RefineSummaryRequest)(nil),      // 19: wdid.v1.RefineSummaryRequest
+	(*RevertSummaryRequest)(nil),      // 20: wdid.v1.RevertSummaryRequest
+	(*RevertSummaryResponse)(nil),     // 21: wdid.v1.RevertSummaryResponse
+	(CategoryRole)(0),                 // 22: wdid.v1.CategoryRole
+	(*durationpb.Duration)(nil),       // 23: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),     // 24: google.protobuf.Timestamp
+	(CheckInPromptVariant)(0),         // 25: wdid.v1.CheckInPromptVariant
+	(*CheckIn)(nil),                   // 26: wdid.v1.CheckIn
 }
 var file_summaries_proto_depIdxs = []int32{
-	19, // 0: wdid.v1.CategoryAllocation.role:type_name -> wdid.v1.CategoryRole
-	20, // 1: wdid.v1.CategoryAllocation.duration:type_name -> google.protobuf.Duration
-	20, // 2: wdid.v1.SubcategoryAllocation.duration:type_name -> google.protobuf.Duration
-	20, // 3: wdid.v1.SupportPersonAllocation.duration:type_name -> google.protobuf.Duration
-	20, // 4: wdid.v1.SupportModeAllocation.duration:type_name -> google.protobuf.Duration
-	20, // 5: wdid.v1.WeekRhythm.duration:type_name -> google.protobuf.Duration
-	21, // 6: wdid.v1.PeriodNote.created_at:type_name -> google.protobuf.Timestamp
-	20, // 7: wdid.v1.PeriodReport.total:type_name -> google.protobuf.Duration
+	22, // 0: wdid.v1.CategoryAllocation.role:type_name -> wdid.v1.CategoryRole
+	23, // 1: wdid.v1.CategoryAllocation.duration:type_name -> google.protobuf.Duration
+	23, // 2: wdid.v1.SubcategoryAllocation.duration:type_name -> google.protobuf.Duration
+	23, // 3: wdid.v1.SupportPersonAllocation.duration:type_name -> google.protobuf.Duration
+	23, // 4: wdid.v1.SupportModeAllocation.duration:type_name -> google.protobuf.Duration
+	23, // 5: wdid.v1.WeekRhythm.duration:type_name -> google.protobuf.Duration
+	24, // 6: wdid.v1.PeriodNote.created_at:type_name -> google.protobuf.Timestamp
+	23, // 7: wdid.v1.PeriodReport.total:type_name -> google.protobuf.Duration
 	0,  // 8: wdid.v1.PeriodReport.categories:type_name -> wdid.v1.CategoryAllocation
 	1,  // 9: wdid.v1.PeriodReport.subcategories:type_name -> wdid.v1.SubcategoryAllocation
 	2,  // 10: wdid.v1.PeriodReport.support_people:type_name -> wdid.v1.SupportPersonAllocation
@@ -1507,29 +1670,34 @@ var file_summaries_proto_depIdxs = []int32{
 	4,  // 12: wdid.v1.PeriodReport.weeks:type_name -> wdid.v1.WeekRhythm
 	5,  // 13: wdid.v1.PeriodReport.notes:type_name -> wdid.v1.PeriodNote
 	6,  // 14: wdid.v1.PeriodReport.milestone_progress:type_name -> wdid.v1.MilestoneProgress
-	20, // 15: wdid.v1.PeriodReport.support_duration:type_name -> google.protobuf.Duration
+	23, // 15: wdid.v1.PeriodReport.support_duration:type_name -> google.protobuf.Duration
 	7,  // 16: wdid.v1.GetPeriodReportResponse.report:type_name -> wdid.v1.PeriodReport
 	10, // 17: wdid.v1.BuildExportResponse.files:type_name -> wdid.v1.ExportFile
-	22, // 18: wdid.v1.BuildPromptRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 19: wdid.v1.BuildPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 20: wdid.v1.GetPromptTemplateRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
-	22, // 21: wdid.v1.GetPromptTemplateResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
-	23, // 22: wdid.v1.GenerateSummaryDelta.check_in:type_name -> wdid.v1.CheckIn
-	8,  // 23: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
-	11, // 24: wdid.v1.SummaryService.BuildExport:input_type -> wdid.v1.BuildExportRequest
-	13, // 25: wdid.v1.SummaryService.BuildPrompt:input_type -> wdid.v1.BuildPromptRequest
-	15, // 26: wdid.v1.SummaryService.GetPromptTemplate:input_type -> wdid.v1.GetPromptTemplateRequest
-	17, // 27: wdid.v1.SummaryService.GenerateSummary:input_type -> wdid.v1.GenerateSummaryRequest
-	9,  // 28: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
-	12, // 29: wdid.v1.SummaryService.BuildExport:output_type -> wdid.v1.BuildExportResponse
-	14, // 30: wdid.v1.SummaryService.BuildPrompt:output_type -> wdid.v1.BuildPromptResponse
-	16, // 31: wdid.v1.SummaryService.GetPromptTemplate:output_type -> wdid.v1.GetPromptTemplateResponse
-	18, // 32: wdid.v1.SummaryService.GenerateSummary:output_type -> wdid.v1.GenerateSummaryDelta
-	28, // [28:33] is the sub-list for method output_type
-	23, // [23:28] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	25, // 18: wdid.v1.BuildPromptRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	25, // 19: wdid.v1.BuildPromptResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	25, // 20: wdid.v1.GetPromptTemplateRequest.variant:type_name -> wdid.v1.CheckInPromptVariant
+	25, // 21: wdid.v1.GetPromptTemplateResponse.variant:type_name -> wdid.v1.CheckInPromptVariant
+	26, // 22: wdid.v1.GenerateSummaryDelta.check_in:type_name -> wdid.v1.CheckIn
+	26, // 23: wdid.v1.RevertSummaryResponse.check_in:type_name -> wdid.v1.CheckIn
+	8,  // 24: wdid.v1.SummaryService.GetPeriodReport:input_type -> wdid.v1.GetPeriodReportRequest
+	11, // 25: wdid.v1.SummaryService.BuildExport:input_type -> wdid.v1.BuildExportRequest
+	13, // 26: wdid.v1.SummaryService.BuildPrompt:input_type -> wdid.v1.BuildPromptRequest
+	15, // 27: wdid.v1.SummaryService.GetPromptTemplate:input_type -> wdid.v1.GetPromptTemplateRequest
+	17, // 28: wdid.v1.SummaryService.GenerateSummary:input_type -> wdid.v1.GenerateSummaryRequest
+	19, // 29: wdid.v1.SummaryService.RefineSummary:input_type -> wdid.v1.RefineSummaryRequest
+	20, // 30: wdid.v1.SummaryService.RevertSummary:input_type -> wdid.v1.RevertSummaryRequest
+	9,  // 31: wdid.v1.SummaryService.GetPeriodReport:output_type -> wdid.v1.GetPeriodReportResponse
+	12, // 32: wdid.v1.SummaryService.BuildExport:output_type -> wdid.v1.BuildExportResponse
+	14, // 33: wdid.v1.SummaryService.BuildPrompt:output_type -> wdid.v1.BuildPromptResponse
+	16, // 34: wdid.v1.SummaryService.GetPromptTemplate:output_type -> wdid.v1.GetPromptTemplateResponse
+	18, // 35: wdid.v1.SummaryService.GenerateSummary:output_type -> wdid.v1.GenerateSummaryDelta
+	18, // 36: wdid.v1.SummaryService.RefineSummary:output_type -> wdid.v1.GenerateSummaryDelta
+	21, // 37: wdid.v1.SummaryService.RevertSummary:output_type -> wdid.v1.RevertSummaryResponse
+	31, // [31:38] is the sub-list for method output_type
+	24, // [24:31] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_summaries_proto_init() }
@@ -1545,7 +1713,7 @@ func file_summaries_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_summaries_proto_rawDesc), len(file_summaries_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -24,13 +24,21 @@ const (
 	maxOutputTokens = 4096
 )
 
+// Message is one turn of a provider conversation. Role is "user" or
+// "assistant"; Content is the turn's text. Refinement sends the current summary
+// as an assistant turn followed by the user's feedback.
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // Request is one streaming generation request. The key comes from the user's
 // settings and is passed in memory only.
 type Request struct {
-	BaseURL string
-	APIKey  string
-	Model   string
-	Prompt  string
+	BaseURL  string
+	APIKey   string
+	Model    string
+	Messages []Message
 }
 
 // Response carries the provider-reported model name, so the check-in records
@@ -43,8 +51,8 @@ type Response struct {
 // endpoint. Tests supply a fake implementation; the service never reaches the
 // network without one.
 type Provider interface {
-	// Stream sends the prompt and calls onDelta for each text fragment. The
-	// call returns only after the provider finishes; an error means the
+	// Stream sends the conversation and calls onDelta for each text fragment.
+	// The call returns only after the provider finishes; an error means the
 	// response is incomplete and must not be persisted.
 	Stream(ctx context.Context, request Request, onDelta func(string) error) (Response, error)
 }
@@ -83,9 +91,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, request Request, onDelta
 		Model:     request.Model,
 		MaxTokens: maxOutputTokens,
 		Stream:    true,
-		Messages: []message{
-			{Role: "user", Content: request.Prompt},
-		},
+		Messages:  request.Messages,
 		// DeepSeek's reasoning models stream a private thinking block first and
 		// count it against max_tokens. At the summary budget they can spend every
 		// token thinking and emit no answer, so ask the compatible endpoint for
@@ -221,7 +227,7 @@ type messagesRequest struct {
 	Model     string          `json:"model"`
 	MaxTokens int             `json:"max_tokens"`
 	Stream    bool            `json:"stream"`
-	Messages  []message       `json:"messages"`
+	Messages  []Message       `json:"messages"`
 	Thinking  *thinkingConfig `json:"thinking,omitempty"`
 }
 
@@ -241,11 +247,6 @@ func thinkingForModel(model string) *thinkingConfig {
 		return &thinkingConfig{Type: "disabled"}
 	}
 	return nil
-}
-
-type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
 }
 
 type streamEvent struct {

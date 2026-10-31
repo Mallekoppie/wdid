@@ -455,8 +455,18 @@ type CheckIn struct {
 	Totals          *CheckInTotals         `protobuf:"bytes,11,opt,name=totals,proto3" json:"totals,omitempty"`
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The user's own facts the ledger did not record. It is authoritative
+	// supplied data for generation and is deliberately not redacted.
+	AdditionalContext string `protobuf:"bytes,14,opt,name=additional_context,json=additionalContext,proto3" json:"additional_context,omitempty"`
+	// The exact transcript sent to the provider for the current summary. It is
+	// provenance, not input: only GetCheckIn and the write/generation responses
+	// return it; ListCheckIns omits it to keep list responses small.
+	GenerationPrompt string `protobuf:"bytes,15,opt,name=generation_prompt,json=generationPrompt,proto3" json:"generation_prompt,omitempty"`
+	// The summary replaced by the last generate or refine, so one revert can
+	// restore it. Manual edits do not touch it. Omitted from ListCheckIns.
+	PreviousSummaryMarkdown string `protobuf:"bytes,16,opt,name=previous_summary_markdown,json=previousSummaryMarkdown,proto3" json:"previous_summary_markdown,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *CheckIn) Reset() {
@@ -578,6 +588,27 @@ func (x *CheckIn) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *CheckIn) GetAdditionalContext() string {
+	if x != nil {
+		return x.AdditionalContext
+	}
+	return ""
+}
+
+func (x *CheckIn) GetGenerationPrompt() string {
+	if x != nil {
+		return x.GenerationPrompt
+	}
+	return ""
+}
+
+func (x *CheckIn) GetPreviousSummaryMarkdown() string {
+	if x != nil {
+		return x.PreviousSummaryMarkdown
+	}
+	return ""
 }
 
 // ListCheckInsRequest narrows the caller's check-ins. An unspecified kind
@@ -1038,8 +1069,11 @@ type UpdateCheckInRequest struct {
 	// Confirms replacing a summary the user edited by hand. Required when a
 	// generated summary would replace one, and rejected otherwise.
 	OverwriteManualEdits bool `protobuf:"varint,10,opt,name=overwrite_manual_edits,json=overwriteManualEdits,proto3" json:"overwrite_manual_edits,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Replaces the user's additional context. A context-only update (the
+	// summary text is unchanged) never flips the check-in to edited.
+	AdditionalContext string `protobuf:"bytes,11,opt,name=additional_context,json=additionalContext,proto3" json:"additional_context,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UpdateCheckInRequest) Reset() {
@@ -1140,6 +1174,13 @@ func (x *UpdateCheckInRequest) GetOverwriteManualEdits() bool {
 		return x.OverwriteManualEdits
 	}
 	return false
+}
+
+func (x *UpdateCheckInRequest) GetAdditionalContext() string {
+	if x != nil {
+		return x.AdditionalContext
+	}
+	return ""
 }
 
 type UpdateCheckInResponse struct {
@@ -1481,7 +1522,7 @@ const file_check_ins_proto_rawDesc = "" +
 	"\x0eby_subcategory\x18\x03 \x03(\v2\x15.wdid.v1.CheckInTotalR\rbySubcategory\x12A\n" +
 	"\x11support_by_person\x18\x04 \x03(\v2\x15.wdid.v1.CheckInTotalR\x0fsupportByPerson\x12D\n" +
 	"\x10support_duration\x18\x05 \x01(\v2\x19.google.protobuf.DurationR\x0fsupportDuration\x121\n" +
-	"\x14support_interactions\x18\x06 \x01(\x05R\x13supportInteractions\"\xa6\x04\n" +
+	"\x14support_interactions\x18\x06 \x01(\x05R\x13supportInteractions\"\xbe\x05\n" +
 	"\aCheckIn\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x14.wdid.v1.CheckInKindR\x04kind\x12!\n" +
@@ -1500,7 +1541,10 @@ const file_check_ins_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"{\n" +
+	"updated_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12-\n" +
+	"\x12additional_context\x18\x0e \x01(\tR\x11additionalContext\x12+\n" +
+	"\x11generation_prompt\x18\x0f \x01(\tR\x10generationPrompt\x12:\n" +
+	"\x19previous_summary_markdown\x18\x10 \x01(\tR\x17previousSummaryMarkdown\"{\n" +
 	"\x13ListCheckInsRequest\x12(\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x14.wdid.v1.CheckInKindR\x04kind\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
@@ -1529,7 +1573,7 @@ const file_check_ins_proto_rawDesc = "" +
 	"\vfocus_notes\x18\x05 \x01(\tR\n" +
 	"focusNotes\"D\n" +
 	"\x15CreateCheckInResponse\x12+\n" +
-	"\bcheck_in\x18\x01 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn\"\xb2\x03\n" +
+	"\bcheck_in\x18\x01 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn\"\xe1\x03\n" +
 	"\x14UpdateCheckInRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fperiod_start\x18\x02 \x01(\tR\vperiodStart\x12\x1d\n" +
@@ -1543,7 +1587,8 @@ const file_check_ins_proto_rawDesc = "" +
 	"\x0eprompt_version\x18\b \x01(\tR\rpromptVersion\x12D\n" +
 	"\x0esummary_source\x18\t \x01(\x0e2\x1d.wdid.v1.CheckInSummarySourceR\rsummarySource\x124\n" +
 	"\x16overwrite_manual_edits\x18\n" +
-	" \x01(\bR\x14overwriteManualEdits\"D\n" +
+	" \x01(\bR\x14overwriteManualEdits\x12-\n" +
+	"\x12additional_context\x18\v \x01(\tR\x11additionalContext\"D\n" +
 	"\x15UpdateCheckInResponse\x12+\n" +
 	"\bcheck_in\x18\x01 \x01(\v2\x10.wdid.v1.CheckInR\acheckIn\"+\n" +
 	"\x19BuildCheckInPromptRequest\x12\x0e\n" +

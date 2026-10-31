@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1153,10 +1154,27 @@ type fakeAIProvider struct {
 	response  ai.Response
 	err       error
 	failAfter int
+
+	// started and release let a test hold one call inside the provider, so a
+	// second concurrent write can be proved to be rejected.
+	mu          sync.Mutex
+	started     chan struct{}
+	release     chan struct{}
+	startedOnce sync.Once
 }
 
 func (p *fakeAIProvider) Stream(_ context.Context, request ai.Request, onDelta func(string) error) (ai.Response, error) {
+	p.mu.Lock()
 	p.requests = append(p.requests, request)
+	p.mu.Unlock()
+
+	if p.started != nil {
+		p.startedOnce.Do(func() { close(p.started) })
+	}
+	if p.release != nil {
+		<-p.release
+	}
+
 	for index, delta := range p.deltas {
 		if p.err != nil && index >= p.failAfter {
 			return ai.Response{}, p.err
@@ -1172,10 +1190,29 @@ func (p *fakeAIProvider) Stream(_ context.Context, request ai.Request, onDelta f
 }
 
 func (p *fakeAIProvider) lastRequest() ai.Request {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if len(p.requests) == 0 {
 		return ai.Request{}
 	}
 	return p.requests[len(p.requests)-1]
+}
+
+func (p *fakeAIProvider) requestCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.requests)
+}
+
+// lastPrompt joins the turns of the last provider request, which is how the
+// streaming assertions read the generate transcript.
+func (p *fakeAIProvider) lastPrompt() string {
+	request := p.lastRequest()
+	contents := make([]string, 0, len(request.Messages))
+	for _, message := range request.Messages {
+		contents = append(contents, message.Content)
+	}
+	return strings.Join(contents, "\n\n")
 }
 
 type generationResult struct {
@@ -1310,9 +1347,9 @@ func TestSummaryServiceGenerateSummaryStreamsAndPersistsMetadata(t *testing.T) {
 		if request.BaseURL == "" || request.Model == "" {
 			t.Fatalf("provider request = %+v, want a configured base URL and model", request)
 		}
-		if !strings.Contains(request.Prompt, "1:1") ||
-			!strings.Contains(request.Prompt, "Billing migration") {
-			t.Fatalf("prompt = %q, want the 1:1 instruction and period data", request.Prompt)
+		if prompt := provider.lastPrompt(); !strings.Contains(prompt, "1:1") ||
+			!strings.Contains(prompt, "Billing migration") {
+			t.Fatalf("prompt = %q, want the 1:1 instruction and period data", prompt)
 		}
 
 		stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
@@ -1341,7 +1378,7 @@ func TestSummaryServiceGenerateSummarySelectsThePromptVariant(t *testing.T) {
 	if _, err := collectGeneration(t, server, token, performanceID, false); err != nil {
 		t.Fatalf("generate performance summary: %v", err)
 	}
-	if prompt := provider.lastRequest().Prompt; !strings.Contains(prompt, "formal performance review") {
+	if prompt := provider.lastPrompt(); !strings.Contains(prompt, "formal performance review") {
 		t.Fatalf("performance prompt = %q, want the performance-review instruction", prompt)
 	}
 
@@ -1352,7 +1389,7 @@ func TestSummaryServiceGenerateSummarySelectsThePromptVariant(t *testing.T) {
 	if _, err := collectGeneration(t, server, token, personalID, false); err != nil {
 		t.Fatalf("generate personal summary: %v", err)
 	}
-	if prompt := provider.lastRequest().Prompt; !strings.Contains(prompt, "your own working period") {
+	if prompt := provider.lastPrompt(); !strings.Contains(prompt, "your own working period") {
 		t.Fatalf("personal prompt = %q, want the personal-review instruction", prompt)
 	}
 }
@@ -1385,12 +1422,14 @@ func TestSummaryServiceGenerateSummaryRedactionStripsURLsAndNotes(t *testing.T) 
 		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
 		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
 	)
+	// Additional context is deliberate user input and is never redacted.
+	updateAdditionalContext(t, server, token, checkInID, "Off-ledger detail https://context.example/detail")
 
 	// Without redaction the prompt carries the notes and URLs.
 	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
 		t.Fatalf("generate unredacted summary: %v", err)
 	}
-	unredacted := provider.lastRequest().Prompt
+	unredacted := provider.lastPrompt()
 	for _, expected := range []string{"https://internal.example/runbook", "Private note", "Ship the backfill"} {
 		if !strings.Contains(unredacted, expected) {
 			t.Fatalf("unredacted prompt is missing %q:\n%s", expected, unredacted)
@@ -1401,7 +1440,7 @@ func TestSummaryServiceGenerateSummaryRedactionStripsURLsAndNotes(t *testing.T) 
 	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
 		t.Fatalf("generate redacted summary: %v", err)
 	}
-	redacted := provider.lastRequest().Prompt
+	redacted := provider.lastPrompt()
 	for _, forbidden := range []string{"https://internal.example", "Private note", "Ship the backfill"} {
 		if strings.Contains(redacted, forbidden) {
 			t.Fatalf("redacted prompt contains %q:\n%s", forbidden, redacted)
@@ -1409,6 +1448,25 @@ func TestSummaryServiceGenerateSummaryRedactionStripsURLsAndNotes(t *testing.T) 
 	}
 	if !strings.Contains(redacted, "[link removed]") {
 		t.Fatalf("redacted prompt = %q, want a visible redaction marker", redacted)
+	}
+
+	// The stored snapshot is the transcript the model saw, so it records the
+	// redacted text while the deliberately supplied context survives.
+	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get redacted check-in: %v", err)
+	}
+	snapshot := stored.Msg.GetCheckIn().GetGenerationPrompt()
+	for _, forbidden := range []string{"https://internal.example", "Private note", "Ship the backfill"} {
+		if strings.Contains(snapshot, forbidden) {
+			t.Fatalf("snapshot contains the redacted %q:\n%s", forbidden, snapshot)
+		}
+	}
+	if !strings.Contains(snapshot, "[link removed]") {
+		t.Fatalf("snapshot = %q, want the redaction marker", snapshot)
+	}
+	if !strings.Contains(snapshot, "https://context.example/detail") {
+		t.Fatalf("snapshot = %q, want the deliberately supplied additional context kept", snapshot)
 	}
 }
 
@@ -1604,5 +1662,528 @@ func TestSummaryServiceExportNeverContainsTheAIKey(t *testing.T) {
 		if strings.Contains(file.GetContent(), apiKey) {
 			t.Fatalf("%s contains the AI key", file.GetName())
 		}
+	}
+}
+
+// --- prompt resolution, snapshots, refine and revert ------------------------
+
+func snapshotOfRequest(request ai.Request) string {
+	messages := make([]domain.PromptMessage, 0, len(request.Messages))
+	for _, message := range request.Messages {
+		messages = append(messages, domain.PromptMessage{Role: message.Role, Content: message.Content})
+	}
+	return domain.RenderPromptSnapshot(messages)
+}
+
+// updateAdditionalContext saves context without changing the summary, using
+// the stored values so the server keeps the lifecycle where it was.
+func updateAdditionalContext(t *testing.T, server *httptest.Server, token, checkInID, text string) {
+	t.Helper()
+
+	current, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get check-in before context save: %v", err)
+	}
+	checkIn := current.Msg.GetCheckIn()
+	if _, err := checkInClient(server).UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+		Id:                checkInID,
+		PeriodStart:       checkIn.GetPeriodStart(),
+		PeriodEnd:         checkIn.GetPeriodEnd(),
+		Audience:          checkIn.GetAudience(),
+		FocusNotes:        checkIn.GetFocusNotes(),
+		SummaryMarkdown:   checkIn.GetSummaryMarkdown(),
+		SummaryModel:      checkIn.GetSummaryModel(),
+		PromptVersion:     checkIn.GetPromptVersion(),
+		SummarySource:     wdidv1.CheckInSummarySource_CHECK_IN_SUMMARY_SOURCE_MANUAL,
+		AdditionalContext: text,
+	}, token)); err != nil {
+		t.Fatalf("save additional context: %v", err)
+	}
+}
+
+func collectRefinement(t *testing.T, server *httptest.Server, token, checkInID, feedback string, options ...connect.ClientOption) (generationResult, error) {
+	t.Helper()
+
+	stream, err := summaryClient(server, options...).RefineSummary(
+		context.Background(),
+		withBearer(&wdidv1.RefineSummaryRequest{CheckInId: checkInID, Feedback: feedback}, token),
+	)
+	if err != nil {
+		return generationResult{}, err
+	}
+	defer stream.Close()
+
+	result := generationResult{}
+	for stream.Receive() {
+		delta := stream.Msg()
+		result.text += delta.GetText()
+		result.deltas++
+		if delta.GetCheckIn() != nil {
+			result.final = delta.GetCheckIn()
+		}
+	}
+	return result, stream.Err()
+}
+
+func revertSummary(t *testing.T, server *httptest.Server, token, checkInID string) (*wdidv1.CheckIn, error) {
+	t.Helper()
+
+	response, err := summaryClient(server).RevertSummary(context.Background(), withBearer(&wdidv1.RevertSummaryRequest{
+		CheckInId: checkInID,
+	}, token))
+	if err != nil {
+		return nil, err
+	}
+	return response.Msg.GetCheckIn(), nil
+}
+
+// TestSummaryServiceGenerateSummaryRecordsTheExactTranscript proves a custom
+// template reaches generation, the transcript sent to the provider is stored
+// verbatim, and list responses omit that snapshot.
+func TestSummaryServiceGenerateSummaryRecordsTheExactTranscript(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"## Result\n", "- generated"},
+		response: ai.Response{Model: "provider-model"},
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	updateAdditionalContext(t, server, token, checkInID, "Off-ledger: migrated 12 customers.")
+
+	if _, err := settingsClient(server).UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE,
+		Body:    "Write a very blunt, evidence-first brief.",
+	}, token)); err != nil {
+		t.Fatalf("update prompt template: %v", err)
+	}
+
+	result, err := collectGeneration(t, server, token, checkInID, false)
+	if err != nil {
+		t.Fatalf("generate summary: %v", err)
+	}
+	if result.final == nil || result.final.GetPromptVersion() != domain.PromptVersionCustom {
+		t.Fatalf("final = %+v, want the custom prompt version", result.final)
+	}
+
+	request := provider.lastRequest()
+	if len(request.Messages) != 1 || request.Messages[0].Role != domain.PromptRoleUser {
+		t.Fatalf("provider messages = %+v, want one user turn", request.Messages)
+	}
+	content := request.Messages[0].Content
+	for _, expected := range []string{
+		"Write a very blunt, evidence-first brief.",
+		domain.PromptRules,
+		"Off-ledger: migrated 12 customers.",
+		"Billing migration",
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("prompt is missing %q:\n%s", expected, content)
+		}
+	}
+
+	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get check-in: %v", err)
+	}
+	checkIn := stored.Msg.GetCheckIn()
+	if checkIn.GetGenerationPrompt() != snapshotOfRequest(request) {
+		t.Fatalf("stored snapshot =\n%q\nwant exactly what the provider received:\n%q",
+			checkIn.GetGenerationPrompt(), snapshotOfRequest(request))
+	}
+	if checkIn.GetPreviousSummaryMarkdown() != "" {
+		t.Fatalf("previous summary = %q, want none for a first generation", checkIn.GetPreviousSummaryMarkdown())
+	}
+	if checkIn.GetSummaryModel() != "provider-model" {
+		t.Fatalf("model = %q", checkIn.GetSummaryModel())
+	}
+
+	// List responses stay small: the snapshot and revert slot are omitted, but
+	// ordinary additional context is still present.
+	listed, err := checkInClient(server).ListCheckIns(context.Background(), withBearer(&wdidv1.ListCheckInsRequest{}, token))
+	if err != nil {
+		t.Fatalf("list check-ins: %v", err)
+	}
+	if len(listed.Msg.GetCheckIns()) != 1 {
+		t.Fatalf("check-ins = %d, want one", len(listed.Msg.GetCheckIns()))
+	}
+	listedCheckIn := listed.Msg.GetCheckIns()[0]
+	if listedCheckIn.GetGenerationPrompt() != "" || listedCheckIn.GetPreviousSummaryMarkdown() != "" {
+		t.Fatalf("list response carries provenance: %+v", listedCheckIn)
+	}
+	if listedCheckIn.GetAdditionalContext() != "Off-ledger: migrated 12 customers." {
+		t.Fatalf("list context = %q, want the additional context kept", listedCheckIn.GetAdditionalContext())
+	}
+}
+
+// TestSummaryServiceRevertRestoresThePreviousSummaryOnce proves a replaced
+// summary moves into the revert slot, one revert restores it, the slot then
+// clears, and a final check-in rejects generate, refine and revert.
+func TestSummaryServiceRevertRestoresThePreviousSummaryOnce(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"first summary"},
+		response: ai.Response{Model: "model-one"},
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+	if _, err := revertSummary(t, server, token, checkInID); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("revert without a previous summary code = %v, want failed precondition", connect.CodeOf(err))
+	}
+
+	provider.deltas = []string{"second summary"}
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("second generation: %v", err)
+	}
+	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get check-in: %v", err)
+	}
+	if stored.Msg.GetCheckIn().GetSummaryMarkdown() != "second summary" ||
+		stored.Msg.GetCheckIn().GetPreviousSummaryMarkdown() != "first summary" {
+		t.Fatalf("check-in after replacement = %+v, want the first summary in the slot", stored.Msg.GetCheckIn())
+	}
+
+	reverted, err := revertSummary(t, server, token, checkInID)
+	if err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	if reverted.GetSummaryMarkdown() != "first summary" || reverted.GetPreviousSummaryMarkdown() != "" {
+		t.Fatalf("reverted check-in = %+v, want the first summary and an empty slot", reverted)
+	}
+	if reverted.GetState() != wdidv1.CheckInState_CHECK_IN_STATE_GENERATED {
+		t.Fatalf("state = %v, want the generated state kept", reverted.GetState())
+	}
+
+	// One step only.
+	if _, err := revertSummary(t, server, token, checkInID); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("second revert code = %v, want failed precondition", connect.CodeOf(err))
+	}
+
+	// Leave a revert slot, then finalize: every writer is rejected.
+	provider.deltas = []string{"third summary"}
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("third generation: %v", err)
+	}
+	if _, err := checkInClient(server).FinalizeCheckIn(context.Background(), withBearer(&wdidv1.FinalizeCheckInRequest{Id: checkInID}, token)); err != nil {
+		t.Fatalf("finalize check-in: %v", err)
+	}
+	before := provider.requestCount()
+	if _, err := collectGeneration(t, server, token, checkInID, false); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("final generate code = %v, want failed precondition", connect.CodeOf(err))
+	}
+	if _, err := collectRefinement(t, server, token, checkInID, "tighten it"); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("final refine code = %v, want failed precondition", connect.CodeOf(err))
+	}
+	if _, err := revertSummary(t, server, token, checkInID); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("final revert code = %v, want failed precondition", connect.CodeOf(err))
+	}
+	if provider.requestCount() != before {
+		t.Fatalf("provider calls after final rejection = %d, want %d", provider.requestCount(), before)
+	}
+}
+
+// TestSummaryServiceRefineSummaryReplacesAHandEditedSummary proves refine sends
+// the stored summary as an assistant turn, replaces it without an overwrite
+// confirmation, records the exact transcript, and enforces its guards.
+func TestSummaryServiceRefineSummaryReplacesAHandEditedSummary(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"refined summary"},
+		response: ai.Response{Model: "refined-model"},
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	handEdited := "## Hand edited\n- my own words"
+	saveManualSummary(t, server, token, checkInID, handEdited)
+
+	result, err := collectRefinement(t, server, token, checkInID, "  Make it shorter.  ")
+	if err != nil {
+		t.Fatalf("refine summary: %v", err)
+	}
+	if result.text != "refined summary" || result.final == nil {
+		t.Fatalf("refine result = %+v", result)
+	}
+	if result.final.GetState() != wdidv1.CheckInState_CHECK_IN_STATE_GENERATED ||
+		result.final.GetPromptVersion() != domain.PromptVersion {
+		t.Fatalf("refine final = %+v, want generated with the built-in version", result.final)
+	}
+
+	request := provider.lastRequest()
+	if len(request.Messages) != 3 {
+		t.Fatalf("messages = %+v, want instruction, stored summary and feedback", request.Messages)
+	}
+	if request.Messages[0].Role != domain.PromptRoleUser ||
+		!strings.Contains(request.Messages[0].Content, "1:1") ||
+		!strings.Contains(request.Messages[0].Content, "Billing migration") {
+		t.Fatalf("first turn = %+v, want the instruction and period data", request.Messages[0])
+	}
+	if request.Messages[1].Role != domain.PromptRoleAssistant || request.Messages[1].Content != handEdited {
+		t.Fatalf("assistant turn = %+v, want the stored hand-edited summary exactly", request.Messages[1])
+	}
+	if request.Messages[2].Role != domain.PromptRoleUser || request.Messages[2].Content != "Make it shorter." {
+		t.Fatalf("feedback turn = %+v, want the trimmed feedback", request.Messages[2])
+	}
+
+	stored, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get refined check-in: %v", err)
+	}
+	refined := stored.Msg.GetCheckIn()
+	if refined.GetSummaryMarkdown() != "refined summary" ||
+		refined.GetPreviousSummaryMarkdown() != handEdited ||
+		refined.GetSummaryModel() != "refined-model" ||
+		refined.GetGenerationPrompt() != snapshotOfRequest(request) {
+		t.Fatalf("refined check-in = %+v, want the new summary, slot, model and exact snapshot", refined)
+	}
+
+	// The hand-edited summary comes back with one revert.
+	reverted, err := revertSummary(t, server, token, checkInID)
+	if err != nil {
+		t.Fatalf("revert refinement: %v", err)
+	}
+	if reverted.GetSummaryMarkdown() != handEdited {
+		t.Fatalf("reverted summary = %q, want the hand-edited text", reverted.GetSummaryMarkdown())
+	}
+
+	// A check-in with no stored summary cannot be refined.
+	emptyID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	before := provider.requestCount()
+	if _, err := collectRefinement(t, server, token, emptyID, "tighten"); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("empty-summary refine code = %v, want failed precondition", connect.CodeOf(err))
+	}
+
+	// Blank feedback is a field error, not a provider call.
+	saveManualSummary(t, server, token, emptyID, "## Something\n- to refine")
+	_, err = collectRefinement(t, server, token, emptyID, "   ")
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("blank feedback code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if fields := fieldViolations(t, err); len(fields) != 1 || fields[0] != "feedback" {
+		t.Fatalf("blank feedback field violations = %v, want feedback", fields)
+	}
+	if provider.requestCount() != before {
+		t.Fatalf("provider calls = %d, want %d after guard rejections", provider.requestCount(), before)
+	}
+
+	// A different account has no key, so its refinement is disabled even though
+	// the administrator's key is stored.
+	memberToken := registeredUserToken(t, server, database, "refine-member@example.com")
+	memberID := createSummaryCheckIn(t, server, memberToken,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+	saveManualSummary(t, server, memberToken, memberID, "## Member\n- own words")
+	_, err = collectRefinement(t, server, memberToken, memberID, "tighten")
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("member missing key code = %v, want failed precondition", connect.CodeOf(err))
+	}
+	if !strings.Contains(err.Error(), "Settings") || !strings.Contains(err.Error(), "key") {
+		t.Fatalf("member missing key error = %v, want a Settings key prompt", err)
+	}
+	if provider.requestCount() != before {
+		t.Fatalf("provider calls = %d, want %d without a member key", provider.requestCount(), before)
+	}
+}
+
+// TestSummaryServiceRefineSummaryFailureIsNonDestructive proves a failed
+// refinement leaves the stored summary, the revert slot and the snapshot
+// untouched.
+func TestSummaryServiceRefineSummaryFailureIsNonDestructive(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"first summary"},
+		response: ai.Response{Model: "model-one"},
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+	provider.deltas = []string{"second summary"}
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("second generation: %v", err)
+	}
+	handEdited := "## Hand\n- mine"
+	saveManualSummary(t, server, token, checkInID, handEdited)
+
+	before, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get check-in before failure: %v", err)
+	}
+	beforeCheckIn := before.Msg.GetCheckIn()
+	if beforeCheckIn.GetPreviousSummaryMarkdown() != "first summary" || beforeCheckIn.GetGenerationPrompt() == "" {
+		t.Fatalf("setup check-in = %+v, want a revert slot and snapshot", beforeCheckIn)
+	}
+
+	provider.deltas = []string{"## Partial"}
+	provider.err = errors.New("provider stream failed")
+	provider.failAfter = 1
+	result, err := collectRefinement(t, server, token, checkInID, "tighten it")
+	if err == nil {
+		t.Fatal("expected the refinement to fail")
+	}
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("code = %v, want unavailable", connect.CodeOf(err))
+	}
+	if result.text != "## Partial" {
+		t.Fatalf("partial text = %q", result.text)
+	}
+
+	after, err := checkInClient(server).GetCheckIn(context.Background(), withBearer(&wdidv1.GetCheckInRequest{Id: checkInID}, token))
+	if err != nil {
+		t.Fatalf("get check-in after failure: %v", err)
+	}
+	afterCheckIn := after.Msg.GetCheckIn()
+	if afterCheckIn.GetSummaryMarkdown() != handEdited ||
+		afterCheckIn.GetPreviousSummaryMarkdown() != "first summary" ||
+		afterCheckIn.GetGenerationPrompt() != beforeCheckIn.GetGenerationPrompt() ||
+		afterCheckIn.GetSummaryModel() != beforeCheckIn.GetSummaryModel() ||
+		afterCheckIn.GetPromptVersion() != beforeCheckIn.GetPromptVersion() ||
+		afterCheckIn.GetState() != beforeCheckIn.GetState() {
+		t.Fatalf("check-in after failure = %+v, want everything unchanged", afterCheckIn)
+	}
+
+	// The untouched slot still reverts to the pre-refine summary.
+	reverted, err := revertSummary(t, server, token, checkInID)
+	if err != nil {
+		t.Fatalf("revert after failure: %v", err)
+	}
+	if reverted.GetSummaryMarkdown() != "first summary" {
+		t.Fatalf("reverted summary = %q, want the preserved slot", reverted.GetSummaryMarkdown())
+	}
+}
+
+// TestSummaryServiceRejectsAConcurrentWriteForTheSameCheckIn proves generate,
+// refine and revert share one in-flight slot, and that the slot is released
+// when the provider finishes.
+func TestSummaryServiceRejectsAConcurrentWriteForTheSameCheckIn(t *testing.T) {
+	provider := &fakeAIProvider{
+		deltas:   []string{"slow summary"},
+		response: ai.Response{Model: "m"},
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	server, database := newDomainServerWithAI(t, provider)
+	token := bootstrapToken(t, server)
+	setAIKey(t, server, token, "sk-test-key")
+	buildSummaryExportFixture(t, server, database, token)
+	checkInID := createSummaryCheckIn(t, server, token,
+		wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	)
+
+	done := make(chan error, 1)
+	go func() {
+		stream, err := summaryClient(server).GenerateSummary(context.Background(), withBearer(&wdidv1.GenerateSummaryRequest{
+			CheckInId: checkInID,
+		}, token))
+		if err != nil {
+			done <- err
+			return
+		}
+		defer stream.Close()
+		for stream.Receive() {
+		}
+		done <- stream.Err()
+	}()
+
+	select {
+	case <-provider.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first generation never reached the provider")
+	}
+
+	_, err := collectGeneration(t, server, token, checkInID, false)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("concurrent generate error = %v, want a failed-precondition in-flight error", err)
+	}
+	if _, err := revertSummary(t, server, token, checkInID); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("concurrent revert code = %v, want failed precondition", connect.CodeOf(err))
+	}
+
+	close(provider.release)
+	if err := <-done; err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+
+	// The slot is released, so a later write succeeds.
+	provider.deltas = []string{"next summary"}
+	if _, err := collectGeneration(t, server, token, checkInID, false); err != nil {
+		t.Fatalf("generation after the slot was released: %v", err)
+	}
+}
+
+// TestSummaryServiceBuildPromptUsesTheCallersTemplate proves the copy-prompt
+// path resolves per-user overrides and reports the custom label, without
+// leaking one account's override into another's.
+func TestSummaryServiceBuildPromptUsesTheCallersTemplate(t *testing.T) {
+	server, database := newDomainServer(t)
+	adminToken := bootstrapToken(t, server)
+	memberToken := registeredUserToken(t, server, database, "build-prompt-member@example.com")
+	buildSummaryExportFixture(t, server, database, adminToken)
+
+	variant := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE
+	if _, err := settingsClient(server).UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    "Admin-only prompt body.",
+	}, adminToken)); err != nil {
+		t.Fatalf("update prompt template: %v", err)
+	}
+
+	adminPrompt, err := summaryClient(server).BuildPrompt(context.Background(), withBearer(&wdidv1.BuildPromptRequest{
+		FromDate: "2026-10-19",
+		ToDate:   "2026-10-25",
+	}, adminToken))
+	if err != nil {
+		t.Fatalf("build admin prompt: %v", err)
+	}
+	if !strings.Contains(adminPrompt.Msg.GetPrompt(), "Admin-only prompt body.") ||
+		!strings.HasSuffix(adminPrompt.Msg.GetPrompt(), "Support: support.csv") {
+		t.Fatalf("admin prompt = %q, want the custom body followed by summary.md", adminPrompt.Msg.GetPrompt())
+	}
+	if adminPrompt.Msg.GetPromptVersion() != domain.PromptVersionCustom {
+		t.Fatalf("admin prompt version = %q, want custom", adminPrompt.Msg.GetPromptVersion())
+	}
+
+	memberPrompt, err := summaryClient(server).BuildPrompt(context.Background(), withBearer(&wdidv1.BuildPromptRequest{
+		FromDate: "2026-10-19",
+		ToDate:   "2026-10-25",
+	}, memberToken))
+	if err != nil {
+		t.Fatalf("build member prompt: %v", err)
+	}
+	if strings.Contains(memberPrompt.Msg.GetPrompt(), "Admin-only prompt body.") {
+		t.Fatalf("member prompt = %q, leaked the administrator's override", memberPrompt.Msg.GetPrompt())
+	}
+	if memberPrompt.Msg.GetPromptVersion() != domain.PromptVersion {
+		t.Fatalf("member prompt version = %q, want %q", memberPrompt.Msg.GetPromptVersion(), domain.PromptVersion)
 	}
 }

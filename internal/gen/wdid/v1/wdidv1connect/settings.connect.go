@@ -45,6 +45,15 @@ const (
 	// SettingsServiceClearAIApiKeyProcedure is the fully-qualified name of the SettingsService's
 	// ClearAIApiKey RPC.
 	SettingsServiceClearAIApiKeyProcedure = "/wdid.v1.SettingsService/ClearAIApiKey"
+	// SettingsServiceListPromptTemplatesProcedure is the fully-qualified name of the SettingsService's
+	// ListPromptTemplates RPC.
+	SettingsServiceListPromptTemplatesProcedure = "/wdid.v1.SettingsService/ListPromptTemplates"
+	// SettingsServiceUpdatePromptTemplateProcedure is the fully-qualified name of the SettingsService's
+	// UpdatePromptTemplate RPC.
+	SettingsServiceUpdatePromptTemplateProcedure = "/wdid.v1.SettingsService/UpdatePromptTemplate"
+	// SettingsServiceResetPromptTemplateProcedure is the fully-qualified name of the SettingsService's
+	// ResetPromptTemplate RPC.
+	SettingsServiceResetPromptTemplateProcedure = "/wdid.v1.SettingsService/ResetPromptTemplate"
 	// SettingsServiceBackupNowProcedure is the fully-qualified name of the SettingsService's BackupNow
 	// RPC.
 	SettingsServiceBackupNowProcedure = "/wdid.v1.SettingsService/BackupNow"
@@ -67,6 +76,11 @@ type SettingsServiceClient interface {
 	// response only reports has_ai_api_key.
 	SetAIApiKey(context.Context, *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error)
 	ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error)
+	// Prompt templates are per-account instruction bodies. The server always
+	// appends the locked rules, so a custom body can never remove them.
+	ListPromptTemplates(context.Context, *connect.Request[v1.ListPromptTemplatesRequest]) (*connect.Response[v1.ListPromptTemplatesResponse], error)
+	UpdatePromptTemplate(context.Context, *connect.Request[v1.UpdatePromptTemplateRequest]) (*connect.Response[v1.UpdatePromptTemplateResponse], error)
+	ResetPromptTemplate(context.Context, *connect.Request[v1.ResetPromptTemplateRequest]) (*connect.Response[v1.ResetPromptTemplateResponse], error)
 	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
 	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
@@ -108,6 +122,24 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(settingsServiceMethods.ByName("ClearAIApiKey")),
 			connect.WithClientOptions(opts...),
 		),
+		listPromptTemplates: connect.NewClient[v1.ListPromptTemplatesRequest, v1.ListPromptTemplatesResponse](
+			httpClient,
+			baseURL+SettingsServiceListPromptTemplatesProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("ListPromptTemplates")),
+			connect.WithClientOptions(opts...),
+		),
+		updatePromptTemplate: connect.NewClient[v1.UpdatePromptTemplateRequest, v1.UpdatePromptTemplateResponse](
+			httpClient,
+			baseURL+SettingsServiceUpdatePromptTemplateProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("UpdatePromptTemplate")),
+			connect.WithClientOptions(opts...),
+		),
+		resetPromptTemplate: connect.NewClient[v1.ResetPromptTemplateRequest, v1.ResetPromptTemplateResponse](
+			httpClient,
+			baseURL+SettingsServiceResetPromptTemplateProcedure,
+			connect.WithSchema(settingsServiceMethods.ByName("ResetPromptTemplate")),
+			connect.WithClientOptions(opts...),
+		),
 		backupNow: connect.NewClient[v1.BackupNowRequest, v1.BackupNowResponse](
 			httpClient,
 			baseURL+SettingsServiceBackupNowProcedure,
@@ -137,14 +169,17 @@ func NewSettingsServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // settingsServiceClient implements SettingsServiceClient.
 type settingsServiceClient struct {
-	getSettings     *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
-	updateSettings  *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
-	setAIApiKey     *connect.Client[v1.SetAIApiKeyRequest, v1.SetAIApiKeyResponse]
-	clearAIApiKey   *connect.Client[v1.ClearAIApiKeyRequest, v1.ClearAIApiKeyResponse]
-	backupNow       *connect.Client[v1.BackupNowRequest, v1.BackupNowResponse]
-	getBackupStatus *connect.Client[v1.GetBackupStatusRequest, v1.GetBackupStatusResponse]
-	listBackups     *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResponse]
-	restoreBackup   *connect.Client[v1.RestoreBackupRequest, v1.RestoreBackupResponse]
+	getSettings          *connect.Client[v1.GetSettingsRequest, v1.GetSettingsResponse]
+	updateSettings       *connect.Client[v1.UpdateSettingsRequest, v1.UpdateSettingsResponse]
+	setAIApiKey          *connect.Client[v1.SetAIApiKeyRequest, v1.SetAIApiKeyResponse]
+	clearAIApiKey        *connect.Client[v1.ClearAIApiKeyRequest, v1.ClearAIApiKeyResponse]
+	listPromptTemplates  *connect.Client[v1.ListPromptTemplatesRequest, v1.ListPromptTemplatesResponse]
+	updatePromptTemplate *connect.Client[v1.UpdatePromptTemplateRequest, v1.UpdatePromptTemplateResponse]
+	resetPromptTemplate  *connect.Client[v1.ResetPromptTemplateRequest, v1.ResetPromptTemplateResponse]
+	backupNow            *connect.Client[v1.BackupNowRequest, v1.BackupNowResponse]
+	getBackupStatus      *connect.Client[v1.GetBackupStatusRequest, v1.GetBackupStatusResponse]
+	listBackups          *connect.Client[v1.ListBackupsRequest, v1.ListBackupsResponse]
+	restoreBackup        *connect.Client[v1.RestoreBackupRequest, v1.RestoreBackupResponse]
 }
 
 // GetSettings calls wdid.v1.SettingsService.GetSettings.
@@ -165,6 +200,21 @@ func (c *settingsServiceClient) SetAIApiKey(ctx context.Context, req *connect.Re
 // ClearAIApiKey calls wdid.v1.SettingsService.ClearAIApiKey.
 func (c *settingsServiceClient) ClearAIApiKey(ctx context.Context, req *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error) {
 	return c.clearAIApiKey.CallUnary(ctx, req)
+}
+
+// ListPromptTemplates calls wdid.v1.SettingsService.ListPromptTemplates.
+func (c *settingsServiceClient) ListPromptTemplates(ctx context.Context, req *connect.Request[v1.ListPromptTemplatesRequest]) (*connect.Response[v1.ListPromptTemplatesResponse], error) {
+	return c.listPromptTemplates.CallUnary(ctx, req)
+}
+
+// UpdatePromptTemplate calls wdid.v1.SettingsService.UpdatePromptTemplate.
+func (c *settingsServiceClient) UpdatePromptTemplate(ctx context.Context, req *connect.Request[v1.UpdatePromptTemplateRequest]) (*connect.Response[v1.UpdatePromptTemplateResponse], error) {
+	return c.updatePromptTemplate.CallUnary(ctx, req)
+}
+
+// ResetPromptTemplate calls wdid.v1.SettingsService.ResetPromptTemplate.
+func (c *settingsServiceClient) ResetPromptTemplate(ctx context.Context, req *connect.Request[v1.ResetPromptTemplateRequest]) (*connect.Response[v1.ResetPromptTemplateResponse], error) {
+	return c.resetPromptTemplate.CallUnary(ctx, req)
 }
 
 // BackupNow calls wdid.v1.SettingsService.BackupNow.
@@ -195,6 +245,11 @@ type SettingsServiceHandler interface {
 	// response only reports has_ai_api_key.
 	SetAIApiKey(context.Context, *connect.Request[v1.SetAIApiKeyRequest]) (*connect.Response[v1.SetAIApiKeyResponse], error)
 	ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error)
+	// Prompt templates are per-account instruction bodies. The server always
+	// appends the locked rules, so a custom body can never remove them.
+	ListPromptTemplates(context.Context, *connect.Request[v1.ListPromptTemplatesRequest]) (*connect.Response[v1.ListPromptTemplatesResponse], error)
+	UpdatePromptTemplate(context.Context, *connect.Request[v1.UpdatePromptTemplateRequest]) (*connect.Response[v1.UpdatePromptTemplateResponse], error)
+	ResetPromptTemplate(context.Context, *connect.Request[v1.ResetPromptTemplateRequest]) (*connect.Response[v1.ResetPromptTemplateResponse], error)
 	BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error)
 	GetBackupStatus(context.Context, *connect.Request[v1.GetBackupStatusRequest]) (*connect.Response[v1.GetBackupStatusResponse], error)
 	ListBackups(context.Context, *connect.Request[v1.ListBackupsRequest]) (*connect.Response[v1.ListBackupsResponse], error)
@@ -232,6 +287,24 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 		connect.WithSchema(settingsServiceMethods.ByName("ClearAIApiKey")),
 		connect.WithHandlerOptions(opts...),
 	)
+	settingsServiceListPromptTemplatesHandler := connect.NewUnaryHandler(
+		SettingsServiceListPromptTemplatesProcedure,
+		svc.ListPromptTemplates,
+		connect.WithSchema(settingsServiceMethods.ByName("ListPromptTemplates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceUpdatePromptTemplateHandler := connect.NewUnaryHandler(
+		SettingsServiceUpdatePromptTemplateProcedure,
+		svc.UpdatePromptTemplate,
+		connect.WithSchema(settingsServiceMethods.ByName("UpdatePromptTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	settingsServiceResetPromptTemplateHandler := connect.NewUnaryHandler(
+		SettingsServiceResetPromptTemplateProcedure,
+		svc.ResetPromptTemplate,
+		connect.WithSchema(settingsServiceMethods.ByName("ResetPromptTemplate")),
+		connect.WithHandlerOptions(opts...),
+	)
 	settingsServiceBackupNowHandler := connect.NewUnaryHandler(
 		SettingsServiceBackupNowProcedure,
 		svc.BackupNow,
@@ -266,6 +339,12 @@ func NewSettingsServiceHandler(svc SettingsServiceHandler, opts ...connect.Handl
 			settingsServiceSetAIApiKeyHandler.ServeHTTP(w, r)
 		case SettingsServiceClearAIApiKeyProcedure:
 			settingsServiceClearAIApiKeyHandler.ServeHTTP(w, r)
+		case SettingsServiceListPromptTemplatesProcedure:
+			settingsServiceListPromptTemplatesHandler.ServeHTTP(w, r)
+		case SettingsServiceUpdatePromptTemplateProcedure:
+			settingsServiceUpdatePromptTemplateHandler.ServeHTTP(w, r)
+		case SettingsServiceResetPromptTemplateProcedure:
+			settingsServiceResetPromptTemplateHandler.ServeHTTP(w, r)
 		case SettingsServiceBackupNowProcedure:
 			settingsServiceBackupNowHandler.ServeHTTP(w, r)
 		case SettingsServiceGetBackupStatusProcedure:
@@ -297,6 +376,18 @@ func (UnimplementedSettingsServiceHandler) SetAIApiKey(context.Context, *connect
 
 func (UnimplementedSettingsServiceHandler) ClearAIApiKey(context.Context, *connect.Request[v1.ClearAIApiKeyRequest]) (*connect.Response[v1.ClearAIApiKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.ClearAIApiKey is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) ListPromptTemplates(context.Context, *connect.Request[v1.ListPromptTemplatesRequest]) (*connect.Response[v1.ListPromptTemplatesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.ListPromptTemplates is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) UpdatePromptTemplate(context.Context, *connect.Request[v1.UpdatePromptTemplateRequest]) (*connect.Response[v1.UpdatePromptTemplateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.UpdatePromptTemplate is not implemented"))
+}
+
+func (UnimplementedSettingsServiceHandler) ResetPromptTemplate(context.Context, *connect.Request[v1.ResetPromptTemplateRequest]) (*connect.Response[v1.ResetPromptTemplateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SettingsService.ResetPromptTemplate is not implemented"))
 }
 
 func (UnimplementedSettingsServiceHandler) BackupNow(context.Context, *connect.Request[v1.BackupNowRequest]) (*connect.Response[v1.BackupNowResponse], error) {

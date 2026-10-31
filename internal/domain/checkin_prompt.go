@@ -62,11 +62,22 @@ func BuildPrompt(checkIn CheckIn) string {
 // ResolveInstruction instead; this stays for the built-in-only compatibility
 // paths.
 func PromptTemplate(variant PromptVariant) (string, bool) {
+	body, ok := BuiltInPromptBody(variant)
+	if !ok {
+		return "", false
+	}
+	return body + "\n\n" + PromptRules, true
+}
+
+// BuiltInPromptBody returns one variant's built-in instruction body without the
+// locked rules, and whether the variant is known. It is the fallback used when
+// the caller has no override.
+func BuiltInPromptBody(variant PromptVariant) (string, bool) {
 	body, ok := promptInstructions[variant]
 	if !ok {
 		return "", false
 	}
-	return strings.TrimSpace(body) + "\n\n" + PromptRules, true
+	return strings.TrimSpace(body), true
 }
 
 // ResolveInstruction returns the instruction the server sends for one variant.

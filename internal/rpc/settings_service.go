@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -144,6 +145,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 		return nil, toConnectError(err)
 	}
 	settings.AIAPIKey = current.AIAPIKey
+	// Prompt templates are managed by their own RPCs and are not part of the
+	// Settings wire message, so an unrelated save must keep the stored map.
+	settings.PromptTemplates = current.PromptTemplates
 	// An explicit save replaces the roster and marks it as seeded; otherwise the
 	// next load would resurrect names the client deliberately removed.
 	settings.SupportPeopleSeeded = true
@@ -256,6 +260,134 @@ func (s *SettingsService) ClearAIApiKey(ctx context.Context, _ *connect.Request[
 	}
 
 	return connect.NewResponse(&wdidv1.ClearAIApiKeyResponse{Settings: toProtoSettings(settings)}), nil
+}
+
+// maxPromptTemplateBodyLength bounds one stored instruction body. It is
+// generous enough for a detailed prompt and small enough that a settings
+// record stays reasonable.
+const maxPromptTemplateBodyLength = 20000
+
+// promptTemplateVariants is the order ListPromptTemplates returns: the three
+// manager and personal variants in their wire-enum order.
+var promptTemplateVariants = []domain.PromptVariant{
+	domain.PromptVariantManagerOneOnOne,
+	domain.PromptVariantManagerPerformanceReview,
+	domain.PromptVariantPersonalReview,
+}
+
+// toProtoPromptTemplate reports one variant as the caller currently sees it:
+// the stored override body when customised, otherwise the built-in body, plus
+// the locked rules.
+func toProtoPromptTemplate(variant domain.PromptVariant, settings domain.Settings) *wdidv1.PromptTemplate {
+	body := strings.TrimSpace(settings.PromptTemplates[variant])
+	customised := body != ""
+	if !customised {
+		if builtIn, ok := domain.BuiltInPromptBody(variant); ok {
+			body = builtIn
+		}
+	}
+	return &wdidv1.PromptTemplate{
+		Variant:    toProtoPromptVariant(variant),
+		Body:       body,
+		Customised: customised,
+		Rules:      domain.PromptRules,
+	}
+}
+
+// ListPromptTemplates returns the caller's resolved body for every variant.
+// The account comes from the token, so two accounts editing the same variant
+// never see each other's prompt.
+func (s *SettingsService) ListPromptTemplates(ctx context.Context, _ *connect.Request[wdidv1.ListPromptTemplatesRequest]) (*connect.Response[wdidv1.ListPromptTemplatesResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	templates := make([]*wdidv1.PromptTemplate, 0, len(promptTemplateVariants))
+	for _, variant := range promptTemplateVariants {
+		templates = append(templates, toProtoPromptTemplate(variant, settings))
+	}
+	return connect.NewResponse(&wdidv1.ListPromptTemplatesResponse{Templates: templates}), nil
+}
+
+// UpdatePromptTemplate replaces the caller's instruction body for one variant.
+// A blank body is rejected because only Reset may restore the built-in body.
+func (s *SettingsService) UpdatePromptTemplate(ctx context.Context, request *connect.Request[wdidv1.UpdatePromptTemplateRequest]) (*connect.Response[wdidv1.UpdatePromptTemplateResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	variant, err := promptVariantFromProto(request.Msg.GetVariant())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	body := strings.TrimSpace(request.Msg.GetBody())
+	if body == "" {
+		return nil, toConnectError(domain.ValidationError{
+			Field:   "body",
+			Message: "is required; use Reset to restore the built-in",
+		})
+	}
+	if len(body) > maxPromptTemplateBodyLength {
+		return nil, toConnectError(domain.ValidationError{
+			Field:   "body",
+			Message: fmt.Sprintf("must be at most %d characters", maxPromptTemplateBodyLength),
+		})
+	}
+
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	if settings.PromptTemplates == nil {
+		settings.PromptTemplates = make(map[domain.PromptVariant]string, 1)
+	}
+	settings.PromptTemplates[variant] = body
+	settings.UpdatedAt = time.Now().UTC()
+	settings.Normalize()
+	if err := s.store.SaveSettings(settings); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.UpdatePromptTemplateResponse{
+		Template: toProtoPromptTemplate(variant, settings),
+	}), nil
+}
+
+// ResetPromptTemplate drops the caller's override for one variant, so the
+// built-in body applies again. It is the only way to return to the default.
+func (s *SettingsService) ResetPromptTemplate(ctx context.Context, request *connect.Request[wdidv1.ResetPromptTemplateRequest]) (*connect.Response[wdidv1.ResetPromptTemplateResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	variant, err := promptVariantFromProto(request.Msg.GetVariant())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+
+	settings, err := s.settingsForUser(userID)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	if settings.PromptTemplates != nil {
+		delete(settings.PromptTemplates, variant)
+	}
+	settings.UpdatedAt = time.Now().UTC()
+	settings.Normalize()
+	if err := s.store.SaveSettings(settings); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.ResetPromptTemplateResponse{
+		Template: toProtoPromptTemplate(variant, settings),
+	}), nil
 }
 
 // BackupNow takes a manual snapshot. Manual snapshots are never removed by
