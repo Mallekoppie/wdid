@@ -909,3 +909,169 @@ func TestCheckInServiceAudienceSelectsThePromptVariant(t *testing.T) {
 		}
 	})
 }
+
+// TestCheckInServiceUpdatesAdditionalContextWithoutTouchingTheSummary proves a
+// context-only update leaves the lifecycle, summary, model and prompt version
+// alone, and that a final manager check-in rejects it.
+func TestCheckInServiceUpdatesAdditionalContextWithoutTouchingTheSummary(t *testing.T) {
+	server, _ := newDomainServer(t)
+	token := bootstrapToken(t, server)
+	client := checkInClient(server)
+
+	created, err := client.CreateCheckIn(context.Background(), withBearer(&wdidv1.CreateCheckInRequest{
+		Kind:        wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+		PeriodStart: "2026-10-01",
+		PeriodEnd:   "2026-10-07",
+		Audience:    wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+	}, token))
+	if err != nil {
+		t.Fatalf("create check-in: %v", err)
+	}
+	id := created.Msg.GetCheckIn().GetId()
+
+	// A serial port draft context save must not advance the lifecycle.
+	draft, err := client.UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+		Id:                id,
+		PeriodStart:       "2026-10-01",
+		PeriodEnd:         "2026-10-07",
+		Audience:          wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+		AdditionalContext: "  Recorded offline: shipped the backfill.  ",
+	}, token))
+	if err != nil {
+		t.Fatalf("context-only draft update: %v", err)
+	}
+	if draft.Msg.GetCheckIn().GetState() != wdidv1.CheckInState_CHECK_IN_STATE_DRAFT {
+		t.Fatalf("state = %v, want draft after a context-only update", draft.Msg.GetCheckIn().GetState())
+	}
+	if draft.Msg.GetCheckIn().GetAdditionalContext() != "Recorded offline: shipped the backfill." {
+		t.Fatalf("context = %q, want the trimmed text", draft.Msg.GetCheckIn().GetAdditionalContext())
+	}
+
+	markdown := "## Highlights\n- Cut invoicing from 40 min to 3 min"
+	if _, err := client.UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+		Id:              id,
+		PeriodStart:     "2026-10-01",
+		PeriodEnd:       "2026-10-07",
+		Audience:        wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+		SummaryMarkdown: markdown,
+		SummaryModel:    "test/model",
+		PromptVersion:   "v1",
+		SummarySource:   wdidv1.CheckInSummarySource_CHECK_IN_SUMMARY_SOURCE_MANUAL,
+	}, token)); err != nil {
+		t.Fatalf("save summary: %v", err)
+	}
+
+	edited, err := client.UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+		Id:                id,
+		PeriodStart:       "2026-10-01",
+		PeriodEnd:         "2026-10-07",
+		Audience:          wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+		SummaryMarkdown:   markdown,
+		SummaryModel:      "test/model",
+		PromptVersion:     "v1",
+		SummarySource:     wdidv1.CheckInSummarySource_CHECK_IN_SUMMARY_SOURCE_MANUAL,
+		AdditionalContext: "Explain the invoicing win here.",
+	}, token))
+	if err != nil {
+		t.Fatalf("context-only edited update: %v", err)
+	}
+	checkIn := edited.Msg.GetCheckIn()
+	if checkIn.GetState() != wdidv1.CheckInState_CHECK_IN_STATE_EDITED {
+		t.Fatalf("state = %v, want the edited state kept", checkIn.GetState())
+	}
+	if checkIn.GetSummaryMarkdown() != markdown ||
+		checkIn.GetSummaryModel() != "test/model" ||
+		checkIn.GetPromptVersion() != "v1" {
+		t.Fatalf("check-in after context save = %+v, want summary metadata untouched", checkIn)
+	}
+	if checkIn.GetAdditionalContext() != "Explain the invoicing win here." {
+		t.Fatalf("context = %q", checkIn.GetAdditionalContext())
+	}
+
+	if _, err := client.FinalizeCheckIn(context.Background(), withBearer(&wdidv1.FinalizeCheckInRequest{Id: id}, token)); err != nil {
+		t.Fatalf("finalize check-in: %v", err)
+	}
+	_, err = client.UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+		Id:                id,
+		PeriodStart:       "2026-10-01",
+		PeriodEnd:         "2026-10-07",
+		Audience:          wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+		SummaryMarkdown:   markdown,
+		SummaryModel:      "test/model",
+		PromptVersion:     "v1",
+		AdditionalContext: "late edit",
+	}, token))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("final context update code = %v, want failed precondition", connect.CodeOf(err))
+	}
+}
+
+// TestCheckInServiceBuildCheckInPromptUsesTheCallersTemplate proves the
+// copy-prompt path resolves the caller's per-account override and reports the
+// custom version label.
+func TestCheckInServiceBuildCheckInPromptUsesTheCallersTemplate(t *testing.T) {
+	server, database := newDomainServer(t)
+	adminToken := bootstrapToken(t, server)
+	memberToken := registeredUserToken(t, server, database, "prompt-copy@example.com")
+	checkIns := checkInClient(server)
+
+	createWithSummary := func(token string) string {
+		t.Helper()
+		created, err := checkIns.CreateCheckIn(context.Background(), withBearer(&wdidv1.CreateCheckInRequest{
+			Kind:        wdidv1.CheckInKind_CHECK_IN_KIND_MANAGER,
+			PeriodStart: "2026-10-01",
+			PeriodEnd:   "2026-10-07",
+			Audience:    wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+		}, token))
+		if err != nil {
+			t.Fatalf("create check-in: %v", err)
+		}
+		id := created.Msg.GetCheckIn().GetId()
+		if _, err := checkIns.UpdateCheckIn(context.Background(), withBearer(&wdidv1.UpdateCheckInRequest{
+			Id:              id,
+			PeriodStart:     "2026-10-01",
+			PeriodEnd:       "2026-10-07",
+			Audience:        wdidv1.CheckInAudience_CHECK_IN_AUDIENCE_ONE_ON_ONE,
+			SummaryMarkdown: "## Highlights\n- Shipped",
+			SummarySource:   wdidv1.CheckInSummarySource_CHECK_IN_SUMMARY_SOURCE_MANUAL,
+		}, token)); err != nil {
+			t.Fatalf("save summary: %v", err)
+		}
+		return id
+	}
+
+	adminID := createWithSummary(adminToken)
+	memberID := createWithSummary(memberToken)
+
+	variant := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE
+	if _, err := settingsClient(server).UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    "Write the administrator's blunt 1:1 brief.",
+	}, adminToken)); err != nil {
+		t.Fatalf("update prompt template: %v", err)
+	}
+
+	adminPrompt, err := checkIns.BuildCheckInPrompt(context.Background(), withBearer(&wdidv1.BuildCheckInPromptRequest{Id: adminID}, adminToken))
+	if err != nil {
+		t.Fatalf("build admin prompt: %v", err)
+	}
+	if !strings.Contains(adminPrompt.Msg.GetPrompt(), "administrator's blunt") ||
+		!strings.HasSuffix(adminPrompt.Msg.GetPrompt(), "## Highlights\n- Shipped") {
+		t.Fatalf("admin prompt = %q, want the custom body followed by the summary", adminPrompt.Msg.GetPrompt())
+	}
+	if adminPrompt.Msg.GetPromptVersion() != domain.PromptVersionCustom {
+		t.Fatalf("admin prompt version = %q, want custom", adminPrompt.Msg.GetPromptVersion())
+	}
+
+	memberPrompt, err := checkIns.BuildCheckInPrompt(context.Background(), withBearer(&wdidv1.BuildCheckInPromptRequest{Id: memberID}, memberToken))
+	if err != nil {
+		t.Fatalf("build member prompt: %v", err)
+	}
+	if strings.Contains(memberPrompt.Msg.GetPrompt(), "administrator's blunt") ||
+		!strings.Contains(memberPrompt.Msg.GetPrompt(), "1:1") {
+		t.Fatalf("member prompt = %q, want the built-in body", memberPrompt.Msg.GetPrompt())
+	}
+	if memberPrompt.Msg.GetPromptVersion() != domain.PromptVersion {
+		t.Fatalf("member prompt version = %q, want %q", memberPrompt.Msg.GetPromptVersion(), domain.PromptVersion)
+	}
+}

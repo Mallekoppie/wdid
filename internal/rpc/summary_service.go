@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -27,6 +28,12 @@ type SummaryService struct {
 	auth     *auth.Service
 	now      func() time.Time
 	provider ai.Provider
+
+	// generationMu guards generating, which holds one slot per account and
+	// check-in while a generate, refine or revert is in flight. A second writer
+	// for the same check-in is rejected instead of racing the first.
+	generationMu sync.Mutex
+	generating   map[string]struct{}
 }
 
 // SummaryServiceOption adjusts the service, which lets tests control the clock
@@ -55,10 +62,11 @@ func WithSummaryProvider(provider ai.Provider) SummaryServiceOption {
 // NewSummaryService builds the SummaryService implementation.
 func NewSummaryService(database *store.Store, authService *auth.Service, options ...SummaryServiceOption) *SummaryService {
 	service := &SummaryService{
-		store:    database,
-		auth:     authService,
-		now:      time.Now,
-		provider: ai.NewAnthropicProvider(nil),
+		store:      database,
+		auth:       authService,
+		now:        time.Now,
+		provider:   ai.NewAnthropicProvider(nil),
+		generating: make(map[string]struct{}),
 	}
 	for _, option := range options {
 		option(service)
@@ -135,9 +143,10 @@ func (s *SummaryService) BuildExport(ctx context.Context, request *connect.Reque
 	}), nil
 }
 
-// BuildPrompt returns the versioned instruction followed by the same
-// summary.md the bundle carries. The template text is the one owned by the
-// check-in prompt package, so this RPC never duplicates prompt copy.
+// BuildPrompt returns the caller's resolved instruction followed by the same
+// summary.md the bundle carries. A per-user override is used when present; the
+// server always appends the locked rules, so this RPC never duplicates prompt
+// copy.
 func (s *SummaryService) BuildPrompt(ctx context.Context, request *connect.Request[wdidv1.BuildPromptRequest]) (*connect.Response[wdidv1.BuildPromptResponse], error) {
 	userID, err := userIDFromContext(ctx, s.auth)
 	if err != nil {
@@ -175,19 +184,23 @@ func (s *SummaryService) BuildPrompt(ctx context.Context, request *connect.Reque
 			Message: "must be a known prompt variant",
 		})
 	}
+	variant := domain.PromptVariantFor(promptCheckIn)
+	instruction := domain.ResolveInstruction(variant, input.Settings)
 	promptCheckIn.SummaryMarkdown = domain.BuildExportSummary(input)
 
 	return connect.NewResponse(&wdidv1.BuildPromptResponse{
-		Prompt:        domain.BuildPrompt(promptCheckIn),
-		PromptVersion: domain.PromptVersion,
-		Variant:       toProtoPromptVariant(domain.PromptVariantFor(promptCheckIn)),
+		Prompt:        composePrompt(instruction, promptCheckIn.SummaryMarkdown),
+		PromptVersion: domain.ResolvePromptVersion(variant, input.Settings),
+		Variant:       toProtoPromptVariant(variant),
 	}), nil
 }
 
-// GetPromptTemplate returns the versioned instruction alone. Settings → AI
-// previews this text, so the client never duplicates prompt copy.
+// GetPromptTemplate returns the caller's resolved instruction alone. It is kept
+// as a compatibility alias for the Settings prompt preview and honours
+// per-user overrides.
 func (s *SummaryService) GetPromptTemplate(ctx context.Context, request *connect.Request[wdidv1.GetPromptTemplateRequest]) (*connect.Response[wdidv1.GetPromptTemplateResponse], error) {
-	if _, err := userIDFromContext(ctx, s.auth); err != nil {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
 		return nil, toConnectError(err)
 	}
 
@@ -195,14 +208,18 @@ func (s *SummaryService) GetPromptTemplate(ctx context.Context, request *connect
 	if err != nil {
 		return nil, toConnectError(err)
 	}
-	template, ok := domain.PromptTemplate(variant)
-	if !ok {
+	settings, err := s.store.EnsureSupportPeople(userID)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	template := domain.ResolveInstruction(variant, settings)
+	if template == "" {
 		return nil, connect.NewError(connect.CodeInternal, errors.New("the prompt template is missing"))
 	}
 
 	return connect.NewResponse(&wdidv1.GetPromptTemplateResponse{
 		Template:      template,
-		PromptVersion: domain.PromptVersion,
+		PromptVersion: domain.ResolvePromptVersion(variant, settings),
 		Variant:       toProtoPromptVariant(variant),
 	}), nil
 }
@@ -217,6 +234,11 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.R
 	if err != nil {
 		return toConnectError(err)
 	}
+	release, err := s.acquireGeneration(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	checkIn, err := s.store.CheckIn(userID, request.Msg.GetCheckInId())
 	if err != nil {
@@ -247,17 +269,24 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.R
 	}
 	baseURL, modelName := aiSettingsDefaults(input.Settings)
 
-	// Only the selected period is sent. The prompt text comes from the same
-	// versioned template the copy-prompt path uses.
-	promptCheckIn := checkIn
-	promptCheckIn.SummaryMarkdown = domain.BuildExportSummary(input)
+	// Only the selected period is sent. The instruction is the caller's
+	// resolved body, so a per-user override reaches generation unchanged.
+	variant := domain.PromptVariantFor(checkIn)
+	promptVersion := domain.ResolvePromptVersion(variant, input.Settings)
+	transcript := []domain.PromptMessage{{
+		Role:    domain.PromptRoleUser,
+		Content: composePrompt(domain.ResolveInstruction(variant, input.Settings), domain.BuildExportSummary(input)),
+	}}
+	// The snapshot is rendered before the call so it records exactly what the
+	// model sees, including redactions.
+	snapshot := domain.RenderPromptSnapshot(transcript)
 
 	var generated strings.Builder
 	response, err := s.provider.Stream(ctx, ai.Request{
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Model:   modelName,
-		Prompt:  domain.BuildPrompt(promptCheckIn),
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
+		Model:    modelName,
+		Messages: providerMessages(transcript),
 	}, func(delta string) error {
 		generated.WriteString(delta)
 		return stream.Send(&wdidv1.GenerateSummaryDelta{Text: delta})
@@ -277,24 +306,218 @@ func (s *SummaryService) GenerateSummary(ctx context.Context, request *connect.R
 		)
 	}
 
-	model := strings.TrimSpace(response.Model)
-	if model == "" {
-		model = modelName
-	}
-	checkIn.SummaryMarkdown = summary
-	checkIn.SummaryModel = model
-	checkIn.PromptVersion = domain.PromptVersion
-	checkIn.State = domain.CheckInStateGenerated
-	checkIn.UpdatedAt = s.now().UTC()
-	if err := s.store.SaveCheckIn(checkIn); err != nil {
+	model := responseModelName(response, modelName)
+	if err := s.persistGeneratedSummary(&checkIn, summary, model, promptVersion, snapshot); err != nil {
 		return toConnectError(err)
 	}
 
 	return stream.Send(&wdidv1.GenerateSummaryDelta{
 		CheckIn:       toProtoCheckIn(checkIn),
 		Model:         model,
-		PromptVersion: domain.PromptVersion,
+		PromptVersion: promptVersion,
 	})
+}
+
+// RefineSummary regenerates a check-in's stored summary from its current text
+// and the user's feedback. The summary is sent to the provider exactly as
+// stored, so a hand-edited summary is refined without an overwrite
+// confirmation. A failure or empty response leaves the stored summary, the
+// revert slot and the prompt snapshot untouched.
+func (s *SummaryService) RefineSummary(ctx context.Context, request *connect.Request[wdidv1.RefineSummaryRequest], stream *connect.ServerStream[wdidv1.GenerateSummaryDelta]) error {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return toConnectError(err)
+	}
+	release, err := s.acquireGeneration(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	checkIn, err := s.store.CheckIn(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return toConnectError(err)
+	}
+	if checkIn.Kind == domain.CheckInKindManager && checkIn.State == domain.CheckInStateFinal {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("a final check-in is read-only"))
+	}
+	if strings.TrimSpace(checkIn.SummaryMarkdown) == "" {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("there is no summary to refine"))
+	}
+	feedback := strings.TrimSpace(request.Msg.GetFeedback())
+	if feedback == "" {
+		return toConnectError(domain.ValidationError{Field: "feedback", Message: "is required"})
+	}
+
+	input, err := s.exportInput(userID, checkIn.PeriodStart, checkIn.PeriodEnd, &checkIn)
+	if err != nil {
+		return toConnectError(err)
+	}
+	apiKey := strings.TrimSpace(input.Settings.AIAPIKey)
+	if apiKey == "" {
+		return connect.NewError(
+			connect.CodeFailedPrecondition,
+			errors.New("no AI API key is configured; add your key in Settings → AI"),
+		)
+	}
+	if input.Settings.AIRedact {
+		input = domain.RedactExportInput(input)
+	}
+	baseURL, modelName := aiSettingsDefaults(input.Settings)
+
+	variant := domain.PromptVariantFor(checkIn)
+	promptVersion := domain.ResolvePromptVersion(variant, input.Settings)
+	transcript := []domain.PromptMessage{
+		{Role: domain.PromptRoleUser, Content: composePrompt(domain.ResolveInstruction(variant, input.Settings), domain.BuildExportSummary(input))},
+		// A hand-edited summary is sent exactly as stored.
+		{Role: domain.PromptRoleAssistant, Content: checkIn.SummaryMarkdown},
+		{Role: domain.PromptRoleUser, Content: feedback},
+	}
+	snapshot := domain.RenderPromptSnapshot(transcript)
+
+	var generated strings.Builder
+	response, err := s.provider.Stream(ctx, ai.Request{
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
+		Model:    modelName,
+		Messages: providerMessages(transcript),
+	}, func(delta string) error {
+		generated.WriteString(delta)
+		return stream.Send(&wdidv1.GenerateSummaryDelta{Text: delta})
+	})
+	if err != nil {
+		return connect.NewError(
+			connect.CodeUnavailable,
+			fmt.Errorf("AI refinement failed; the existing summary is unchanged: %w", err),
+		)
+	}
+
+	summary := strings.TrimSpace(generated.String())
+	if summary == "" {
+		return connect.NewError(
+			connect.CodeUnavailable,
+			errors.New("the AI provider returned no text; the existing summary is unchanged"),
+		)
+	}
+
+	model := responseModelName(response, modelName)
+	if err := s.persistGeneratedSummary(&checkIn, summary, model, promptVersion, snapshot); err != nil {
+		return toConnectError(err)
+	}
+
+	return stream.Send(&wdidv1.GenerateSummaryDelta{
+		CheckIn:       toProtoCheckIn(checkIn),
+		Model:         model,
+		PromptVersion: promptVersion,
+	})
+}
+
+// RevertSummary restores the summary replaced by the last generate or refine
+// and clears the slot, so a summary can be reverted once. The prompt snapshot
+// and model name stay attached to the summary they produced.
+func (s *SummaryService) RevertSummary(ctx context.Context, request *connect.Request[wdidv1.RevertSummaryRequest]) (*connect.Response[wdidv1.RevertSummaryResponse], error) {
+	userID, err := userIDFromContext(ctx, s.auth)
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	release, err := s.acquireGeneration(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	checkIn, err := s.store.CheckIn(userID, request.Msg.GetCheckInId())
+	if err != nil {
+		return nil, toConnectError(err)
+	}
+	if checkIn.Kind == domain.CheckInKindManager && checkIn.State == domain.CheckInStateFinal {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("a final check-in is read-only"))
+	}
+	previous := strings.TrimSpace(checkIn.PreviousSummaryMarkdown)
+	if previous == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("there is no previous summary to revert to"))
+	}
+
+	checkIn.SummaryMarkdown = checkIn.PreviousSummaryMarkdown
+	checkIn.PreviousSummaryMarkdown = ""
+	checkIn.UpdatedAt = s.now().UTC()
+	if err := s.store.SaveCheckIn(checkIn); err != nil {
+		return nil, toConnectError(err)
+	}
+
+	return connect.NewResponse(&wdidv1.RevertSummaryResponse{CheckIn: toProtoCheckIn(checkIn)}), nil
+}
+
+// acquireGeneration reserves the one-writer slot for an account's check-in. It
+// returns a release function to defer, or a failed-precondition error when a
+// generate, refine or revert is already in flight for the same check-in.
+func (s *SummaryService) acquireGeneration(userID, checkInID string) (func(), error) {
+	key := userID + "\x00" + checkInID
+
+	s.generationMu.Lock()
+	defer s.generationMu.Unlock()
+	if s.generating == nil {
+		s.generating = make(map[string]struct{})
+	}
+	if _, busy := s.generating[key]; busy {
+		return nil, connect.NewError(
+			connect.CodeFailedPrecondition,
+			errors.New("a generation is already in progress for this check-in"),
+		)
+	}
+	s.generating[key] = struct{}{}
+
+	return func() {
+		s.generationMu.Lock()
+		delete(s.generating, key)
+		s.generationMu.Unlock()
+	}, nil
+}
+
+// persistGeneratedSummary applies a successful provider result: the replaced
+// summary moves into the one-step revert slot when it was non-empty, and the
+// exact transcript, model and prompt version are recorded with the new text.
+func (s *SummaryService) persistGeneratedSummary(checkIn *domain.CheckIn, summary, model, promptVersion, snapshot string) error {
+	if strings.TrimSpace(checkIn.SummaryMarkdown) != "" {
+		checkIn.PreviousSummaryMarkdown = checkIn.SummaryMarkdown
+	}
+	checkIn.SummaryMarkdown = summary
+	checkIn.SummaryModel = model
+	checkIn.PromptVersion = promptVersion
+	checkIn.GenerationPrompt = snapshot
+	checkIn.State = domain.CheckInStateGenerated
+	checkIn.UpdatedAt = s.now().UTC()
+	return s.store.SaveCheckIn(*checkIn)
+}
+
+// composePrompt joins an instruction and its supplied data the same way the
+// copy-prompt path does: one blank line between them, or the instruction alone
+// when there is no data.
+func composePrompt(instruction, data string) string {
+	data = strings.TrimSpace(data)
+	if data == "" {
+		return instruction
+	}
+	return instruction + "\n\n" + data
+}
+
+// providerMessages converts the exact transcript into the provider seam's
+// message shape. The same transcript is rendered for the stored snapshot.
+func providerMessages(messages []domain.PromptMessage) []ai.Message {
+	result := make([]ai.Message, 0, len(messages))
+	for _, message := range messages {
+		result = append(result, ai.Message{Role: message.Role, Content: message.Content})
+	}
+	return result
+}
+
+// responseModelName prefers the provider-reported model but keeps generation
+// usable when a compatible endpoint omits it.
+func responseModelName(response ai.Response, fallback string) string {
+	if model := strings.TrimSpace(response.Model); model != "" {
+		return model
+	}
+	return fallback
 }
 
 // aiSettingsDefaults keeps generation usable when an account never opened

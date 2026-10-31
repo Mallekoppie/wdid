@@ -367,3 +367,249 @@ func TestUpdateSettingsDoesNotRevalidateUnchangedBackupDirectory(t *testing.T) {
 		t.Fatalf("backup directory = %q, want the unchanged %q", got, dir)
 	}
 }
+
+// --- prompt templates -------------------------------------------------------
+
+func findPromptTemplate(t *testing.T, templates []*wdidv1.PromptTemplate, variant wdidv1.CheckInPromptVariant) *wdidv1.PromptTemplate {
+	t.Helper()
+	for _, template := range templates {
+		if template.GetVariant() == variant {
+			return template
+		}
+	}
+	t.Fatalf("no prompt template for variant %v in %+v", variant, templates)
+	return nil
+}
+
+// TestSettingsPromptTemplatesArePerUserAndResolve proves the three variants are
+// editable per account, the built-in body is the fallback, and one account can
+// never see another's override.
+func TestSettingsPromptTemplatesArePerUserAndResolve(t *testing.T) {
+	server, database := newDomainServer(t)
+	adminToken := bootstrapToken(t, server)
+	memberToken := registeredUserToken(t, server, database, "prompt-member@example.com")
+	client := settingsClient(server)
+
+	initial, err := client.ListPromptTemplates(context.Background(), withBearer(&wdidv1.ListPromptTemplatesRequest{}, adminToken))
+	if err != nil {
+		t.Fatalf("list prompt templates: %v", err)
+	}
+	if len(initial.Msg.GetTemplates()) != 3 {
+		t.Fatalf("templates = %d, want one per variant", len(initial.Msg.GetTemplates()))
+	}
+	for _, template := range initial.Msg.GetTemplates() {
+		if template.GetCustomised() {
+			t.Fatalf("new account template %v is customised", template.GetVariant())
+		}
+		if template.GetBody() == "" {
+			t.Fatalf("template %v has no built-in body", template.GetVariant())
+		}
+		if template.GetRules() != domain.PromptRules {
+			t.Fatalf("template %v rules = %q, want the locked rules", template.GetVariant(), template.GetRules())
+		}
+	}
+
+	oneOnOne := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE
+	updated, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: oneOnOne,
+		Body:    "  Write a blunt summary for the admin.  ",
+	}, adminToken))
+	if err != nil {
+		t.Fatalf("update prompt template: %v", err)
+	}
+	if !updated.Msg.GetTemplate().GetCustomised() ||
+		updated.Msg.GetTemplate().GetBody() != "Write a blunt summary for the admin." {
+		t.Fatalf("updated template = %+v, want the trimmed custom body", updated.Msg.GetTemplate())
+	}
+	if updated.Msg.GetTemplate().GetRules() != domain.PromptRules {
+		t.Fatalf("updated rules = %q, want the locked rules", updated.Msg.GetTemplate().GetRules())
+	}
+
+	adminTemplates, err := client.ListPromptTemplates(context.Background(), withBearer(&wdidv1.ListPromptTemplatesRequest{}, adminToken))
+	if err != nil {
+		t.Fatalf("list admin templates: %v", err)
+	}
+	if !findPromptTemplate(t, adminTemplates.Msg.GetTemplates(), oneOnOne).GetCustomised() {
+		t.Fatal("the administrator's override is not reported")
+	}
+
+	// The member shares the variant but not the account's override.
+	memberTemplates, err := client.ListPromptTemplates(context.Background(), withBearer(&wdidv1.ListPromptTemplatesRequest{}, memberToken))
+	if err != nil {
+		t.Fatalf("list member templates: %v", err)
+	}
+	memberOneOnOne := findPromptTemplate(t, memberTemplates.Msg.GetTemplates(), oneOnOne)
+	if memberOneOnOne.GetCustomised() || strings.Contains(memberOneOnOne.GetBody(), "admin") {
+		t.Fatalf("member template = %+v, want the built-in body only", memberOneOnOne)
+	}
+
+	personal := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW
+	if _, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: personal,
+		Body:    "Member-only reflection.",
+	}, memberToken)); err != nil {
+		t.Fatalf("update member template: %v", err)
+	}
+
+	adminAgain, err := client.ListPromptTemplates(context.Background(), withBearer(&wdidv1.ListPromptTemplatesRequest{}, adminToken))
+	if err != nil {
+		t.Fatalf("list admin templates again: %v", err)
+	}
+	if findPromptTemplate(t, adminAgain.Msg.GetTemplates(), personal).GetCustomised() {
+		t.Fatal("the member's override leaked into the administrator's templates")
+	}
+
+	// The compatibility SummaryService alias resolves the caller's own body.
+	adminResolved, err := summaryClient(server).GetPromptTemplate(context.Background(), withBearer(&wdidv1.GetPromptTemplateRequest{
+		Variant: oneOnOne,
+	}, adminToken))
+	if err != nil {
+		t.Fatalf("get prompt template alias: %v", err)
+	}
+	if !strings.Contains(adminResolved.Msg.GetTemplate(), "Write a blunt summary for the admin.") ||
+		!strings.HasSuffix(adminResolved.Msg.GetTemplate(), domain.PromptRules) {
+		t.Fatalf("resolved admin template = %q", adminResolved.Msg.GetTemplate())
+	}
+	if adminResolved.Msg.GetPromptVersion() != domain.PromptVersionCustom {
+		t.Fatalf("admin prompt version = %q, want %q", adminResolved.Msg.GetPromptVersion(), domain.PromptVersionCustom)
+	}
+
+	memberResolved, err := summaryClient(server).GetPromptTemplate(context.Background(), withBearer(&wdidv1.GetPromptTemplateRequest{
+		Variant: personal,
+	}, memberToken))
+	if err != nil {
+		t.Fatalf("get member alias template: %v", err)
+	}
+	if !strings.Contains(memberResolved.Msg.GetTemplate(), "Member-only reflection.") ||
+		memberResolved.Msg.GetPromptVersion() != domain.PromptVersionCustom {
+		t.Fatalf("member resolved template = %q/%q", memberResolved.Msg.GetTemplate(), memberResolved.Msg.GetPromptVersion())
+	}
+
+	// Reset restores the built-in body and drops the custom label.
+	reset, err := client.ResetPromptTemplate(context.Background(), withBearer(&wdidv1.ResetPromptTemplateRequest{
+		Variant: oneOnOne,
+	}, adminToken))
+	if err != nil {
+		t.Fatalf("reset prompt template: %v", err)
+	}
+	if reset.Msg.GetTemplate().GetCustomised() || strings.Contains(reset.Msg.GetTemplate().GetBody(), "blunt summary") {
+		t.Fatalf("reset template = %+v, want the built-in body", reset.Msg.GetTemplate())
+	}
+	adminResolved, err = summaryClient(server).GetPromptTemplate(context.Background(), withBearer(&wdidv1.GetPromptTemplateRequest{
+		Variant: oneOnOne,
+	}, adminToken))
+	if err != nil {
+		t.Fatalf("get reset template: %v", err)
+	}
+	if adminResolved.Msg.GetPromptVersion() != domain.PromptVersion {
+		t.Fatalf("prompt version after reset = %q, want %q", adminResolved.Msg.GetPromptVersion(), domain.PromptVersion)
+	}
+}
+
+// TestSettingsUpdatePromptTemplateRejectsBlankAndOversizeBodies proves a blank
+// save is a mistake rather than "use the built-in" (that is Reset), and an
+// over-long body is refused.
+func TestSettingsUpdatePromptTemplateRejectsBlankAndOversizeBodies(t *testing.T) {
+	server, _ := newDomainServer(t)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+	variant := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_ONE_ON_ONE
+
+	for name, body := range map[string]string{"empty": "", "spaces": "   ", "tabs": "\t\r\n "} {
+		t.Run(name, func(t *testing.T) {
+			_, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+				Variant: variant,
+				Body:    body,
+			}, token))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+			}
+			if fields := fieldViolations(t, err); len(fields) != 1 || fields[0] != "body" {
+				t.Fatalf("field violations = %v, want body", fields)
+			}
+			if !strings.Contains(err.Error(), "Reset") {
+				t.Fatalf("error = %q, want it to point at Reset", err)
+			}
+		})
+	}
+
+	_, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    strings.Repeat("x", 20001),
+	}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("oversize code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if fields := fieldViolations(t, err); len(fields) != 1 || fields[0] != "body" {
+		t.Fatalf("oversize field violations = %v, want body", fields)
+	}
+
+	// A body at the cap is accepted.
+	if _, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    strings.Repeat("x", 20000),
+	}, token)); err != nil {
+		t.Fatalf("body at the cap: %v", err)
+	}
+
+	_, err = client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: wdidv1.CheckInPromptVariant(99),
+		Body:    "anything",
+	}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("unknown variant code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if fields := fieldViolations(t, err); len(fields) != 1 || fields[0] != "variant" {
+		t.Fatalf("unknown variant fields = %v, want variant", fields)
+	}
+
+	if _, err := client.ListPromptTemplates(context.Background(), connect.NewRequest(&wdidv1.ListPromptTemplatesRequest{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("list code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+	if _, err := client.UpdatePromptTemplate(context.Background(), connect.NewRequest(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    "anything",
+	})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("update code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+	if _, err := client.ResetPromptTemplate(context.Background(), connect.NewRequest(&wdidv1.ResetPromptTemplateRequest{
+		Variant: variant,
+	})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("reset code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+}
+
+// TestSettingsPromptTemplatesSurviveUnrelatedUpdates proves an ordinary
+// settings save (which cannot carry prompt templates) never wipes the stored
+// overrides.
+func TestSettingsPromptTemplatesSurviveUnrelatedUpdates(t *testing.T) {
+	server, _ := newDomainServer(t)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+	variant := wdidv1.CheckInPromptVariant_CHECK_IN_PROMPT_VARIANT_MANAGER_PERFORMANCE_REVIEW
+
+	if _, err := client.UpdatePromptTemplate(context.Background(), withBearer(&wdidv1.UpdatePromptTemplateRequest{
+		Variant: variant,
+		Body:    "Keep the evidence tight.",
+	}, token)); err != nil {
+		t.Fatalf("update prompt template: %v", err)
+	}
+
+	update := backupTestSettings()
+	update.BackupInterval = minutes(360)
+	update.BackupRetention = 30
+	if _, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{
+		Settings: update,
+	}, token)); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	templates, err := client.ListPromptTemplates(context.Background(), withBearer(&wdidv1.ListPromptTemplatesRequest{}, token))
+	if err != nil {
+		t.Fatalf("list templates after settings save: %v", err)
+	}
+	template := findPromptTemplate(t, templates.Msg.GetTemplates(), variant)
+	if !template.GetCustomised() || template.GetBody() != "Keep the evidence tight." {
+		t.Fatalf("template after an unrelated save = %+v, want the override preserved", template)
+	}
+}

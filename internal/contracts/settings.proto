@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package wdid.v1;
 
+import "check_ins.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -59,6 +60,46 @@ message Settings {
   // Whether the account has an AI provider key stored. The key itself is
   // write-only: it is never returned by any RPC or export.
   bool has_ai_api_key = 18;
+}
+
+// PromptTemplate is one check-in instruction variant as the caller currently
+// sees it. Body is the current instruction body (the caller's override when
+// customised, otherwise the built-in body) without the locked rules. Rules are
+// server-owned, identical for every variant, always appended to the resolved
+// instruction, and can never be edited, omitted or reordered.
+message PromptTemplate {
+  CheckInPromptVariant variant = 1;
+  string body = 2;
+  bool customised = 3;
+  string rules = 4;
+}
+
+message ListPromptTemplatesRequest {}
+
+message ListPromptTemplatesResponse {
+  // One entry per known variant, in variant order.
+  repeated PromptTemplate templates = 1;
+}
+
+// UpdatePromptTemplate replaces the caller's instruction body for one variant.
+// A blank body is rejected: use ResetPromptTemplate to restore the built-in.
+message UpdatePromptTemplateRequest {
+  CheckInPromptVariant variant = 1;
+  string body = 2;
+}
+
+message UpdatePromptTemplateResponse {
+  PromptTemplate template = 1;
+}
+
+// ResetPromptTemplate removes the caller's override for one variant, so the
+// built-in body applies again.
+message ResetPromptTemplateRequest {
+  CheckInPromptVariant variant = 1;
+}
+
+message ResetPromptTemplateResponse {
+  PromptTemplate template = 1;
 }
 
 // About describes the running build and database schema.
@@ -174,6 +215,11 @@ service SettingsService {
   // response only reports has_ai_api_key.
   rpc SetAIApiKey(SetAIApiKeyRequest) returns (SetAIApiKeyResponse);
   rpc ClearAIApiKey(ClearAIApiKeyRequest) returns (ClearAIApiKeyResponse);
+  // Prompt templates are per-account instruction bodies. The server always
+  // appends the locked rules, so a custom body can never remove them.
+  rpc ListPromptTemplates(ListPromptTemplatesRequest) returns (ListPromptTemplatesResponse);
+  rpc UpdatePromptTemplate(UpdatePromptTemplateRequest) returns (UpdatePromptTemplateResponse);
+  rpc ResetPromptTemplate(ResetPromptTemplateRequest) returns (ResetPromptTemplateResponse);
   rpc BackupNow(BackupNowRequest) returns (BackupNowResponse);
   rpc GetBackupStatus(GetBackupStatusRequest) returns (GetBackupStatusResponse);
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);

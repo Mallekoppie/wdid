@@ -48,6 +48,12 @@ const (
 	// SummaryServiceGenerateSummaryProcedure is the fully-qualified name of the SummaryService's
 	// GenerateSummary RPC.
 	SummaryServiceGenerateSummaryProcedure = "/wdid.v1.SummaryService/GenerateSummary"
+	// SummaryServiceRefineSummaryProcedure is the fully-qualified name of the SummaryService's
+	// RefineSummary RPC.
+	SummaryServiceRefineSummaryProcedure = "/wdid.v1.SummaryService/RefineSummary"
+	// SummaryServiceRevertSummaryProcedure is the fully-qualified name of the SummaryService's
+	// RevertSummary RPC.
+	SummaryServiceRevertSummaryProcedure = "/wdid.v1.SummaryService/RevertSummary"
 )
 
 // SummaryServiceClient is a client for the wdid.v1.SummaryService service.
@@ -55,15 +61,22 @@ type SummaryServiceClient interface {
 	GetPeriodReport(context.Context, *connect.Request[v1.GetPeriodReportRequest]) (*connect.Response[v1.GetPeriodReportResponse], error)
 	// Builds the on-demand export bundle. Nothing is written to disk.
 	BuildExport(context.Context, *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error)
-	// The prompt block (versioned instruction followed by summary.md) for the
-	// same period or check-in scope.
+	// The resolved instruction followed by summary.md for the same period or
+	// check-in scope. A custom override is used when the caller has one.
 	BuildPrompt(context.Context, *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error)
-	// The versioned instruction alone, for Settings → AI preview.
+	// The caller's resolved instruction alone. Kept as a compatibility alias for
+	// the Settings prompt preview; it honours per-user overrides.
 	GetPromptTemplate(context.Context, *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error)
 	// Streams provider output into the check-in's editable summary. The stored
-	// summary is replaced only after a complete, successful response, together
-	// with the model name and prompt version.
+	// summary, prompt snapshot, model name and prompt version are replaced only
+	// after a complete, successful response.
 	GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest]) (*connect.ServerStreamForClient[v1.GenerateSummaryDelta], error)
+	// Regenerates the stored summary from its current text and the user's
+	// feedback. A hand-edited summary is replaced without confirmation; a failed
+	// refinement leaves the stored summary and revert slot unchanged.
+	RefineSummary(context.Context, *connect.Request[v1.RefineSummaryRequest]) (*connect.ServerStreamForClient[v1.GenerateSummaryDelta], error)
+	// Restores the summary replaced by the last generate or refine, once.
+	RevertSummary(context.Context, *connect.Request[v1.RevertSummaryRequest]) (*connect.Response[v1.RevertSummaryResponse], error)
 }
 
 // NewSummaryServiceClient constructs a client for the wdid.v1.SummaryService service. By default,
@@ -107,6 +120,18 @@ func NewSummaryServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(summaryServiceMethods.ByName("GenerateSummary")),
 			connect.WithClientOptions(opts...),
 		),
+		refineSummary: connect.NewClient[v1.RefineSummaryRequest, v1.GenerateSummaryDelta](
+			httpClient,
+			baseURL+SummaryServiceRefineSummaryProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("RefineSummary")),
+			connect.WithClientOptions(opts...),
+		),
+		revertSummary: connect.NewClient[v1.RevertSummaryRequest, v1.RevertSummaryResponse](
+			httpClient,
+			baseURL+SummaryServiceRevertSummaryProcedure,
+			connect.WithSchema(summaryServiceMethods.ByName("RevertSummary")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -117,6 +142,8 @@ type summaryServiceClient struct {
 	buildPrompt       *connect.Client[v1.BuildPromptRequest, v1.BuildPromptResponse]
 	getPromptTemplate *connect.Client[v1.GetPromptTemplateRequest, v1.GetPromptTemplateResponse]
 	generateSummary   *connect.Client[v1.GenerateSummaryRequest, v1.GenerateSummaryDelta]
+	refineSummary     *connect.Client[v1.RefineSummaryRequest, v1.GenerateSummaryDelta]
+	revertSummary     *connect.Client[v1.RevertSummaryRequest, v1.RevertSummaryResponse]
 }
 
 // GetPeriodReport calls wdid.v1.SummaryService.GetPeriodReport.
@@ -144,20 +171,37 @@ func (c *summaryServiceClient) GenerateSummary(ctx context.Context, req *connect
 	return c.generateSummary.CallServerStream(ctx, req)
 }
 
+// RefineSummary calls wdid.v1.SummaryService.RefineSummary.
+func (c *summaryServiceClient) RefineSummary(ctx context.Context, req *connect.Request[v1.RefineSummaryRequest]) (*connect.ServerStreamForClient[v1.GenerateSummaryDelta], error) {
+	return c.refineSummary.CallServerStream(ctx, req)
+}
+
+// RevertSummary calls wdid.v1.SummaryService.RevertSummary.
+func (c *summaryServiceClient) RevertSummary(ctx context.Context, req *connect.Request[v1.RevertSummaryRequest]) (*connect.Response[v1.RevertSummaryResponse], error) {
+	return c.revertSummary.CallUnary(ctx, req)
+}
+
 // SummaryServiceHandler is an implementation of the wdid.v1.SummaryService service.
 type SummaryServiceHandler interface {
 	GetPeriodReport(context.Context, *connect.Request[v1.GetPeriodReportRequest]) (*connect.Response[v1.GetPeriodReportResponse], error)
 	// Builds the on-demand export bundle. Nothing is written to disk.
 	BuildExport(context.Context, *connect.Request[v1.BuildExportRequest]) (*connect.Response[v1.BuildExportResponse], error)
-	// The prompt block (versioned instruction followed by summary.md) for the
-	// same period or check-in scope.
+	// The resolved instruction followed by summary.md for the same period or
+	// check-in scope. A custom override is used when the caller has one.
 	BuildPrompt(context.Context, *connect.Request[v1.BuildPromptRequest]) (*connect.Response[v1.BuildPromptResponse], error)
-	// The versioned instruction alone, for Settings → AI preview.
+	// The caller's resolved instruction alone. Kept as a compatibility alias for
+	// the Settings prompt preview; it honours per-user overrides.
 	GetPromptTemplate(context.Context, *connect.Request[v1.GetPromptTemplateRequest]) (*connect.Response[v1.GetPromptTemplateResponse], error)
 	// Streams provider output into the check-in's editable summary. The stored
-	// summary is replaced only after a complete, successful response, together
-	// with the model name and prompt version.
+	// summary, prompt snapshot, model name and prompt version are replaced only
+	// after a complete, successful response.
 	GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error
+	// Regenerates the stored summary from its current text and the user's
+	// feedback. A hand-edited summary is replaced without confirmation; a failed
+	// refinement leaves the stored summary and revert slot unchanged.
+	RefineSummary(context.Context, *connect.Request[v1.RefineSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error
+	// Restores the summary replaced by the last generate or refine, once.
+	RevertSummary(context.Context, *connect.Request[v1.RevertSummaryRequest]) (*connect.Response[v1.RevertSummaryResponse], error)
 }
 
 // NewSummaryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -197,6 +241,18 @@ func NewSummaryServiceHandler(svc SummaryServiceHandler, opts ...connect.Handler
 		connect.WithSchema(summaryServiceMethods.ByName("GenerateSummary")),
 		connect.WithHandlerOptions(opts...),
 	)
+	summaryServiceRefineSummaryHandler := connect.NewServerStreamHandler(
+		SummaryServiceRefineSummaryProcedure,
+		svc.RefineSummary,
+		connect.WithSchema(summaryServiceMethods.ByName("RefineSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
+	summaryServiceRevertSummaryHandler := connect.NewUnaryHandler(
+		SummaryServiceRevertSummaryProcedure,
+		svc.RevertSummary,
+		connect.WithSchema(summaryServiceMethods.ByName("RevertSummary")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/wdid.v1.SummaryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SummaryServiceGetPeriodReportProcedure:
@@ -209,6 +265,10 @@ func NewSummaryServiceHandler(svc SummaryServiceHandler, opts ...connect.Handler
 			summaryServiceGetPromptTemplateHandler.ServeHTTP(w, r)
 		case SummaryServiceGenerateSummaryProcedure:
 			summaryServiceGenerateSummaryHandler.ServeHTTP(w, r)
+		case SummaryServiceRefineSummaryProcedure:
+			summaryServiceRefineSummaryHandler.ServeHTTP(w, r)
+		case SummaryServiceRevertSummaryProcedure:
+			summaryServiceRevertSummaryHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -236,4 +296,12 @@ func (UnimplementedSummaryServiceHandler) GetPromptTemplate(context.Context, *co
 
 func (UnimplementedSummaryServiceHandler) GenerateSummary(context.Context, *connect.Request[v1.GenerateSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.GenerateSummary is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) RefineSummary(context.Context, *connect.Request[v1.RefineSummaryRequest], *connect.ServerStream[v1.GenerateSummaryDelta]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.RefineSummary is not implemented"))
+}
+
+func (UnimplementedSummaryServiceHandler) RevertSummary(context.Context, *connect.Request[v1.RevertSummaryRequest]) (*connect.Response[v1.RevertSummaryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("wdid.v1.SummaryService.RevertSummary is not implemented"))
 }

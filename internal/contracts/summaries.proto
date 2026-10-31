@@ -140,19 +140,20 @@ message BuildExportResponse {
   repeated ExportFile files = 2;
 }
 
-// BuildPromptRequest returns the ready-to-paste prompt block followed by
+// BuildPromptRequest returns the caller's resolved instruction followed by
 // summary.md for the same scope as BuildExport.
 message BuildPromptRequest {
   string from_date = 1;
   string to_date = 2;
   string check_in_id = 3;
-  // Overrides the template. Unspecified follows the check-in's kind and
-  // audience, or the manager 1:1 default for a bare period.
+  // Overrides the variant. Unspecified follows the check-in's kind and
+  // audience, or the manager 1:1 default for a bare period. A per-user override
+  // for the selected variant is always applied.
   CheckInPromptVariant variant = 4;
 }
 
 message BuildPromptResponse {
-  // The versioned instruction followed by summary.md.
+  // The resolved instruction followed by summary.md.
   string prompt = 1;
   string prompt_version = 2;
   CheckInPromptVariant variant = 3;
@@ -160,14 +161,18 @@ message BuildPromptResponse {
 
 // GetPromptTemplateRequest asks for one versioned instruction. The text lives
 // in a single place in the service; the client only previews it in Settings.
+// GetPromptTemplateRequest asks for the caller's resolved instruction for one
+// variant. The service composes it from the caller's override (or the built-in
+// body) and the locked server rules; the client never composes prompt text.
 message GetPromptTemplateRequest {
   // Unspecified returns the manager 1:1 default.
   CheckInPromptVariant variant = 1;
 }
 
 message GetPromptTemplateResponse {
-  // The instruction alone, without any period data.
+  // The resolved instruction alone, without any period data.
   string template = 1;
+  // v1 for the built-in body, custom when the caller has an override.
   string prompt_version = 2;
   CheckInPromptVariant variant = 3;
 }
@@ -192,6 +197,25 @@ message GenerateSummaryDelta {
   string prompt_version = 4;
 }
 
+// RefineSummaryRequest regenerates a stored summary from its current text and
+// the user's feedback. The stored summary is sent to the provider as-is; there
+// is no overwrite confirmation. The draft prompt snapshot, model and prompt
+// version are replaced together with the summary only on success.
+message RefineSummaryRequest {
+  string check_in_id = 1;
+  string feedback = 2;
+}
+
+// RevertSummaryRequest restores the summary replaced by the last generate or
+// refine. The slot is cleared after one revert.
+message RevertSummaryRequest {
+  string check_in_id = 1;
+}
+
+message RevertSummaryResponse {
+  CheckIn check_in = 1;
+}
+
 // SummaryService owns authoritative period aggregates. Today's week bars,
 // initiative time, support rollups and check-in detail all read the same
 // report; no client composes its own period totals.
@@ -199,13 +223,20 @@ service SummaryService {
   rpc GetPeriodReport(GetPeriodReportRequest) returns (GetPeriodReportResponse);
   // Builds the on-demand export bundle. Nothing is written to disk.
   rpc BuildExport(BuildExportRequest) returns (BuildExportResponse);
-  // The prompt block (versioned instruction followed by summary.md) for the
-  // same period or check-in scope.
+  // The resolved instruction followed by summary.md for the same period or
+  // check-in scope. A custom override is used when the caller has one.
   rpc BuildPrompt(BuildPromptRequest) returns (BuildPromptResponse);
-  // The versioned instruction alone, for Settings → AI preview.
+  // The caller's resolved instruction alone. Kept as a compatibility alias for
+  // the Settings prompt preview; it honours per-user overrides.
   rpc GetPromptTemplate(GetPromptTemplateRequest) returns (GetPromptTemplateResponse);
   // Streams provider output into the check-in's editable summary. The stored
-  // summary is replaced only after a complete, successful response, together
-  // with the model name and prompt version.
+  // summary, prompt snapshot, model name and prompt version are replaced only
+  // after a complete, successful response.
   rpc GenerateSummary(GenerateSummaryRequest) returns (stream GenerateSummaryDelta);
+  // Regenerates the stored summary from its current text and the user's
+  // feedback. A hand-edited summary is replaced without confirmation; a failed
+  // refinement leaves the stored summary and revert slot unchanged.
+  rpc RefineSummary(RefineSummaryRequest) returns (stream GenerateSummaryDelta);
+  // Restores the summary replaced by the last generate or refine, once.
+  rpc RevertSummary(RevertSummaryRequest) returns (RevertSummaryResponse);
 }

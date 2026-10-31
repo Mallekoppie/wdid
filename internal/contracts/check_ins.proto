@@ -95,6 +95,16 @@ message CheckIn {
   CheckInTotals totals = 11;
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+  // The user's own facts the ledger did not record. It is authoritative
+  // supplied data for generation and is deliberately not redacted.
+  string additional_context = 14;
+  // The exact transcript sent to the provider for the current summary. It is
+  // provenance, not input: only GetCheckIn and the write/generation responses
+  // return it; ListCheckIns omits it to keep list responses small.
+  string generation_prompt = 15;
+  // The summary replaced by the last generate or refine, so one revert can
+  // restore it. Manual edits do not touch it. Omitted from ListCheckIns.
+  string previous_summary_markdown = 16;
 }
 
 // ListCheckInsRequest narrows the caller's check-ins. An unspecified kind
@@ -171,6 +181,9 @@ message UpdateCheckInRequest {
   // Confirms replacing a summary the user edited by hand. Required when a
   // generated summary would replace one, and rejected otherwise.
   bool overwrite_manual_edits = 10;
+  // Replaces the user's additional context. A context-only update (the
+  // summary text is unchanged) never flips the check-in to edited.
+  string additional_context = 11;
 }
 
 message UpdateCheckInResponse {
