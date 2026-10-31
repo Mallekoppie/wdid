@@ -118,18 +118,42 @@ class CheckInPrompt {
   final String promptVersion;
 }
 
-/// One versioned prompt instruction, previewed in Settings → AI. The text is
-/// service-owned so the client never duplicates prompt copy.
+/// One check-in prompt instruction. The server resolves the body and appends
+/// the locked rules, so the client only displays and edits the body.
 class PromptTemplate {
   const PromptTemplate({
-    required this.template,
+    String? template,
     required this.variant,
     this.promptVersion = 'v1',
-  });
+    this.body = '',
+    this.customised = false,
+    this.rules = '',
+  }) : template = template ?? body;
 
+  /// The full instruction returned by the legacy SummaryService preview. New
+  /// callers use [body] and [rules] instead.
   final String template;
+
+  /// The current instruction body, without the locked rules.
+  final String body;
+
+  /// True when the account stores an override for this variant.
+  final bool customised;
+
+  /// The server-owned rules, always appended to the resolved instruction.
+  final String rules;
+
   final CheckInPromptVariant variant;
   final String promptVersion;
+
+  /// The instruction exactly as generation will send it: the trimmed body
+  /// followed by the locked rules.
+  String get assembledPrompt {
+    final trimmed = body.trim();
+    if (rules.isEmpty) return trimmed;
+    if (trimmed.isEmpty) return rules;
+    return '$trimmed\n\n$rules';
+  }
 }
 
 /// One streamed chunk of AI generation. Text arrives incrementally; the final

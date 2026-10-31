@@ -234,24 +234,309 @@ void main() {
     expect(settingsApi.settings.hasAiApiKey, isTrue);
   });
 
-  testWidgets('the prompt preview comes from the service template', (
+  const rules = 'Use only the supplied data. Invent nothing.';
+
+  PromptTemplate promptTemplate(
+    CheckInPromptVariant variant,
+    String body, {
+    bool customised = false,
+  }) => PromptTemplate(
+    body: body,
+    customised: customised,
+    rules: rules,
+    variant: variant,
+  );
+
+  FakeSettingsApi promptSettings({
+    String oneOnOne = 'ONE ON ONE BODY',
+    String performance = 'PERFORMANCE BODY',
+    String personal = 'PERSONAL BODY',
+    bool oneOnOneCustomised = false,
+  }) => FakeSettingsApi(
+    promptTemplates: {
+      CheckInPromptVariant.managerOneOnOne: promptTemplate(
+        CheckInPromptVariant.managerOneOnOne,
+        oneOnOne,
+        customised: oneOnOneCustomised,
+      ),
+      CheckInPromptVariant.managerPerformanceReview: promptTemplate(
+        CheckInPromptVariant.managerPerformanceReview,
+        performance,
+      ),
+      CheckInPromptVariant.personalReview: promptTemplate(
+        CheckInPromptVariant.personalReview,
+        personal,
+      ),
+    },
+  );
+
+  Future<void> openPromptEditor(WidgetTester tester) async {
+    await tester.ensureVisible(find.text('Prompt template'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Prompt template'));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> chooseVariant(
+    WidgetTester tester,
+    CheckInPromptVariant variant,
+  ) async {
+    final dropdown = find.byType(DropdownButton<CheckInPromptVariant>);
+    await tester.ensureVisible(dropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(dropdown);
+    await tester.pumpAndSettle();
+    final label = switch (variant) {
+      CheckInPromptVariant.managerOneOnOne => 'Manager 1:1',
+      CheckInPromptVariant.managerPerformanceReview =>
+        'Manager performance review',
+      CheckInPromptVariant.personalReview => 'Personal review',
+    };
+    await tester.tap(find.text(label).last);
+    await tester.pumpAndSettle();
+  }
+
+  String promptBody(WidgetTester tester) => fieldText(tester, 'Prompt body');
+
+  testWidgets('the prompt editor loads every variant with the locked rules', (
     tester,
   ) async {
+    final settings = await pumpSettings(tester, settingsApi: promptSettings());
+    await openPromptEditor(tester);
+
+    expect(settings.listPromptTemplatesCalls, 1);
+    expect(promptBody(tester), 'ONE ON ONE BODY');
+    expect(find.text('Locked rules'), findsOneWidget);
+    expect(find.text(rules), findsOneWidget);
+    expect(find.text('ONE ON ONE BODY\n\n$rules'), findsOneWidget);
+
+    await chooseVariant(
+      tester,
+      CheckInPromptVariant.managerPerformanceReview,
+    );
+    expect(promptBody(tester), 'PERFORMANCE BODY');
+
+    await chooseVariant(tester, CheckInPromptVariant.personalReview);
+    expect(promptBody(tester), 'PERSONAL BODY');
+  });
+
+  testWidgets('saving one variant customises only that variant', (
+    tester,
+  ) async {
+    final settings = await pumpSettings(tester, settingsApi: promptSettings());
+    await openPromptEditor(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      '  MY CUSTOM ONE ON ONE  ',
+    );
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save prompt'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save prompt'));
+    await tester.pumpAndSettle();
+
+    expect(settings.updatePromptTemplateCalls, 1);
+    expect(
+      settings.lastPromptTemplateVariant,
+      CheckInPromptVariant.managerOneOnOne,
+    );
+    expect(settings.lastPromptTemplateBody, 'MY CUSTOM ONE ON ONE');
+    expect(
+      settings.promptTemplates[CheckInPromptVariant.managerPerformanceReview]!
+          .body,
+      'PERFORMANCE BODY',
+    );
+    expect(
+      settings.promptTemplates[CheckInPromptVariant.personalReview]!.body,
+      'PERSONAL BODY',
+    );
+    expect(find.text('Customised'), findsOneWidget);
+    expect(find.text('MY CUSTOM ONE ON ONE\n\n$rules'), findsOneWidget);
+
+    await chooseVariant(
+      tester,
+      CheckInPromptVariant.managerPerformanceReview,
+    );
+    expect(promptBody(tester), 'PERFORMANCE BODY');
+  });
+
+  testWidgets('reset restores the built-in body and clears the badge', (
+    tester,
+  ) async {
+    final settings = await pumpSettings(
+      tester,
+      settingsApi: promptSettings(
+        oneOnOne: 'MY CUSTOM ONE ON ONE',
+        oneOnOneCustomised: true,
+      ),
+    );
+    await openPromptEditor(tester);
+
+    expect(find.text('Customised'), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.widgetWithText(TextButton, 'Reset to default'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Reset to default'));
+    await tester.pumpAndSettle();
+
+    expect(settings.resetPromptTemplateCalls, 1);
+    expect(
+      settings.lastResetPromptTemplateVariant,
+      CheckInPromptVariant.managerOneOnOne,
+    );
+    expect(
+      promptBody(tester),
+      'Built-in manager_one_on_one body.',
+    );
+    expect(find.text('Customised'), findsNothing);
+  });
+
+  testWidgets('a blank body is rejected before the service is called', (
+    tester,
+  ) async {
+    final settings = await pumpSettings(tester, settingsApi: promptSettings());
+    await openPromptEditor(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      '   ',
+    );
+    await tester.ensureVisible(
+      find.widgetWithText(FilledButton, 'Save prompt'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save prompt'));
+    await tester.pumpAndSettle();
+
+    expect(settings.updatePromptTemplateCalls, 0);
+    expect(find.textContaining('Enter a prompt body'), findsOneWidget);
+  });
+
+  testWidgets('a delayed template load cannot overwrite an in-progress edit', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final gate = Completer<void>();
+    final settings = promptSettings()
+      ..promptTemplatesGate = gate;
+
+    await tester.pumpWidget(
+      WdidApp(
+        authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
+        initialRoute: '/settings',
+        settingsApiBuilder: (_) => settings,
+        summaryApiBuilder: (_) => FakeSummaryApi(),
+      ),
+    );
+    await tester.pump();
+
+    // The service has not answered yet, but the editor is already usable. The
+    // loading bar animates forever, so settle with fixed pumps instead.
+    await tester.ensureVisible(find.text('Prompt template'));
+    await tester.pump();
+    await tester.tap(find.text('Prompt template'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      'DRAFT WHILE LOADING',
+    );
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(promptBody(tester), 'DRAFT WHILE LOADING');
+    // The other variants still received the delayed load.
+    await chooseVariant(tester, CheckInPromptVariant.personalReview);
+    expect(promptBody(tester), 'PERSONAL BODY');
+  });
+
+  testWidgets('drafts are isolated per variant', (tester) async {
+    await pumpSettings(tester, settingsApi: promptSettings());
+    await openPromptEditor(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      'ONE ON ONE DRAFT',
+    );
+
+    await chooseVariant(
+      tester,
+      CheckInPromptVariant.managerPerformanceReview,
+    );
+    expect(promptBody(tester), 'PERFORMANCE BODY');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Prompt body'),
+      'PERFORMANCE DRAFT',
+    );
+
+    await chooseVariant(tester, CheckInPromptVariant.managerOneOnOne);
+    expect(promptBody(tester), 'ONE ON ONE DRAFT');
+
+    await chooseVariant(tester, CheckInPromptVariant.personalReview);
+    expect(promptBody(tester), 'PERSONAL BODY');
+  });
+
+  testWidgets('without the settings service the prompt stays a read-only preview', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final summaryApi = FakeSummaryApi()
       ..template = const PromptTemplate(
-        template: 'SERVICE OWNED ONE ON ONE TEMPLATE',
+        template: 'READ ONLY SERVICE TEMPLATE',
         variant: CheckInPromptVariant.managerOneOnOne,
       );
-    await pumpSettings(tester, summaryApi: summaryApi);
-
-    await tester.tap(find.text('Prompt template preview'));
+    await tester.pumpWidget(
+      WdidApp(
+        authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
+        initialRoute: '/settings',
+        summaryApiBuilder: (_) => summaryApi,
+      ),
+    );
     await tester.pumpAndSettle();
+
+    await openPromptEditor(tester);
 
     expect(
       summaryApi.lastTemplateVariant,
       CheckInPromptVariant.managerOneOnOne,
     );
-    expect(find.text('SERVICE OWNED ONE ON ONE TEMPLATE'), findsOneWidget);
-    expect(find.textContaining('Version v1 · service-owned'), findsOneWidget);
+    expect(find.text('READ ONLY SERVICE TEMPLATE'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Save prompt'), findsNothing);
+  });
+
+  testWidgets('without any prompt service the section explains what is missing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      WdidApp(
+        authApi: FakeAuthApi(),
+        initialSession: signedInSession(),
+        initialRoute: '/settings',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openPromptEditor(tester);
+
+    expect(find.textContaining('Connect the service'), findsOneWidget);
   });
 }
