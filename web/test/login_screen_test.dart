@@ -136,7 +136,7 @@ void main() {
     expect(find.text('Start a timer'), findsOneWidget);
   });
 
-  testWidgets('a passwordless local account signs in automatically', (
+  testWidgets('a passwordless local account waits for one click to sign in', (
     tester,
   ) async {
     final auth = FakeAuthApi(
@@ -151,9 +151,24 @@ void main() {
     );
     await pumpLogin(tester, auth);
 
+    // It no longer signs itself in on load.
+    expect(auth.logins, isEmpty);
+    expect(find.text('Start a timer'), findsNothing);
+    expect(find.byKey(const Key('local-login-submit')), findsOneWidget);
+    expect(find.byKey(const Key('local-login-password')), findsNothing);
+    expect(find.textContaining('automatically'), findsNothing);
+
+    // The one account's username is already filled in; one click signs in.
+    final usernameField = tester.widget<TextField>(
+      find.byKey(const Key('local-login-username')),
+    );
+    expect(usernameField.controller!.text, 'malle');
+
+    await tester.tap(find.byKey(const Key('local-login-submit')));
+    await tester.pumpAndSettle();
+
     expect(auth.logins.single['username'], 'malle');
     expect(auth.logins.single['password'], '');
-    expect(find.byKey(const Key('local-login-password')), findsNothing);
     expect(find.text('Start a timer'), findsOneWidget);
   });
 

@@ -43,7 +43,11 @@ GoRouter buildRouter(
     routes: [
       ShellRoute(
         builder: (context, routerState, child) {
-          return AppShell(currentPath: routerState.uri.path, child: child);
+          return AppShell(
+            currentPath: routerState.uri.path,
+            auth: auth,
+            child: child,
+          );
         },
         routes: [
           GoRoute(

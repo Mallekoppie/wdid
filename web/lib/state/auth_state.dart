@@ -8,6 +8,11 @@ class AuthState extends ChangeNotifier {
 
   final AuthApi api;
 
+  /// Invoked after [signOut] clears the session. The app wires this to drop
+  /// the previous account's cached data and navigate to the login screen, so
+  /// every session-ending path shares the same cleanup.
+  void Function()? onSessionEnded;
+
   AuthConfig? config;
   AuthSession? session;
   bool loading = false;
@@ -60,9 +65,15 @@ class AuthState extends ChangeNotifier {
     );
   }
 
-  void logout() {
+  /// Ends the current session. This is the single session-clearing seam:
+  /// sign-out and, later, token expiry both call it. It is idempotent, so
+  /// concurrent callers cannot end the same session twice.
+  void signOut() {
+    if (session == null) return;
     session = null;
+    error = null;
     _notify();
+    onSessionEnded?.call();
   }
 
   Future<bool> _submit(Future<AuthSession> Function() action) async {
