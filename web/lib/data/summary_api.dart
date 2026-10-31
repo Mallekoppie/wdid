@@ -88,17 +88,22 @@ abstract class SummaryRpc {
 
 /// The generated Connect client over gRPC-Web.
 class GrpcSummaryRpc implements SummaryRpc {
-  GrpcSummaryRpc({
-    generated.SummaryServiceClient? client,
-    String? Function()? token,
-  }) : _client =
-           client ??
-           generated.SummaryServiceClient(
-             openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
-           );
+  GrpcSummaryRpc({generated.SummaryServiceClient? client, ApiSession? session})
+    : _client =
+          client ??
+          generated.SummaryServiceClient(
+            openAppChannel(),
+            interceptors: [
+              bearerInterceptor(
+                session?.token ?? (() => null),
+                onUnauthenticated: session?.onUnauthenticated,
+              ),
+            ],
+          ),
+      _onUnauthenticated = session?.onUnauthenticated;
 
   final generated.SummaryServiceClient _client;
+  final void Function()? _onUnauthenticated;
 
   @override
   Future<generated.GetPeriodReportResponse> getPeriodReport(
@@ -123,7 +128,10 @@ class GrpcSummaryRpc implements SummaryRpc {
   @override
   Stream<generated.GenerateSummaryDelta> generateSummary(
     generated.GenerateSummaryRequest request,
-  ) => _client.generateSummary(request);
+  ) => watchUnauthenticated(
+    _client.generateSummary(request),
+    _onUnauthenticated,
+  );
 }
 
 /// Period reports over Connect/gRPC-Web.

@@ -98,12 +98,17 @@ abstract class CategoryRpc {
 class GrpcCategoryRpc implements CategoryRpc {
   GrpcCategoryRpc({
     generated.CategoryServiceClient? client,
-    String? Function()? token,
+    ApiSession? session,
   }) : _client =
            client ??
            generated.CategoryServiceClient(
              openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
+             interceptors: [
+               bearerInterceptor(
+                 session?.token ?? (() => null),
+                 onUnauthenticated: session?.onUnauthenticated,
+               ),
+             ],
            );
 
   final generated.CategoryServiceClient _client;

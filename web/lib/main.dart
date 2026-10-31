@@ -16,19 +16,22 @@ void main() {
   runApp(
     WdidApp(
       authApi: GrpcAuthApi(),
-      categoryApiBuilder: (token) =>
-          GrpcCategoryApi(rpc: GrpcCategoryRpc(token: token)),
-      settingsApiBuilder: (token) =>
-          GrpcSettingsApi(rpc: GrpcSettingsRpc(token: token)),
-      entryApiBuilder: (token) => GrpcEntryApi(rpc: GrpcEntryRpc(token: token)),
-      timerApiBuilder: (token) => GrpcTimerApi(rpc: GrpcTimerRpc(token: token)),
-      summaryApiBuilder: (token) =>
-          GrpcSummaryApi(rpc: GrpcSummaryRpc(token: token)),
-      noteApiBuilder: (token) => GrpcNoteApi(rpc: GrpcNoteRpc(token: token)),
-      milestoneApiBuilder: (token) =>
-          GrpcMilestoneApi(rpc: GrpcMilestoneRpc(token: token)),
-      checkInApiBuilder: (token) =>
-          GrpcCheckInApi(rpc: GrpcCheckInRpc(token: token)),
+      categoryApiBuilder: (session) =>
+          GrpcCategoryApi(rpc: GrpcCategoryRpc(session: session)),
+      settingsApiBuilder: (session) =>
+          GrpcSettingsApi(rpc: GrpcSettingsRpc(session: session)),
+      entryApiBuilder: (session) =>
+          GrpcEntryApi(rpc: GrpcEntryRpc(session: session)),
+      timerApiBuilder: (session) =>
+          GrpcTimerApi(rpc: GrpcTimerRpc(session: session)),
+      summaryApiBuilder: (session) =>
+          GrpcSummaryApi(rpc: GrpcSummaryRpc(session: session)),
+      noteApiBuilder: (session) =>
+          GrpcNoteApi(rpc: GrpcNoteRpc(session: session)),
+      milestoneApiBuilder: (session) =>
+          GrpcMilestoneApi(rpc: GrpcMilestoneRpc(session: session)),
+      checkInApiBuilder: (session) =>
+          GrpcCheckInApi(rpc: GrpcCheckInRpc(session: session)),
     ),
   );
 }

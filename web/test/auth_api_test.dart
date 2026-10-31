@@ -1,8 +1,20 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc_or_grpcweb.dart';
 
 import 'package:wdid_web/data/auth_api.dart';
 import 'package:wdid_web/src/generated/auth.pbgrpc.dart' as generated;
+
+/// A standard JWT-shaped token. The signature is never verified by the client;
+/// only the payload's `exp` claim is read.
+String _jwt(Map<String, Object?> claims) {
+  String encode(Map<String, Object?> value) =>
+      base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
+  final header = encode({'alg': 'HS256', 'typ': 'JWT'});
+  final payload = encode(claims);
+  return '$header.$payload.signature';
+}
 
 class FakeAuthRpc implements AuthRpc {
   generated.GetAuthConfigResponse configResponse =
@@ -148,6 +160,46 @@ void main() {
     expect(session.user.email, 'admin@example.com');
     expect(session.user.role, 'admin');
     expect(session.token, 'login-token');
+  });
+
+  test('login records the expiry from the token exp claim', () async {
+    final rpc = FakeAuthRpc()
+      ..loginResponse = generated.LoginResponse(
+        user: generated.User(id: 'user-1', displayName: 'Admin'),
+        token: _jwt({'exp': 1700000000}),
+      );
+    final api = GrpcAuthApi(rpc: rpc);
+
+    final session = await api.login(
+      email: 'admin@example.com',
+      password: 'longenough1',
+    );
+
+    expect(
+      session.expiresAt,
+      DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000, isUtc: true),
+    );
+  });
+
+  test('a malformed or claim-less token records no expiry', () async {
+    for (final token in [
+      'login-token',
+      _jwt({'sub': 'user-1'}),
+    ]) {
+      final rpc = FakeAuthRpc()
+        ..loginResponse = generated.LoginResponse(
+          user: generated.User(id: 'user-1', displayName: 'Admin'),
+          token: token,
+        );
+      final api = GrpcAuthApi(rpc: rpc);
+
+      final session = await api.login(
+        email: 'admin@example.com',
+        password: 'longenough1',
+      );
+
+      expect(session.expiresAt, isNull, reason: token);
+    }
   });
 
   test('register sends the invite or bootstrap credential', () async {
