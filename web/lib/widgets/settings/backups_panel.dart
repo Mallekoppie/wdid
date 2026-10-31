@@ -10,10 +10,11 @@ import '../../utils/time_utils.dart';
 import '../forms/export_dialog.dart';
 import '../panel.dart';
 
-/// Settings → Data & backups. The database paths and backup preferences are
-/// read-only here; snapshots, `Backup now` and `Restore` are instance-wide and
-/// therefore admin-only. A normal account keeps the paths and export but sees
-/// an explanatory read-only state instead of the backup controls.
+/// Settings → Data & backups. An administrator edits the instance-wide backup
+/// directory, interval and retention and saves them explicitly; the database
+/// and data-directory paths stay read-only. Snapshots, `Backup now` and
+/// `Restore` are admin-only. A normal account keeps the paths and export but
+/// sees an explanatory read-only state instead of the backup controls.
 class BackupsPanel extends StatefulWidget {
   const BackupsPanel({super.key});
 
@@ -27,15 +28,175 @@ class _BackupsPanelState extends State<BackupsPanel> {
   bool _restoring = false;
   String? _selected;
 
+  bool _editorsInitialized = false;
+  bool _savingSettings = false;
+  bool _backupDirty = false;
+  bool _syncingEditors = false;
+  TextEditingController? _directoryController;
+  TextEditingController? _intervalController;
+  TextEditingController? _retentionController;
+  String? _directoryError;
+  String? _intervalError;
+  String? _retentionError;
+  String? _saveError;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final state = AppStateScope.of(context);
+
+    if (!_editorsInitialized) {
+      _editorsInitialized = true;
+      _directoryController = TextEditingController(text: _liveDirectory(state));
+      _intervalController = TextEditingController(
+        text: '${_liveInterval(state)}',
+      );
+      _retentionController = TextEditingController(
+        text: '${_liveRetention(state)}',
+      );
+      for (final controller in [
+        _directoryController!,
+        _intervalController!,
+        _retentionController!,
+      ]) {
+        controller.addListener(_markBackupDirty);
+      }
+    } else if (!_backupDirty) {
+      // Status arrives asynchronously; keep untouched editors in step with the
+      // live configuration without overwriting a draft.
+      _syncEditors(state);
+    }
+
     if (_loaded) return;
     _loaded = true;
-    final state = AppStateScope.of(context);
     if (state.canManageBackups) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(state.loadBackups());
+      });
+    }
+  }
+
+  /// The live directory is the one the manager actually uses. The per-user
+  /// settings record can be empty on a fresh install, so status wins.
+  String _liveDirectory(AppState state) {
+    final directory = state.backupStatus?.backupDirectory ?? '';
+    return directory.isEmpty ? state.settings.backupDir : directory;
+  }
+
+  int _liveInterval(AppState state) =>
+      state.backupStatus?.backupIntervalHours ??
+      state.settings.backupIntervalHours;
+
+  int _liveRetention(AppState state) =>
+      state.backupStatus?.backupRetention ?? state.settings.retentionCount;
+
+  void _syncEditors(AppState state) {
+    final directory = _directoryController;
+    final interval = _intervalController;
+    final retention = _retentionController;
+    if (directory == null || interval == null || retention == null) return;
+    _syncingEditors = true;
+    try {
+      _setText(directory, _liveDirectory(state));
+      _setText(interval, '${_liveInterval(state)}');
+      _setText(retention, '${_liveRetention(state)}');
+    } finally {
+      _syncingEditors = false;
+    }
+  }
+
+  void _setText(TextEditingController controller, String value) {
+    if (controller.text != value) controller.text = value;
+  }
+
+  void _markBackupDirty() {
+    if (!_syncingEditors) _backupDirty = true;
+  }
+
+  Future<void> _saveBackups(AppState state) async {
+    if (state.preferencesError != null || state.preferencesLoading) {
+      setState(() {
+        _saveError =
+            'Preferences could not be loaded. Retry before saving so stored '
+            'values are not replaced.';
+      });
+      return;
+    }
+
+    final directory = _directoryController!.text.trim();
+    final interval = int.tryParse(_intervalController!.text.trim());
+    final retention = int.tryParse(_retentionController!.text.trim());
+
+    String? directoryError;
+    if (directory.isEmpty) {
+      directoryError = 'Enter the backup directory path';
+    } else if (!directory.startsWith('/')) {
+      directoryError =
+          'Use an absolute path, for example /var/lib/wdid/backups';
+    }
+    final intervalError = interval == null || interval <= 0
+        ? 'Enter a whole number of hours greater than zero'
+        : null;
+    final retentionError = retention == null || retention <= 0
+        ? 'Enter a whole number of snapshots greater than zero'
+        : null;
+
+    if (directoryError != null ||
+        intervalError != null ||
+        retentionError != null) {
+      setState(() {
+        _directoryError = directoryError;
+        _intervalError = intervalError;
+        _retentionError = retentionError;
+        _saveError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _savingSettings = true;
+      _directoryError = null;
+      _intervalError = null;
+      _retentionError = null;
+      _saveError = null;
+    });
+    try {
+      await state.saveSettings(
+        state.settings.copyWith(
+          backupDir: directory,
+          backupIntervalHours: interval,
+          retentionCount: retention,
+        ),
+      );
+      // The snapshot list and status live in the configured directory.
+      await state.loadBackups(force: true);
+      if (!mounted) return;
+      setState(() {
+        _savingSettings = false;
+        _backupDirty = false;
+      });
+      _toast(context, 'Backup settings saved');
+    } on SettingsFailure catch (failure) {
+      if (!mounted) return;
+      final field = failure.field;
+      setState(() {
+        _savingSettings = false;
+        _saveError = null;
+        if (field == 'backupDirectory') {
+          _directoryError = failure.message;
+        } else if (field == 'backupIntervalHours') {
+          _intervalError = failure.message;
+        } else if (field == 'backupRetention') {
+          _retentionError = failure.message;
+        } else {
+          _saveError = failure.message;
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _savingSettings = false;
+        _saveError = error.toString();
       });
     }
   }
@@ -152,15 +313,91 @@ class _BackupsPanelState extends State<BackupsPanel> {
           _ReadOnlyPath(label: 'Database', value: settings.databasePath),
           const SizedBox(height: 6),
           _ReadOnlyPath(label: 'Data directory', value: settings.dataDir),
-          const SizedBox(height: 6),
-          _ReadOnlyPath(label: 'Backup directory', value: settings.backupDir),
           const SizedBox(height: AppSpacing.md),
-          Text(
-            'Every ${intervalHours}h · keep $retention scheduled backups',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+          if (state.canManageBackups) ...[
+            TextField(
+              key: const Key('backupDirectoryField'),
+              controller: _directoryController,
+              decoration: InputDecoration(
+                labelText: 'Backup directory',
+                hintText: '/var/lib/wdid/backups',
+                helperText: 'Absolute path on the service filesystem',
+                errorText: _directoryError,
+              ),
             ),
-          ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('backupIntervalField'),
+                    controller: _intervalController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Interval',
+                      suffixText: 'hours',
+                      errorText: _intervalError,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: TextField(
+                    key: const Key('backupRetentionField'),
+                    controller: _retentionController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Retention',
+                      suffixText: 'snapshots',
+                      errorText: _retentionError,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Changing the backup directory starts a new snapshot set. '
+              'Existing snapshots stay in the old folder and are not listed '
+              'here.',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            if (_saveError != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                _saveError!,
+                style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _savingSettings
+                    ? null
+                    : () => unawaited(_saveBackups(state)),
+                child: _savingSettings
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save backup settings'),
+              ),
+            ),
+          ] else ...[
+            _ReadOnlyPath(label: 'Backup directory', value: settings.backupDir),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Every ${intervalHours}h · keep $retention scheduled backups',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
           if (!state.canManageBackups) ...[
             const SizedBox(height: AppSpacing.md),
             const _AdminOnlyNotice(),

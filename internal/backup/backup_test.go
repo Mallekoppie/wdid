@@ -360,6 +360,52 @@ func TestRunSnapshotsAtTheConfiguredInterval(t *testing.T) {
 	}
 }
 
+// Reconfiguring the interval must reschedule the running scheduler promptly
+// instead of waiting out the interval that was already sleeping.
+func TestConfigureWakesTheSchedulerForAnIntervalChange(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "backups")
+	manager := backup.New(
+		fakeSnapshotter{data: validDatabaseBytes(t)},
+		backup.Config{Dir: dir, Interval: time.Hour, Retention: 100},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		manager.Run(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	waitForSnapshots(t, manager, 1)
+
+	// Without a wake-up this would not fire for an hour.
+	manager.Configure(backup.Config{Dir: dir, Interval: 20 * time.Millisecond, Retention: 100})
+	waitForSnapshots(t, manager, 2)
+}
+
+// waitForSnapshots blocks until the manager lists at least want snapshots.
+func waitForSnapshots(t *testing.T, manager *backup.Manager, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		snapshots, err := manager.List()
+		if err != nil {
+			t.Fatalf("list snapshots: %v", err)
+		}
+		if len(snapshots) >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("scheduled snapshots = %d, want at least %d", len(snapshots), want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestManagerRestoresNamedSnapshot(t *testing.T) {
 	cfg := config.Config{
 		HTTPAddr:             "127.0.0.1:0",
