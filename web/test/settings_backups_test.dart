@@ -79,10 +79,17 @@ void main() {
     expect(find.text(newer.name), findsOneWidget);
     expect(find.text(older.name), findsOneWidget);
     expect(find.textContaining('Last backup today'), findsOneWidget);
+    // The administrator edits the live backup configuration rather than
+    // reading a summary line.
+    expect(find.byKey(const Key('backupDirectoryField')), findsOneWidget);
     expect(
-      find.textContaining('Every 6h · keep 30 scheduled backups'),
-      findsOneWidget,
+      tester
+          .widget<TextField>(find.byKey(const Key('backupDirectoryField')))
+          .controller!
+          .text,
+      '/srv/wdid/backups',
     );
+    expect(find.textContaining('new snapshot set'), findsOneWidget);
 
     // Restore needs a selection.
     expect(
@@ -139,6 +146,14 @@ void main() {
     expect(find.text('Backup now'), findsNothing);
     expect(find.text('Restore selected'), findsNothing);
     expect(find.text('Export all data'), findsOneWidget);
+    // Backup location, interval and retention stay read-only.
+    expect(find.byKey(const Key('backupDirectoryField')), findsNothing);
+    expect(find.byKey(const Key('backupIntervalField')), findsNothing);
+    expect(find.byKey(const Key('backupRetentionField')), findsNothing);
+    expect(
+      find.textContaining('Every 6h · keep 30 scheduled backups'),
+      findsOneWidget,
+    );
     // No backup RPC is attempted, so neither the snapshot nor its error shows.
     expect(find.text('wdid-20261023T080000Z-manual.db'), findsNothing);
     expect(
@@ -221,5 +236,117 @@ void main() {
 
     expect(find.text('wdid-recovered.db'), findsOneWidget);
     expect(find.textContaining('backup directory unreadable'), findsNothing);
+  });
+
+  testWidgets(
+    'an administrator edits and saves the live backup configuration',
+    (tester) async {
+      final api = FakeSettingsApi()
+        ..backupStatus = const BackupStatusInfo(
+          overdue: false,
+          backupDirectory: '/srv/wdid/backups',
+          backupIntervalHours: 6,
+          backupRetention: 30,
+        );
+
+      await pumpSettings(tester, admin: true, api: api);
+      final statusCallsBefore = api.statusCalls;
+
+      // The editor is prefilled from the live status, not the empty per-user
+      // record the fresh install returns.
+      await tester.enterText(
+        find.byKey(const Key('backupDirectoryField')),
+        '/srv/wdid/archive',
+      );
+      await tester.enterText(
+        find.byKey(const Key('backupIntervalField')),
+        '12',
+      );
+      await tester.enterText(
+        find.byKey(const Key('backupRetentionField')),
+        '7',
+      );
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Save backup settings'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(api.updateCalls, 1);
+      expect(api.settings.backupDir, '/srv/wdid/archive');
+      expect(api.settings.backupIntervalHours, 12);
+      expect(api.settings.retentionCount, 7);
+      // The snapshot list and status are reloaded so they follow the new directory.
+      expect(api.statusCalls, greaterThan(statusCallsBefore));
+      expect(find.text('Backup settings saved'), findsOneWidget);
+      expect(find.textContaining('new snapshot set'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an empty backup directory is rejected before saving', (
+    tester,
+  ) async {
+    final api = FakeSettingsApi();
+    await pumpSettings(tester, admin: true, api: api);
+
+    await tester.enterText(find.byKey(const Key('backupDirectoryField')), '');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save backup settings'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateCalls, 0);
+    expect(
+      find.textContaining('Enter the backup directory path'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a relative backup directory is rejected before saving', (
+    tester,
+  ) async {
+    final api = FakeSettingsApi();
+    await pumpSettings(tester, admin: true, api: api);
+
+    await tester.enterText(
+      find.byKey(const Key('backupDirectoryField')),
+      'relative/backups',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save backup settings'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateCalls, 0);
+    expect(find.textContaining('absolute path'), findsOneWidget);
+  });
+
+  testWidgets('a service directory error is shown on the directory field', (
+    tester,
+  ) async {
+    final api = FakeSettingsApi();
+    await pumpSettings(tester, admin: true, api: api);
+
+    api.failure = const SettingsFailure(
+      'cannot create the directory: permission denied',
+      field: 'backupDirectory',
+    );
+    await tester.enterText(
+      find.byKey(const Key('backupDirectoryField')),
+      '/srv/locked/backups',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save backup settings'));
+    await tester.pumpAndSettle();
+
+    expect(api.updateCalls, 1);
+    expect(find.textContaining('cannot create the directory'), findsOneWidget);
+  });
+
+  testWidgets('database and data directory rows stay read-only for admins', (
+    tester,
+  ) async {
+    await pumpSettings(tester, admin: true);
+
+    expect(find.text('Database'), findsOneWidget);
+    expect(find.text('Data directory'), findsOneWidget);
+    expect(find.byKey(const Key('databasePathField')), findsNothing);
+    expect(find.byKey(const Key('dataDirectoryField')), findsNothing);
+    // Only the backup configuration has editors.
+    expect(find.byKey(const Key('backupDirectoryField')), findsOneWidget);
   });
 }

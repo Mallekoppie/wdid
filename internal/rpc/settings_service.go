@@ -161,6 +161,14 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, request *connect.R
 
 	// Canonicalise before saving so the response carries exactly what is stored.
 	settings.Normalize()
+	if isAdmin && settings.BackupDirectory != "" {
+		// Create and probe the directory now so a typo fails immediately with a
+		// field error instead of at the next snapshot. An empty directory means
+		// the caller did not send the backup block, so it is not a path to check.
+		if err := backup.EnsureDirectory(settings.BackupDirectory); err != nil {
+			return nil, toConnectError(err)
+		}
+	}
 	if err := s.store.SaveSettings(settings); err != nil {
 		return nil, toConnectError(err)
 	}
