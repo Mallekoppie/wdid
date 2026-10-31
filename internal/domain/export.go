@@ -41,8 +41,11 @@ type ExportInput struct {
 	Settings      Settings
 	// FocusNotes is the scoped check-in's focus text, when the bundle belongs
 	// to a check-in rather than a bare period.
-	FocusNotes  string
-	GeneratedAt time.Time
+	FocusNotes string
+	// AdditionalContext is the scoped check-in's user-supplied context. It is
+	// authoritative supplied data and is deliberately not redacted.
+	AdditionalContext string
+	GeneratedAt       time.Time
 }
 
 // ExportSummaryFileName and friends are the fixed bundle members. The order is
@@ -198,6 +201,23 @@ func BuildExportSummary(input ExportInput) string {
 		fmt.Fprintf(&builder, "- Focus notes: %s\n", focus)
 		notesWritten = true
 	}
+	contextWritten := false
+	if context := strings.TrimSpace(input.AdditionalContext); context != "" {
+		if notesWritten {
+			// Keep the context block visually separate from the focus bullet.
+			builder.WriteString("\n")
+		}
+		builder.WriteString("Additional context:\n\n")
+		// Write the user's text as-is so paragraph breaks survive.
+		builder.WriteString(context)
+		builder.WriteString("\n")
+		notesWritten = true
+		contextWritten = true
+	}
+	if contextWritten && len(report.Notes) > 0 {
+		// Separate the free-text block from the ledger note list.
+		builder.WriteString("\n")
+	}
 	for _, note := range report.Notes {
 		label := ""
 		if note.Date != "" {
@@ -278,16 +298,18 @@ func buildExportData(input ExportInput) (string, error) {
 	checkIns := make([]exportCheckIn, 0, len(input.CheckIns))
 	for _, checkIn := range input.CheckIns {
 		checkIns = append(checkIns, exportCheckIn{
-			ID:              checkIn.ID,
-			Kind:            string(checkIn.Kind),
-			PeriodStart:     checkIn.PeriodStart,
-			PeriodEnd:       checkIn.PeriodEnd,
-			State:           string(checkIn.State),
-			Audience:        string(checkIn.Audience),
-			FocusNotes:      checkIn.FocusNotes,
-			SummaryMarkdown: checkIn.SummaryMarkdown,
-			PromptVersion:   checkIn.PromptVersion,
-			CreatedAt:       formatInstant(checkIn.CreatedAt),
+			ID:                checkIn.ID,
+			Kind:              string(checkIn.Kind),
+			PeriodStart:       checkIn.PeriodStart,
+			PeriodEnd:         checkIn.PeriodEnd,
+			State:             string(checkIn.State),
+			Audience:          string(checkIn.Audience),
+			FocusNotes:        checkIn.FocusNotes,
+			SummaryMarkdown:   checkIn.SummaryMarkdown,
+			PromptVersion:     checkIn.PromptVersion,
+			AdditionalContext: checkIn.AdditionalContext,
+			GenerationPrompt:  checkIn.GenerationPrompt,
+			CreatedAt:         formatInstant(checkIn.CreatedAt),
 		})
 	}
 
@@ -319,6 +341,7 @@ func buildExportData(input ExportInput) (string, error) {
 			Timezone:           input.Settings.Timezone,
 			WeekStart:          input.Settings.WeekStart,
 			DailyTargetMinutes: input.Settings.DailyTargetMinutes,
+			PromptTemplates:    input.Settings.PromptTemplates,
 		},
 		Categories:    categories,
 		Subcategories: subcategories,
@@ -432,9 +455,10 @@ type exportPeriod struct {
 }
 
 type exportSettings struct {
-	Timezone           string `json:"timezone"`
-	WeekStart          int    `json:"weekStart"`
-	DailyTargetMinutes int    `json:"dailyTargetMinutes"`
+	Timezone           string                   `json:"timezone"`
+	WeekStart          int                      `json:"weekStart"`
+	DailyTargetMinutes int                      `json:"dailyTargetMinutes"`
+	PromptTemplates    map[PromptVariant]string `json:"promptTemplates,omitempty"`
 }
 
 type exportCategory struct {
@@ -491,16 +515,18 @@ type exportEntry struct {
 }
 
 type exportCheckIn struct {
-	ID              string `json:"id"`
-	Kind            string `json:"kind"`
-	PeriodStart     string `json:"periodStart"`
-	PeriodEnd       string `json:"periodEnd"`
-	State           string `json:"state"`
-	Audience        string `json:"audience"`
-	FocusNotes      string `json:"focusNotes"`
-	SummaryMarkdown string `json:"summaryMarkdown"`
-	PromptVersion   string `json:"promptVersion"`
-	CreatedAt       string `json:"createdAt"`
+	ID                string `json:"id"`
+	Kind              string `json:"kind"`
+	PeriodStart       string `json:"periodStart"`
+	PeriodEnd         string `json:"periodEnd"`
+	State             string `json:"state"`
+	Audience          string `json:"audience"`
+	FocusNotes        string `json:"focusNotes"`
+	SummaryMarkdown   string `json:"summaryMarkdown"`
+	PromptVersion     string `json:"promptVersion"`
+	AdditionalContext string `json:"additionalContext,omitempty"`
+	GenerationPrompt  string `json:"generationPrompt,omitempty"`
+	CreatedAt         string `json:"createdAt"`
 }
 
 type exportNote struct {

@@ -105,6 +105,35 @@ func TestBuildExportSummaryKeepsNotesAndURLsWithoutRedaction(t *testing.T) {
 	}
 }
 
+// TestRedactExportInputLeavesAdditionalContextUntouched pins the deliberate
+// exception: additional context is user-supplied data for the model, so even a
+// URL in it is sent as written. It is also never stripped from the export.
+func TestRedactExportInputLeavesAdditionalContextUntouched(t *testing.T) {
+	const context = "The outage postmortem is at https://internal.example/postmortem.\n\nWe missed the follow-up."
+
+	input := redactionFixture()
+	input.AdditionalContext = context
+	input.CheckIns = []domain.CheckIn{
+		{ID: "checkin-1", AdditionalContext: context, SummaryMarkdown: "Old summary"},
+	}
+
+	redacted := domain.RedactExportInput(input)
+
+	if redacted.AdditionalContext != context {
+		t.Fatalf("redacted additional context = %q, want it untouched", redacted.AdditionalContext)
+	}
+	if len(redacted.CheckIns) != 1 || redacted.CheckIns[0].AdditionalContext != context {
+		t.Fatalf("redacted check-in additional context = %+v, want it untouched", redacted.CheckIns)
+	}
+	summary := domain.BuildExportSummary(redacted)
+	if !strings.Contains(summary, "https://internal.example/postmortem") {
+		t.Fatalf("redacted summary lost the deliberate additional context:\n%s", summary)
+	}
+	if !strings.Contains(summary, "We missed the follow-up.") {
+		t.Fatalf("redacted summary lost the context paragraphs:\n%s", summary)
+	}
+}
+
 func TestRedactExportInputStripsEveryURLScheme(t *testing.T) {
 	links := []string{
 		"https://internal.example/runbook",

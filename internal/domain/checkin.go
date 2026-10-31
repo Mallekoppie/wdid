@@ -133,23 +133,34 @@ const (
 	SummarySourceGenerated SummarySource = "generated"
 )
 
-// CheckIn is a saved artifact covering a period, with focus notes, aggregates
-// and an optional summary. Only final manager check-ins move the boundary.
+// CheckIn is a saved artifact covering a period, with focus notes, aggregates,
+// an optional additional context and an optional summary. Only final manager
+// check-ins move the boundary.
 type CheckIn struct {
-	ID              string        `json:"id"`
-	UserID          string        `json:"userId"`
-	Kind            CheckInKind   `json:"kind"`
-	PeriodStart     string        `json:"periodStart"`
-	PeriodEnd       string        `json:"periodEnd"`
-	State           CheckInState  `json:"state"`
-	Audience        Audience      `json:"audience,omitempty"`
-	FocusNotes      string        `json:"focusNotes,omitempty"`
-	SummaryMarkdown string        `json:"summaryMarkdown,omitempty"`
-	SummaryModel    string        `json:"summaryModel,omitempty"`
-	PromptVersion   string        `json:"promptVersion,omitempty"`
-	Totals          CheckInTotals `json:"totals"`
-	CreatedAt       time.Time     `json:"createdAt"`
-	UpdatedAt       time.Time     `json:"updatedAt"`
+	ID              string       `json:"id"`
+	UserID          string       `json:"userId"`
+	Kind            CheckInKind  `json:"kind"`
+	PeriodStart     string       `json:"periodStart"`
+	PeriodEnd       string       `json:"periodEnd"`
+	State           CheckInState `json:"state"`
+	Audience        Audience     `json:"audience,omitempty"`
+	FocusNotes      string       `json:"focusNotes,omitempty"`
+	SummaryMarkdown string       `json:"summaryMarkdown,omitempty"`
+	SummaryModel    string       `json:"summaryModel,omitempty"`
+	PromptVersion   string       `json:"promptVersion,omitempty"`
+	// AdditionalContext is the user's own supplied facts, recorded alongside
+	// the ledger data. It is authoritative input for generation and is never
+	// redacted.
+	AdditionalContext string `json:"additionalContext,omitempty"`
+	// GenerationPrompt is the exact transcript sent to the provider for the
+	// current summary. It is the provenance record for the generated text.
+	GenerationPrompt string `json:"generationPrompt,omitempty"`
+	// PreviousSummaryMarkdown holds the summary replaced by the last generate
+	// or refine, so one revert can restore it. Manual edits do not use it.
+	PreviousSummaryMarkdown string        `json:"previousSummaryMarkdown,omitempty"`
+	Totals                  CheckInTotals `json:"totals"`
+	CreatedAt               time.Time     `json:"createdAt"`
+	UpdatedAt               time.Time     `json:"updatedAt"`
 }
 
 // Normalize trims check-in input into its canonical form. A manager check-in
@@ -162,6 +173,9 @@ func (c *CheckIn) Normalize() {
 	c.SummaryMarkdown = strings.TrimSpace(c.SummaryMarkdown)
 	c.SummaryModel = strings.TrimSpace(c.SummaryModel)
 	c.PromptVersion = strings.TrimSpace(c.PromptVersion)
+	c.AdditionalContext = strings.TrimSpace(c.AdditionalContext)
+	c.GenerationPrompt = strings.TrimSpace(c.GenerationPrompt)
+	c.PreviousSummaryMarkdown = strings.TrimSpace(c.PreviousSummaryMarkdown)
 	if c.Kind == CheckInKindManager && c.Audience == "" {
 		c.Audience = AudienceOneOnOne
 	}
