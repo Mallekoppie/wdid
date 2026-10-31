@@ -255,7 +255,9 @@ class GrpcSummaryApi implements SummaryApi {
   }
 
   @override
-  Future<PromptTemplate> getPromptTemplate(CheckInPromptVariant variant) async {
+  Future<PromptTemplate> getPromptTemplate(
+    CheckInPromptVariant variant,
+  ) async {
     try {
       final response = await _rpc.getPromptTemplate(
         generated.GetPromptTemplateRequest(

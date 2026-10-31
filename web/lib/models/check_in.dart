@@ -36,7 +36,10 @@ class CheckInTotals {
       byCategory: _intMap(json['byCategory']),
       bySubcategory: _intMap(json['bySubcategory']),
       supportByPerson: supportByPerson,
-      supportMinutes: effectiveSupportMinutes(supportMinutes, supportByPerson),
+      supportMinutes: effectiveSupportMinutes(
+        supportMinutes,
+        supportByPerson,
+      ),
       supportInteractions: effectiveSupportInteractions(
         supportInteractions,
         supportByPerson,

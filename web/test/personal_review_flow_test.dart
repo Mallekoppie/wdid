@@ -164,8 +164,7 @@ void main() {
         ),
         settingsApiBuilder: (_) => FakeSettingsApi(settings: settings),
         summaryApiBuilder: (_) =>
-            summaryApi ??
-            FakeSummaryApi(report: aggregateReport(), echoDates: true),
+            summaryApi ?? FakeSummaryApi(report: aggregateReport(), echoDates: true),
         checkInApiBuilder: (_) => checkInApi,
       ),
     );
@@ -187,7 +186,10 @@ void main() {
   ) async {
     final today = dateOnly(DateTime.now());
     final api = FakeCheckInApi();
-    final summary = FakeSummaryApi(report: aggregateReport(), echoDates: true);
+    final summary = FakeSummaryApi(
+      report: aggregateReport(),
+      echoDates: true,
+    );
     await pumpApp(
       tester,
       checkInApi: api,
@@ -275,9 +277,7 @@ void main() {
     expect(api.updateRequests.single.summaryMarkdown, contains('Backfill'));
 
     expect(
-      find.text(
-        'Personal review — editable, and never moves the manager boundary.',
-      ),
+      find.text('Personal review — editable, and never moves the manager boundary.'),
       findsOneWidget,
     );
     expect(find.text('What moved this week'), findsOneWidget);
@@ -360,26 +360,25 @@ void main() {
     );
   });
 
-  testWidgets(
-    'a saved personal review can be deleted without touching the manager check-in',
-    (tester) async {
-      final api = FakeCheckInApi(checkIns: [personalReview(), finalManager()]);
-      await pumpApp(tester, checkInApi: api, route: '/checkins/personal-1');
+  testWidgets('a saved personal review can be deleted without touching the manager check-in', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi(checkIns: [personalReview(), finalManager()]);
+    await pumpApp(tester, checkInApi: api, route: '/checkins/personal-1');
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Delete review'));
-      await tester.pumpAndSettle();
-      expect(find.text('Delete this personal review?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Delete review'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete this personal review?'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Delete review').last);
-      await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete review').last);
+    await tester.pumpAndSettle();
 
-      expect(api.deleteRequests, ['personal-1']);
-      expect(find.text('Check-ins'), findsWidgets);
-      // The final manager check-in is untouched, so the boundary is unchanged.
-      expect(find.text('Manager focus'), findsOneWidget);
-      expect(find.text('Original focus'), findsNothing);
-    },
-  );
+    expect(api.deleteRequests, ['personal-1']);
+    expect(find.text('Check-ins'), findsWidgets);
+    // The final manager check-in is untouched, so the boundary is unchanged.
+    expect(find.text('Manager focus'), findsOneWidget);
+    expect(find.text('Original focus'), findsNothing);
+  });
 
   testWidgets('cancelling a personal review delete leaves it untouched', (
     tester,
@@ -399,10 +398,7 @@ void main() {
     expect(api.checkIns, hasLength(2));
     // Still on the review's detail screen with its content intact.
     expect(find.text('Original focus'), findsOneWidget);
-    expect(
-      find.widgetWithText(OutlinedButton, 'Delete review'),
-      findsOneWidget,
-    );
+    expect(find.widgetWithText(OutlinedButton, 'Delete review'), findsOneWidget);
   });
 
   testWidgets('the live review handles loading, error and empty states', (
@@ -523,29 +519,28 @@ void main() {
     expect(api.createRequests, isEmpty);
   });
 
-  testWidgets(
-    'the monthly cadence prompts and Review now opens a live review',
-    (tester) async {
-      final api = FakeCheckInApi();
-      final summary = FakeSummaryApi(
-        report: aggregateReport(),
-        echoDates: true,
-      );
-      await pumpApp(
-        tester,
-        checkInApi: api,
-        summaryApi: summary,
-        settings: const AppSettings(reviewCadence: ReviewCadence.monthly),
-        route: '/today',
-      );
+  testWidgets('the monthly cadence prompts and Review now opens a live review', (
+    tester,
+  ) async {
+    final api = FakeCheckInApi();
+    final summary = FakeSummaryApi(
+      report: aggregateReport(),
+      echoDates: true,
+    );
+    await pumpApp(
+      tester,
+      checkInApi: api,
+      summaryApi: summary,
+      settings: const AppSettings(reviewCadence: ReviewCadence.monthly),
+      route: '/today',
+    );
 
-      expect(find.text('Last month is ready to review'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, 'Review now'));
-      await tester.pumpAndSettle();
+    expect(find.text('Last month is ready to review'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Review now'));
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('Personal review ·'), findsOneWidget);
-      expect(find.text('Time by category'), findsOneWidget);
-      expect(api.createRequests, isEmpty);
-    },
-  );
+    expect(find.textContaining('Personal review ·'), findsOneWidget);
+    expect(find.text('Time by category'), findsOneWidget);
+    expect(api.createRequests, isEmpty);
+  });
 }

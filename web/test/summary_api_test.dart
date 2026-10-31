@@ -380,25 +380,24 @@ void main() {
     expect(deltas.last.promptVersion, 'v1');
   });
 
-  test(
-    'generateSummary surfaces a provider failure as a retryable error',
-    () async {
-      final rpc = FakeSummaryRpc()
-        ..generationDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
-        ..generationError = GrpcError.unavailable('provider offline');
+  test('generateSummary surfaces a provider failure as a retryable error', () async {
+    final rpc = FakeSummaryRpc()
+      ..generationDeltas = [generated.GenerateSummaryDelta(text: 'partial')]
+      ..generationError = GrpcError.unavailable('provider offline');
 
-      expect(
-        () => GrpcSummaryApi(rpc: rpc).generateSummary('checkin-1').toList(),
-        throwsA(
-          isA<SummaryFailure>().having(
-            (failure) => failure.message,
-            'message',
-            contains('existing summary is unchanged'),
-          ),
+    expect(
+      () => GrpcSummaryApi(
+        rpc: rpc,
+      ).generateSummary('checkin-1').toList(),
+      throwsA(
+        isA<SummaryFailure>().having(
+          (failure) => failure.message,
+          'message',
+          contains('existing summary is unchanged'),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
 
   test(
     'refineSummary sends the feedback and maps the refined stream',
@@ -524,8 +523,9 @@ void main() {
             .CHECK_IN_PROMPT_VARIANT_PERSONAL_REVIEW,
       );
 
-    final template = await GrpcSummaryApi(rpc: rpc)
-        .getPromptTemplate(CheckInPromptVariant.personalReview);
+    final template = await GrpcSummaryApi(
+      rpc: rpc,
+    ).getPromptTemplate(CheckInPromptVariant.personalReview);
 
     expect(
       rpc.templateRequest!.variant,
