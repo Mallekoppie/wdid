@@ -95,12 +95,12 @@ abstract class CheckInRpc {
 class GrpcCheckInRpc implements CheckInRpc {
   GrpcCheckInRpc({
     generated_rpc.CheckInServiceClient? client,
-    String? Function()? token,
+    ApiSession? session,
   }) : _client =
            client ??
            generated_rpc.CheckInServiceClient(
              openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated_rpc.CheckInServiceClient _client;

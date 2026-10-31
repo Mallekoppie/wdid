@@ -48,12 +48,12 @@ abstract class MilestoneRpc {
 class GrpcMilestoneRpc implements MilestoneRpc {
   GrpcMilestoneRpc({
     generated_rpc.MilestoneServiceClient? client,
-    String? Function()? token,
+    ApiSession? session,
   }) : _client =
            client ??
            generated_rpc.MilestoneServiceClient(
              openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated_rpc.MilestoneServiceClient _client;

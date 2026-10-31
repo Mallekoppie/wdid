@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/enums.dart';
+import '../models/resume_availability.dart';
 import '../models/taxonomy.dart';
 import '../models/work_entry.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
+import '../utils/entry_actions.dart';
 import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
 import '../utils/time_utils.dart';
@@ -649,6 +651,12 @@ class _ServiceLogViewState extends State<_ServiceLogView> {
                           onSaved: _saved,
                           onSplit: () => unawaited(_split(entry)),
                           onDelete: () => unawaited(_delete(entry)),
+                          onResume: () => unawaited(
+                            resumeWorkEntry(context, entry),
+                          ),
+                          resumeAvailability: state.resumeAvailabilityFor(
+                            entry,
+                          ),
                         ),
                     ],
                   ],
@@ -704,6 +712,8 @@ class _ServiceEntryRow extends StatefulWidget {
     required this.onSaved,
     required this.onSplit,
     required this.onDelete,
+    required this.onResume,
+    required this.resumeAvailability,
   });
 
   final WorkEntry entry;
@@ -716,6 +726,8 @@ class _ServiceEntryRow extends StatefulWidget {
   final VoidCallback onSaved;
   final VoidCallback onSplit;
   final VoidCallback onDelete;
+  final VoidCallback onResume;
+  final ResumeAvailability resumeAvailability;
 
   @override
   State<_ServiceEntryRow> createState() => _ServiceEntryRowState();
@@ -734,6 +746,8 @@ class _ServiceEntryRowState extends State<_ServiceEntryRow> {
     final onEdit = widget.onEdit;
     final onSplit = widget.onSplit;
     final onDelete = widget.onDelete;
+    final onResume = widget.onResume;
+    final resumeAvailability = widget.resumeAvailability;
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final support = category?.role == CategoryRole.support;
@@ -884,12 +898,23 @@ class _ServiceEntryRowState extends State<_ServiceEntryRow> {
                         color: scheme.onSurfaceVariant,
                       ),
                       onSelected: (value) => switch (value) {
+                        'resume' => onResume(),
                         'edit' => onEdit(),
                         'split' => onSplit(),
                         'delete' => onDelete(),
                         _ => null,
                       },
                       itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'resume',
+                          enabled: resumeAvailability.enabled,
+                          child: resumeAvailability.enabled
+                              ? const Text('Resume')
+                              : Tooltip(
+                                  message: resumeAvailability.reason,
+                                  child: const Text('Resume'),
+                                ),
+                        ),
                         const PopupMenuItem(value: 'edit', child: Text('Edit')),
                         PopupMenuItem(
                           value: 'split',

@@ -191,15 +191,34 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
         .showSnackBar(const SnackBar(content: Text('Review updated')));
   }
 
-  Future<void> _deleteReview(AppState state, CheckIn checkIn) async {
+  Future<void> _deleteCheckIn(AppState state, CheckIn checkIn) async {
+    // One value object keeps the dialog wording, the confirmation action and
+    // the result messages from drifting apart between kinds.
+    final copy = checkIn.isPersonal
+        ? (
+            title: 'Delete this personal review?',
+            body:
+                'The review and its notes are removed. This never changes the '
+                'manager boundary.',
+            action: 'Delete review',
+            deleted: 'Review deleted',
+            failed: 'Could not delete the review',
+          )
+        : (
+            title: 'Delete this draft check-in?',
+            body:
+                'The draft check-in and its notes are removed. This never '
+                'changes the manager boundary.',
+            action: 'Delete draft check-in',
+            deleted: 'Draft check-in deleted',
+            failed: 'Could not delete the draft check-in',
+          );
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete this personal review?'),
-        content: const Text(
-          'The review and its notes are removed. This never changes the '
-          'manager boundary.',
-        ),
+        title: Text(copy.title),
+        content: Text(copy.body),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -207,7 +226,7 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete review'),
+            child: Text(copy.action),
           ),
         ],
       ),
@@ -216,14 +235,15 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
     try {
       await state.deleteCheckIn(checkIn.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Review deleted')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(copy.deleted)));
       context.go('/checkins');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete the review: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${copy.failed}: $error')));
     }
   }
 
@@ -398,10 +418,16 @@ class _CheckinDetailScreenState extends State<CheckinDetailScreen> {
                     label: const Text('Edit review'),
                   ),
                   const SizedBox(width: 6),
+                ],
+                if (!checkIn.isFinal) ...[
                   OutlinedButton.icon(
-                    onPressed: () => unawaited(_deleteReview(state, checkIn)),
+                    onPressed: () => unawaited(_deleteCheckIn(state, checkIn)),
                     icon: const Icon(Icons.delete_outline, size: 16),
-                    label: const Text('Delete review'),
+                    label: Text(
+                      checkIn.isPersonal
+                          ? 'Delete review'
+                          : 'Delete draft check-in',
+                    ),
                   ),
                   const SizedBox(width: 6),
                 ],

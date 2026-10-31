@@ -87,15 +87,13 @@ abstract class EntryRpc {
 
 /// The generated Connect client over gRPC-Web.
 class GrpcEntryRpc implements EntryRpc {
-  GrpcEntryRpc({
-    generated.EntryServiceClient? client,
-    String? Function()? token,
-  }) : _client =
-           client ??
-           generated.EntryServiceClient(
-             openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
-           );
+  GrpcEntryRpc({generated.EntryServiceClient? client, ApiSession? session})
+    : _client =
+          client ??
+          generated.EntryServiceClient(
+            openAppChannel(),
+            interceptors: sessionInterceptors(session),
+          );
 
   final generated.EntryServiceClient _client;
 

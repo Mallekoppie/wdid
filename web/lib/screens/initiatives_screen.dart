@@ -7,6 +7,7 @@ import '../models/period_report.dart';
 import '../models/taxonomy.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/project_actions.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/project_dialog.dart';
 import '../widgets/panel.dart';
@@ -59,6 +60,11 @@ class _ProjectsViewState extends State<_ProjectsView> {
         SnackBar(content: Text('Project created · ${saved.name}')),
       );
     }
+  }
+
+  Future<void> _edit(BuildContext context, Subcategory project) async {
+    final state = AppStateScope.read(context);
+    await editProject(context, state: state, project: project);
   }
 
   Future<void> _setArchived(
@@ -218,6 +224,8 @@ class _ProjectsViewState extends State<_ProjectsView> {
                               width: width,
                               child: _ProjectCard(
                                 project: project,
+                                onEdit: () =>
+                                    unawaited(_edit(context, project)),
                                 onArchive: () => unawaited(
                                   _setArchived(
                                     context,
@@ -271,9 +279,14 @@ class _ProjectsViewState extends State<_ProjectsView> {
 }
 
 class _ProjectCard extends StatelessWidget {
-  const _ProjectCard({required this.project, required this.onArchive});
+  const _ProjectCard({
+    required this.project,
+    required this.onEdit,
+    required this.onArchive,
+  });
 
   final Subcategory project;
+  final VoidCallback onEdit;
   final VoidCallback onArchive;
 
   @override
@@ -316,9 +329,11 @@ class _ProjectCard extends StatelessWidget {
               PopupMenuButton<String>(
                 tooltip: 'Project actions',
                 onSelected: (action) {
+                  if (action == 'edit') onEdit();
                   if (action == 'archive') onArchive();
                 },
                 itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit')),
                   PopupMenuItem(value: 'archive', child: Text('Archive')),
                 ],
               ),

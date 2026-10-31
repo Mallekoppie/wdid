@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:grpc/grpc_or_grpcweb.dart';
 
 import '../src/generated/auth.pbgrpc.dart' as generated;
@@ -57,10 +59,38 @@ class AuthConfig {
 
 /// The signed-in account and its bearer token.
 class AuthSession {
-  const AuthSession({required this.user, required this.token});
+  const AuthSession({required this.user, required this.token, this.expiresAt});
 
   final AuthUser user;
   final String token;
+
+  /// When the bearer token stops being valid, when the token states it.
+  ///
+  /// Tokens that are not JWTs or carry no numeric `exp` claim (test fakes, for
+  /// example) have no known expiry.
+  final DateTime? expiresAt;
+}
+
+/// Reads the standard JWT `exp` claim without verifying the signature.
+///
+/// The service signs the token; the client only needs to stop using it once it
+/// is stale. Anything unexpected is treated as "no known expiry" so a
+/// non-standard token cannot end a session early.
+DateTime? tokenExpiry(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return null;
+  try {
+    final payload = utf8.decode(
+      base64Url.decode(base64Url.normalize(parts[1])),
+    );
+    final claims = jsonDecode(payload);
+    if (claims is! Map) return null;
+    final exp = claims['exp'];
+    if (exp is! num) return null;
+    return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true);
+  } catch (_) {
+    return null;
+  }
 }
 
 class AuthUser {
@@ -270,6 +300,7 @@ class GrpcAuthApi implements AuthApi {
             : 'user',
       ),
       token: token,
+      expiresAt: tokenExpiry(token),
     );
   }
 

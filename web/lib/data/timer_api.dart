@@ -127,15 +127,13 @@ abstract class TimerRpc {
 
 /// The generated Connect client over gRPC-Web.
 class GrpcTimerRpc implements TimerRpc {
-  GrpcTimerRpc({
-    generated_rpc.TimerServiceClient? client,
-    String? Function()? token,
-  }) : _client =
-           client ??
-           generated_rpc.TimerServiceClient(
-             openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
-           );
+  GrpcTimerRpc({generated_rpc.TimerServiceClient? client, ApiSession? session})
+    : _client =
+          client ??
+          generated_rpc.TimerServiceClient(
+            openAppChannel(),
+            interceptors: sessionInterceptors(session),
+          );
 
   final generated_rpc.TimerServiceClient _client;
 

@@ -13,6 +13,7 @@ import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
 import '../utils/entry_grouping.dart';
 import '../utils/people.dart';
+import '../utils/project_actions.dart';
 import '../utils/time_utils.dart';
 import '../widgets/forms/milestone_dialog.dart';
 import '../widgets/forms/note_dialog.dart';
@@ -184,6 +185,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
         SnackBar(content: Text('Could not delete the milestone: $error')),
       );
     }
+  }
+
+  Future<void> _edit(AppState state, Subcategory project) async {
+    await editProject(context, state: state, project: project);
   }
 
   Future<void> _restore(AppState state, Subcategory project) async {
@@ -439,6 +444,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
                   label: 'Entries',
                   value: '${allocation?.entryCount ?? 0}',
                   icon: Icons.list_alt,
+                ),
+                StatTile(
+                  label: 'Progress',
+                  value: '${project.progress}%',
+                  icon: Icons.trending_up,
                 ),
                 StatTile(
                   label: 'Milestones',
@@ -951,6 +961,12 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
                 ),
                 if (!archived) ...[
                   const SizedBox(width: AppSpacing.md),
+                  OutlinedButton.icon(
+                    onPressed: () => unawaited(_edit(state, project)),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Edit'),
+                  ),
+                  const SizedBox(width: 6),
                   OutlinedButton.icon(
                     onPressed: () => unawaited(_addNote(state, project)),
                     icon: const Icon(Icons.notes_outlined, size: 16),

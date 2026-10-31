@@ -7,6 +7,7 @@ import 'data/auth_api.dart';
 import 'data/category_api.dart';
 import 'data/checkin_api.dart';
 import 'data/entry_api.dart';
+import 'data/grpc_channel.dart';
 import 'data/milestone_api.dart';
 import 'data/note_api.dart';
 import 'data/settings_api.dart';
@@ -43,29 +44,29 @@ class WdidApp extends StatefulWidget {
   final AuthSession? initialSession;
   final String? initialRoute;
 
-  /// Builds the service-backed taxonomy client with a token accessor.
-  final CategoryApi Function(String? Function() token)? categoryApiBuilder;
+  /// Builds the service-backed taxonomy client for the signed-in session.
+  final CategoryApi Function(ApiSession session)? categoryApiBuilder;
 
-  /// Builds the service-backed settings client with a token accessor.
-  final SettingsApi Function(String? Function() token)? settingsApiBuilder;
+  /// Builds the service-backed settings client for the signed-in session.
+  final SettingsApi Function(ApiSession session)? settingsApiBuilder;
 
-  /// Builds the service-backed entry client with a token accessor.
-  final EntryApi Function(String? Function() token)? entryApiBuilder;
+  /// Builds the service-backed entry client for the signed-in session.
+  final EntryApi Function(ApiSession session)? entryApiBuilder;
 
-  /// Builds the service-backed timer client with a token accessor.
-  final TimerApi Function(String? Function() token)? timerApiBuilder;
+  /// Builds the service-backed timer client for the signed-in session.
+  final TimerApi Function(ApiSession session)? timerApiBuilder;
 
-  /// Builds the service-backed period-report client with a token accessor.
-  final SummaryApi Function(String? Function() token)? summaryApiBuilder;
+  /// Builds the service-backed period-report client for the signed-in session.
+  final SummaryApi Function(ApiSession session)? summaryApiBuilder;
 
-  /// Builds the service-backed day/project note client with a token accessor.
-  final NoteApi Function(String? Function() token)? noteApiBuilder;
+  /// Builds the service-backed day/project note client for the signed-in session.
+  final NoteApi Function(ApiSession session)? noteApiBuilder;
 
-  /// Builds the service-backed project milestone client with a token accessor.
-  final MilestoneApi Function(String? Function() token)? milestoneApiBuilder;
+  /// Builds the service-backed project milestone client for the signed-in session.
+  final MilestoneApi Function(ApiSession session)? milestoneApiBuilder;
 
-  /// Builds the service-backed check-in client with a token accessor.
-  final CheckInApi Function(String? Function() token)? checkInApiBuilder;
+  /// Builds the service-backed check-in client for the signed-in session.
+  final CheckInApi Function(ApiSession session)? checkInApiBuilder;
 
   /// Resolves the signed-in account's admin role. Defaults to the auth session;
   /// widget tests inject it directly.
@@ -84,27 +85,43 @@ class _WdidAppState extends State<WdidApp> {
   void initState() {
     super.initState();
     _auth = AuthState(widget.authApi, initialSession: widget.initialSession);
-    String? token() => _auth.session?.token;
+    // Every service client shares this session: the lazy token guard stops an
+    // expired token being attached, and the callback ends the session when the
+    // service rejects it.
+    final session = ApiSession(
+      tokenProvider: () => _auth.token,
+      onUnauthenticated: _auth.handleUnauthenticated,
+    );
     _state = AppState(
-      categoryApi: widget.categoryApiBuilder?.call(token),
-      settingsApi: widget.settingsApiBuilder?.call(token),
-      entryApi: widget.entryApiBuilder?.call(token),
-      timerApi: widget.timerApiBuilder?.call(token),
-      summaryApi: widget.summaryApiBuilder?.call(token),
-      noteApi: widget.noteApiBuilder?.call(token),
-      milestoneApi: widget.milestoneApiBuilder?.call(token),
-      checkInApi: widget.checkInApiBuilder?.call(token),
+      categoryApi: widget.categoryApiBuilder?.call(session),
+      settingsApi: widget.settingsApiBuilder?.call(session),
+      entryApi: widget.entryApiBuilder?.call(session),
+      timerApi: widget.timerApiBuilder?.call(session),
+      summaryApi: widget.summaryApiBuilder?.call(session),
+      noteApi: widget.noteApiBuilder?.call(session),
+      milestoneApi: widget.milestoneApiBuilder?.call(session),
+      checkInApi: widget.checkInApiBuilder?.call(session),
       roleCheck: widget.isAdmin ?? () => _auth.session?.user.role == 'admin',
     );
     _router = buildRouter(_state, _auth, initialLocation: widget.initialRoute);
+    _auth.onSessionEnded = _handleSessionEnded;
     // The service-backed clients send the session bearer token, so loading
     // before sign-in would only produce unauthenticated errors. The login
     // screen reloads once a session exists.
     if (_auth.signedIn) unawaited(_state.load());
   }
 
+  /// Shared cleanup for every session-ending path: sign-out today, token
+  /// expiry later. Drop the account's cached data, then go to the login screen
+  /// explicitly because the router deliberately does not listen to auth.
+  void _handleSessionEnded() {
+    _state.reset();
+    _router.go('/login');
+  }
+
   @override
   void dispose() {
+    _auth.onSessionEnded = null;
     _router.dispose();
     _auth.dispose();
     _state.dispose();

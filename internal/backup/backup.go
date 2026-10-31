@@ -89,6 +89,34 @@ func FromSettings(settings domain.Settings, fallback Config) Config {
 	return config.Normalize()
 }
 
+// EnsureDirectory creates dir when it is missing and verifies the service can
+// write a file there. A relative or unusable path is reported as a
+// backupDirectory field error so an administrator's typo fails at save time
+// instead of at the next snapshot. The write probe is removed again.
+func EnsureDirectory(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if !filepath.IsAbs(dir) {
+		return domain.ValidationError{Field: "backupDirectory", Message: "must be an absolute path"}
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return domain.ValidationError{Field: "backupDirectory", Message: fmt.Sprintf("cannot create the directory: %v", err)}
+	}
+
+	probe, err := os.CreateTemp(dir, ".wdid-write-check-*")
+	if err != nil {
+		return domain.ValidationError{Field: "backupDirectory", Message: fmt.Sprintf("is not writable: %v", err)}
+	}
+	probePath := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(probePath)
+		return domain.ValidationError{Field: "backupDirectory", Message: fmt.Sprintf("is not writable: %v", err)}
+	}
+	if err := os.Remove(probePath); err != nil {
+		return domain.ValidationError{Field: "backupDirectory", Message: fmt.Sprintf("is not writable: %v", err)}
+	}
+	return nil
+}
+
 // Snapshot describes one snapshot file on disk.
 type Snapshot struct {
 	Name      string
@@ -171,6 +199,9 @@ type Manager struct {
 
 	mu  sync.Mutex
 	cfg Config
+	// wake lets Configure reschedule a running scheduler immediately instead of
+	// waiting out the interval that was already sleeping.
+	wake chan struct{}
 }
 
 // New builds a Manager. The directory is created on the first snapshot. When
@@ -182,6 +213,7 @@ func New(snapshotter Snapshotter, config Config, options ...Option) *Manager {
 		now:         time.Now,
 		logger:      zap.NewNop(),
 		cfg:         config.Normalize(),
+		wake:        make(chan struct{}, 1),
 	}
 	if restorer, ok := snapshotter.(Restorer); ok {
 		manager.restorer = restorer
@@ -199,11 +231,19 @@ func (m *Manager) Config() Config {
 	return m.cfg
 }
 
-// Configure replaces the snapshot configuration.
+// Configure replaces the snapshot configuration and wakes the scheduler so a
+// changed interval or directory applies to the next snapshot without a restart.
 func (m *Manager) Configure(config Config) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.cfg = config.Normalize()
+	m.mu.Unlock()
+
+	select {
+	case m.wake <- struct{}{}:
+	default:
+		// A wake-up is already pending; the scheduler re-reads the config when
+		// it handles that one.
+	}
 }
 
 // Create writes a snapshot inside a read transaction, fsyncs it, verifies it
@@ -447,8 +487,9 @@ func (m *Manager) RunScheduled() (Snapshot, bool, error) {
 }
 
 // Run checks the schedule once at startup and then at every interval until the
-// context is cancelled. The interval is re-read each time, so a settings change
-// takes effect without restarting the service.
+// context is cancelled. The interval is re-read after every tick and whenever
+// Configure wakes it, so a settings change takes effect without restarting the
+// service and without waiting out the previous interval.
 func (m *Manager) Run(ctx context.Context) {
 	m.runOnce()
 	for {
@@ -460,6 +501,8 @@ func (m *Manager) Run(ctx context.Context) {
 			return
 		case <-timer.C:
 			m.runOnce()
+		case <-m.wake:
+			timer.Stop()
 		}
 	}
 }

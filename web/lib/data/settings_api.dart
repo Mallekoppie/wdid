@@ -154,12 +154,12 @@ abstract class SettingsRpc {
 class GrpcSettingsRpc implements SettingsRpc {
   GrpcSettingsRpc({
     generated.SettingsServiceClient? client,
-    String? Function()? token,
+    ApiSession? session,
   }) : _client =
            client ??
            generated.SettingsServiceClient(
              openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
+             interceptors: sessionInterceptors(session),
            );
 
   final generated.SettingsServiceClient _client;

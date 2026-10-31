@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 import '../state/app_state_scope.dart';
+import '../state/auth_state.dart';
 import '../theme/app_tokens.dart';
 import 'checkin_pill.dart';
 import 'forms/entry_form.dart';
@@ -10,7 +10,9 @@ import 'forms/support_dialog.dart';
 import 'timer_pill.dart';
 
 class AppHeader extends StatelessWidget {
-  const AppHeader({super.key});
+  const AppHeader({super.key, required this.auth});
+
+  final AuthState auth;
 
   Future<void> _newEntry(BuildContext context) async {
     final item = await showServiceEntryDialog(context);
@@ -120,8 +122,10 @@ class AppHeader extends StatelessWidget {
                   onSelected: (value) {
                     if (value == 'shortcuts') {
                       showShortcutsDialog(context);
-                    } else if (value == 'login') {
-                      context.go('/login');
+                    } else if (value == 'signout') {
+                      // AuthState invokes the app's session-ended callback,
+                      // which drops account data and navigates explicitly.
+                      auth.signOut();
                     }
                   },
                   itemBuilder: (context) => const [
@@ -130,8 +134,8 @@ class AppHeader extends StatelessWidget {
                       child: Text('Keyboard shortcuts'),
                     ),
                     PopupMenuItem(
-                      value: 'login',
-                      child: Text('Sign-in screen'),
+                      value: 'signout',
+                      child: Text('Sign out'),
                     ),
                   ],
                   child: const SizedBox(

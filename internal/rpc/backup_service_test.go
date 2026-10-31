@@ -558,3 +558,186 @@ func TestUpdateSettingsReconfiguresBackups(t *testing.T) {
 		t.Fatalf("manual snapshot was not written to the configured directory: %v", err)
 	}
 }
+
+// Saving a backup directory creates it before the save succeeds, so the next
+// scheduled or manual snapshot cannot fail on a missing directory.
+func TestUpdateSettingsCreatesBackupDirectoryOnSave(t *testing.T) {
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	customDir := filepath.Join(t.TempDir(), "new", "nested", "backups")
+	settings := backupTestSettings()
+	settings.BackupDirectory = customDir
+	settings.BackupInterval = minutes(60)
+	settings.BackupRetention = 2
+	if _, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: settings}, token)); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	info, err := os.Stat(customDir)
+	if err != nil {
+		t.Fatalf("backup directory was not created on save: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("backup path is not a directory")
+	}
+	// The probe file must not be left behind.
+	entries, err := os.ReadDir(customDir)
+	if err != nil {
+		t.Fatalf("read backup directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("backup directory contains %d entries after the writability probe, want none", len(entries))
+	}
+
+	status, err := client.GetBackupStatus(context.Background(), withBearer(&wdidv1.GetBackupStatusRequest{}, token))
+	if err != nil {
+		t.Fatalf("get backup status: %v", err)
+	}
+	if status.Msg.GetStatus().GetBackupDirectory() != customDir {
+		t.Fatalf("directory = %q, want %q", status.Msg.GetStatus().GetBackupDirectory(), customDir)
+	}
+}
+
+// A relative path is unusable as an absolute backup directory, so the service
+// rejects it with a backupDirectory field error and keeps the live config.
+func TestUpdateSettingsRejectsRelativeBackupDirectory(t *testing.T) {
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+	wantDir := filepath.Join(filepath.Dir(cfg.DBPath), "backups")
+
+	settings := backupTestSettings()
+	settings.BackupDirectory = "relative/backups"
+	settings.BackupInterval = minutes(60)
+	settings.BackupRetention = 2
+	_, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: settings}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if !strings.Contains(err.Error(), "backupDirectory") {
+		t.Fatalf("error = %q, want a backupDirectory field violation", err)
+	}
+
+	// Nothing was persisted or applied to the live manager.
+	status, err := client.GetBackupStatus(context.Background(), withBearer(&wdidv1.GetBackupStatusRequest{}, token))
+	if err != nil {
+		t.Fatalf("get backup status: %v", err)
+	}
+	if status.Msg.GetStatus().GetBackupDirectory() != wantDir {
+		t.Fatalf("directory = %q, want the unchanged %q", status.Msg.GetStatus().GetBackupDirectory(), wantDir)
+	}
+}
+
+// A path that cannot be a directory (here a regular file) fails the same way.
+func TestUpdateSettingsRejectsUnusableBackupDirectory(t *testing.T) {
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	file := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+
+	settings := backupTestSettings()
+	settings.BackupDirectory = file
+	settings.BackupInterval = minutes(60)
+	settings.BackupRetention = 2
+	_, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: settings}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if !strings.Contains(err.Error(), "backupDirectory") {
+		t.Fatalf("error = %q, want a backupDirectory field violation", err)
+	}
+}
+
+// A directory the service cannot write to is rejected before it is persisted.
+func TestUpdateSettingsRejectsUnwritableBackupDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write to mode 0500 directories")
+	}
+
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o500); err != nil {
+		t.Fatalf("make parent read-only: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
+
+	settings := backupTestSettings()
+	settings.BackupDirectory = filepath.Join(parent, "backups")
+	settings.BackupInterval = minutes(60)
+	settings.BackupRetention = 2
+	_, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: settings}, token))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want invalid argument", connect.CodeOf(err))
+	}
+	if !strings.Contains(err.Error(), "backupDirectory") {
+		t.Fatalf("error = %q, want a backupDirectory field violation", err)
+	}
+}
+
+// Changing the directory starts a new snapshot set: old snapshots stay on disk
+// but are no longer listed, and the new directory becomes the live one.
+func TestChangingBackupDirectoryStartsANewSnapshotSet(t *testing.T) {
+	cfg := testConfig(t)
+	server, _ := newDomainServerWithConfig(t, cfg)
+	token := bootstrapToken(t, server)
+	client := settingsClient(server)
+
+	defaultDir := filepath.Join(filepath.Dir(cfg.DBPath), "backups")
+	first, err := client.BackupNow(context.Background(), withBearer(&wdidv1.BackupNowRequest{}, token))
+	if err != nil {
+		t.Fatalf("backup now: %v", err)
+	}
+
+	newDir := filepath.Join(t.TempDir(), "new-backups")
+	settings := backupTestSettings()
+	settings.BackupDirectory = newDir
+	settings.BackupInterval = minutes(60)
+	settings.BackupRetention = 2
+	if _, err := client.UpdateSettings(context.Background(), withBearer(&wdidv1.UpdateSettingsRequest{Settings: settings}, token)); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	// The old snapshot is still on disk but the new set starts empty.
+	if _, err := os.Stat(filepath.Join(defaultDir, first.Msg.GetBackup().GetName())); err != nil {
+		t.Fatalf("old snapshot was removed: %v", err)
+	}
+	listed, err := client.ListBackups(context.Background(), withBearer(&wdidv1.ListBackupsRequest{}, token))
+	if err != nil {
+		t.Fatalf("list backups: %v", err)
+	}
+	if len(listed.Msg.GetBackups()) != 0 {
+		t.Fatalf("listed backups = %d, want the new directory's empty set", len(listed.Msg.GetBackups()))
+	}
+
+	status, err := client.GetBackupStatus(context.Background(), withBearer(&wdidv1.GetBackupStatusRequest{}, token))
+	if err != nil {
+		t.Fatalf("get backup status: %v", err)
+	}
+	if status.Msg.GetStatus().GetBackupDirectory() != newDir {
+		t.Fatalf("directory = %q, want %q", status.Msg.GetStatus().GetBackupDirectory(), newDir)
+	}
+	if !status.Msg.GetStatus().GetOverdue() {
+		t.Fatal("a new empty snapshot set is overdue")
+	}
+
+	created, err := client.BackupNow(context.Background(), withBearer(&wdidv1.BackupNowRequest{}, token))
+	if err != nil {
+		t.Fatalf("backup now after directory change: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(newDir, created.Msg.GetBackup().GetName())); err != nil {
+		t.Fatalf("manual snapshot did not use the new directory: %v", err)
+	}
+}

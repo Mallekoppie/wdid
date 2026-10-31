@@ -30,7 +30,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _bootstrapSecret = TextEditingController();
 
   String? _formError;
-  bool _autoSignInStarted = false;
 
   @override
   void initState() {
@@ -44,7 +43,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     if (!mounted) return;
     _prefillLocalUsername();
-    _maybeAutoSignIn();
   }
 
   /// A later local launch prefills the one account's username.
@@ -53,26 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
     if (username.isNotEmpty && _localUsername.text.isEmpty) {
       _localUsername.text = username;
     }
-  }
-
-  /// A local account without a password signs in without a prompt.
-  void _maybeAutoSignIn() {
-    final config = widget.auth.config;
-    if (config == null ||
-        !config.isLocal ||
-        config.setupRequired ||
-        config.passwordRequired ||
-        widget.auth.signedIn ||
-        _autoSignInStarted) {
-      return;
-    }
-    _autoSignInStarted = true;
-    unawaited(_signInAutomatically(config.username));
-  }
-
-  Future<void> _signInAutomatically(String username) async {
-    final ok = await widget.auth.login(username: username, password: '');
-    _enterApp(ok);
   }
 
   @override
@@ -360,8 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (setup) {
       title = 'Set up wdid';
       subtitle =
-          'Choose a username. Add a password only if you want one; leave it '
-          'blank to sign in automatically.';
+          'Choose a username. Add a password only if you want one.';
     } else if (bootstrap) {
       title = 'Set up the first account';
       subtitle =
@@ -370,7 +347,7 @@ class _LoginScreenState extends State<LoginScreen> {
       title = 'Sign in';
       subtitle = passwordRequired
           ? 'Enter the password for this account.'
-          : 'No password is set, so this account signs in automatically.';
+          : 'No password is set. Select Sign in to continue.';
     } else {
       title = 'Sign in';
       subtitle =
@@ -400,6 +377,17 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
+        if (auth.sessionNotice != null) ...[
+          Text(
+            auth.sessionNotice!,
+            key: const Key('session-expired'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.error,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         ...fields,
         if (_activeError != null) ...[
           const SizedBox(height: AppSpacing.md),
@@ -441,7 +429,7 @@ class _LoginScreenState extends State<LoginScreen> {
         key: const Key('local-setup-password'),
         controller: _localPassword,
         label: 'Password (optional)',
-        hint: 'Leave blank to sign in automatically',
+        hint: 'Leave blank if you do not want a password',
         obscure: true,
         onSubmitted: (_) => _setupLocal(),
       ),

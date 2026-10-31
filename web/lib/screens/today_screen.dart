@@ -9,6 +9,7 @@ import '../models/work_entry.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../theme/app_tokens.dart';
+import '../utils/entry_actions.dart';
 import '../utils/review_timeframe.dart';
 import '../utils/time_utils.dart';
 import '../widgets/allocation_bars.dart';
@@ -165,6 +166,8 @@ class _TodayScreenState extends State<TodayScreen> {
               supportModes: state.selectableSupportModes,
               onSetMode: (mode) => unawaited(_setMode(entry, mode)),
               onEditOutcome: (entry) => unawaited(_editOutcome(entry)),
+              onResume: () => unawaited(resumeWorkEntry(context, entry)),
+              resumeAvailability: state.resumeAvailabilityFor(entry),
             ),
         ],
       ),

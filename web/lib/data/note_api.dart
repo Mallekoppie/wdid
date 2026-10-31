@@ -49,15 +49,13 @@ abstract class NoteRpc {
 
 /// The generated Connect client over gRPC-Web.
 class GrpcNoteRpc implements NoteRpc {
-  GrpcNoteRpc({
-    generated_rpc.NoteServiceClient? client,
-    String? Function()? token,
-  }) : _client =
-           client ??
-           generated_rpc.NoteServiceClient(
-             openAppChannel(),
-             interceptors: [bearerInterceptor(token ?? (() => null))],
-           );
+  GrpcNoteRpc({generated_rpc.NoteServiceClient? client, ApiSession? session})
+    : _client =
+          client ??
+          generated_rpc.NoteServiceClient(
+            openAppChannel(),
+            interceptors: sessionInterceptors(session),
+          );
 
   final generated_rpc.NoteServiceClient _client;
 
