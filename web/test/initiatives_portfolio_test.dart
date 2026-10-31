@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wdid_web/app.dart';
 import 'package:wdid_web/data/category_api.dart';
 import 'package:wdid_web/data/summary_api.dart';
+import 'package:wdid_web/models/link_ref.dart';
 import 'package:wdid_web/models/period_report.dart';
 import 'package:wdid_web/models/taxonomy.dart';
 
@@ -33,18 +34,24 @@ Subcategory project(
   String id, {
   String categoryId = 'cat-init',
   required String name,
+  String description = '',
   SubcategoryStatus status = SubcategoryStatus.active,
   int progress = 0,
   String targetOutcome = '',
+  String targetDate = '',
+  List<LinkRef> links = const [],
   bool archived = false,
 }) {
   return Subcategory(
     id: id,
     categoryId: categoryId,
     name: name,
+    description: description,
     status: status,
     progress: progress,
     targetOutcome: targetOutcome,
+    targetDate: targetDate,
+    links: links,
     archived: archived,
     createdAt: DateTime.utc(2026, 10, 23),
     updatedAt: DateTime.utc(2026, 10, 23),
@@ -374,6 +381,202 @@ void main() {
 
     expect(find.text('Project name is required.'), findsOneWidget);
     expect(categories.subcategories, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits a project from its card with the current values', (
+    tester,
+  ) async {
+    final categories = FakeCategoryApi(
+      categories: [category('cat-init', 'Initiatives')],
+      subcategories: [
+        project(
+          'sub-invoice',
+          name: 'Invoice pipeline',
+          description: 'Move invoicing to the new pipeline',
+          status: SubcategoryStatus.blocked,
+          progress: 64,
+          targetOutcome: 'Invoice generation under 5 minutes',
+          targetDate: '2026-12-01',
+          links: const [
+            LinkRef(label: 'Epic', url: 'https://example.com/epic'),
+            LinkRef(
+              label: 'https://example.com/design',
+              url: 'https://example.com/design',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await pumpInitiatives(tester, categoryApi: categories);
+
+    await tester.tap(find.byTooltip('Project actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    final dialog = find.byType(Dialog);
+    expect(find.text('Edit project'), findsOneWidget);
+    // The category is read-only, so it is not a dropdown.
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.byType(DropdownButton<String>),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('Initiatives')),
+      findsOneWidget,
+    );
+
+    final fields = find.byType(TextFormField);
+    expect(
+      tester.widget<TextFormField>(fields.at(0)).controller!.text,
+      'Invoice pipeline',
+    );
+    expect(
+      tester.widget<TextFormField>(fields.at(1)).controller!.text,
+      'Move invoicing to the new pipeline',
+    );
+    expect(
+      tester.widget<TextFormField>(fields.at(2)).controller!.text,
+      'Invoice generation under 5 minutes',
+    );
+    expect(
+      tester.widget<TextFormField>(fields.at(3)).controller!.text,
+      'Epic | https://example.com/epic\nhttps://example.com/design',
+    );
+    expect(
+      tester
+          .widget<DropdownButton<SubcategoryStatus>>(
+            find.byType(DropdownButton<SubcategoryStatus>),
+          )
+          .value,
+      SubcategoryStatus.blocked,
+    );
+    expect(tester.widget<Slider>(find.byType(Slider)).value, 64);
+    expect(find.text('1 Dec'), findsOneWidget);
+
+    await tester.enterText(fields.at(0), 'Invoice pipeline v2');
+    await tester.enterText(fields.at(1), 'Cut over invoicing');
+    await tester.enterText(fields.at(2), 'Invoices under two minutes');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+
+    final saved = categories.subcategories.single;
+    expect(saved.name, 'Invoice pipeline v2');
+    expect(saved.description, 'Cut over invoicing');
+    expect(saved.targetOutcome, 'Invoices under two minutes');
+    // Fields the user did not touch keep their values.
+    expect(saved.status, SubcategoryStatus.blocked);
+    expect(saved.progress, 64);
+    expect(saved.targetDate, '2026-12-01');
+    expect(saved.links, hasLength(2));
+    expect(find.text('Invoice pipeline v2'), findsOneWidget);
+    expect(find.text('Project updated · Invoice pipeline v2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits status, progress, links and the target date', (
+    tester,
+  ) async {
+    final categories = FakeCategoryApi(
+      categories: [category('cat-init', 'Initiatives')],
+      subcategories: [
+        project(
+          'sub-invoice',
+          name: 'Invoice pipeline',
+          progress: 20,
+          targetDate: '2026-12-01',
+          links: const [LinkRef(label: 'Epic', url: 'https://example.com/epic')],
+        ),
+      ],
+    );
+
+    await pumpInitiatives(tester, categoryApi: categories);
+    await tester.tap(find.byTooltip('Project actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(DropdownButton<SubcategoryStatus>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Blocked').last);
+    await tester.pumpAndSettle();
+
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(80);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Clear target date'));
+    await tester.pump();
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(3), 'Design | https://example.com/design');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+
+    final saved = categories.subcategories.single;
+    expect(saved.status, SubcategoryStatus.blocked);
+    expect(saved.progress, 80);
+    expect(saved.targetDate, '');
+    expect(saved.links.single.label, 'Design');
+    expect(saved.links.single.url, 'https://example.com/design');
+    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('Blocked'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('edits a project under an archived initiative category', (
+    tester,
+  ) async {
+    final categories = FakeCategoryApi(
+      categories: [category('cat-old', 'Legacy initiatives', archived: true)],
+      subcategories: [
+        project('sub-old', categoryId: 'cat-old', name: 'Old project'),
+      ],
+    );
+
+    await pumpInitiatives(tester, categoryApi: categories);
+    await tester.tap(find.byTooltip('Project actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    // The archived category still resolves, so the read-only label is right.
+    expect(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text('Legacy initiatives'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextFormField).first, 'Old project v2');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(categories.subcategories.single.name, 'Old project v2');
+    expect(find.text('Old project v2'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('archived projects offer no edit action', (tester) async {
+    final categories = FakeCategoryApi(
+      categories: [category('cat-init', 'Initiatives')],
+      subcategories: [
+        project('sub-legacy', name: 'Legacy billing', archived: true),
+      ],
+    );
+
+    await pumpInitiatives(tester, categoryApi: categories);
+    await tester.tap(find.text('Archived (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Legacy billing'), findsOneWidget);
+    expect(find.byTooltip('Project actions'), findsNothing);
+    expect(find.text('Edit'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
